@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+kifayah.sqlite3*
+.venv/
+.env
+.env.*
+uploads/*
+!uploads/1f5a6f509232401123da18defe05c8e7.png
+!uploads/ff61a380fc24c3c08ac1b27bbe595a63.webp
+!uploads/logo-transparent-86ccf3f779fb.png
