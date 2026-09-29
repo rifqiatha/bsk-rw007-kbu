@@ -557,9 +557,13 @@ function showSelectedPrivateData() {
   portraitForm.hidden = !record || !canSeePrivate;
   if (!record || !canSeePrivate) return;
   if (identityForm.dataset.recordId !== String(record.id)) {
-    for (const field of ["gender", "family_card_number", "national_id_number", "birthplace", "birth_date", "religion"]) {
+    for (const field of ["gender", "address", "family_card_number", "national_id_number", "birthplace", "birth_date", "religion"]) {
       identityForm.elements[field].value = record[field] || "";
     }
+    identityForm.elements.publish_address.checked = Boolean(record.publish_address);
+    document.querySelector("#family-address-hint").textContent = record.publish_address
+      ? "Alamat akan ditampilkan secara publik."
+      : "Alamat hanya dapat dilihat oleh pengelola.";
     identityForm.dataset.recordId = String(record.id);
   }
   const familyList = document.querySelector("#family-list");
@@ -682,7 +686,7 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   managerPanel.hidden = !enabled || mustChangePassword;
   document.querySelector("#dialog-title").textContent = mustChangePassword
     ? "Ganti Kata Sandi Awal"
-    : enabled ? `Kelola Daftar Warga · ${currentUser?.role || ""}` : "Masuk Pengelola";
+    : enabled ? `Kelola Daftar Warga | ${currentUser?.role || ""}` : "Masuk Pengelola";
   if (!enabled || mustChangePassword) return;
   const role = currentUser?.role || "Staff";
   const isSuperAdmin = role === "Super Admin";
@@ -1320,12 +1324,19 @@ document.querySelector("#detail-record-select").addEventListener("change", () =>
   document.querySelector("#identity-form").dataset.recordId = "";
   showSelectedPrivateData();
 });
+document.querySelector('#identity-form input[name="publish_address"]').addEventListener("change", (event) => {
+  document.querySelector("#family-address-hint").textContent = event.currentTarget.checked
+    ? "Alamat akan ditampilkan secara publik."
+    : "Alamat hanya dapat dilihat oleh pengelola.";
+});
 document.querySelector("#identity-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const errorElement = document.querySelector("#identity-error");
   errorElement.textContent = "";
   const fields = Object.fromEntries(new FormData(form));
+  fields.address = form.elements.address.value;
+  fields.publish_address = form.elements.publish_address.checked;
   try {
     await request("/api/admin/record-details", {
       method: "POST",

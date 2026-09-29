@@ -1084,6 +1084,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			try:
 				payload = self.read_json()
 				record_id = payload.get("record_id")
+				address = payload.get("address")
+				publish_address = payload.get("publish_address")
 				fields = {
 					"gender": payload.get("gender", ""),
 					"family_card_number": payload.get("family_card_number", ""),
@@ -1092,8 +1094,15 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"birth_date": payload.get("birth_date", ""),
 					"religion": payload.get("religion", ""),
 				}
-				if type(record_id) is not int or not all(isinstance(value, str) for value in fields.values()):
+				if (
+					type(record_id) is not int
+					or (address is not None and not isinstance(address, str))
+					or (publish_address is not None and not isinstance(publish_address, bool))
+					or not all(isinstance(value, str) for value in fields.values())
+				):
 					raise ValueError("Periksa kembali data identitas.")
+				if address is not None and (not address.strip() or len(address) > 300):
+					raise ValueError("Alamat wajib diisi dan maksimal 300 karakter.")
 				if fields["gender"] not in ("P", "L"):
 					raise ValueError("Pilih jenis kelamin P atau L.")
 				if len(fields["family_card_number"]) > 32 or len(fields["national_id_number"]) > 32:
@@ -1107,8 +1116,15 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				return
 			with connect_database() as connection:
 				cursor = connection.execute(
-					"UPDATE records SET gender = ?, family_card_number = ?, national_id_number = ?, birthplace = ?, birth_date = ?, religion = ? WHERE id = ?",
-					(*fields.values(), record_id),
+					"UPDATE records SET gender = ?, address = COALESCE(?, address), "
+					"publish_address = COALESCE(?, publish_address), family_card_number = ?, "
+					"national_id_number = ?, birthplace = ?, birth_date = ?, religion = ? WHERE id = ?",
+					(
+						fields["gender"], address,
+						int(publish_address) if publish_address is not None else None,
+						fields["family_card_number"], fields["national_id_number"], fields["birthplace"],
+						fields["birth_date"], fields["religion"], record_id,
+					),
 				)
 			if cursor.rowcount == 0:
 				self.send_json(404, {"error": "Entri tidak ditemukan."})

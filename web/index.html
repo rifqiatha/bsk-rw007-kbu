@@ -275,7 +275,17 @@
               <h3 id="private-data-title">Detail Privat Dan Keluarga</h3>
               <label>Pilih Warga<select id="detail-record-select"><option value="">Pilih Entri</option></select></label>
               <form id="identity-form" class="form-stack" hidden>
-                <label>Jenis Kelamin<select name="gender" required><option value="">Pilih Jenis Kelamin</option><option value="P">P — Perempuan</option><option value="L">L — Laki-laki</option></select></label>
+                <div class="field-row">
+                  <label>Jenis Kelamin<select name="gender" required><option value="">Pilih Jenis Kelamin</option><option value="P">P — Perempuan</option><option value="L">L — Laki-laki</option></select></label>
+                  <label>Agama<input name="religion" maxlength="50"></label>
+                </div>
+                <div class="field-row">
+                  <label>Alamat Lengkap<textarea name="address" maxlength="300" rows="3" required></textarea></label>
+                  <div class="family-address-visibility">
+                    <label class="check-row"><input name="publish_address" type="checkbox"><span>Tampilkan alamat dan tautan peta kepada publik</span></label>
+                    <p id="family-address-hint" class="form-hint"></p>
+                  </div>
+                </div>
                 <div class="field-row">
                   <label>Nomor kartu keluarga<input name="family_card_number" maxlength="32" autocomplete="off"></label>
                   <label>Nomor induk kependudukan<input name="national_id_number" maxlength="32" autocomplete="off"></label>
@@ -284,7 +294,6 @@
                   <label>Tempat lahir<input name="birthplace" maxlength="100"></label>
                   <label>Tanggal lahir<input name="birth_date" type="date"></label>
                 </div>
-                <label>Agama<input name="religion" maxlength="50"></label>
                 <p class="form-hint">Informasi ini hanya tersedia di panel admin, tidak di daftar publik.</p>
                 <p class="form-error" id="identity-error" role="alert"></p>
                 <button class="primary-button" type="submit">Simpan Detail Privat <span aria-hidden="true">→</span></button>
