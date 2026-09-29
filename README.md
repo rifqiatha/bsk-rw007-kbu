@@ -1,5 +1,7 @@
 # Data Kifayah
 
+Website pemantau data-data kematian di RW 007 Kelurahan Bambu Utara.
+
 Website sederhana untuk melihat daftar warga yang telah berpulang dan mengelola entri bersama melalui satu server.
 
 ## Peta Kode
