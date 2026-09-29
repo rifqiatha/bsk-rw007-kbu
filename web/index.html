@@ -221,7 +221,10 @@
               </form>
               <p id="import-result" class="form-success" role="status" hidden></p>
               <div id="import-preview-panel" class="import-preview-panel" hidden>
-                <p class="form-hint" id="import-summary"></p>
+                <div class="import-selection">
+                  <label class="check-row"><input id="import-select-all" type="checkbox"><span>Pilih Semua</span></label>
+                  <p class="form-hint" id="import-summary"></p>
+                </div>
                 <ul id="import-warnings" class="import-warnings"></ul>
                 <div id="import-preview-list" class="import-preview-list"></div>
                 <p class="form-error" id="import-commit-error" role="alert"></p>
@@ -301,8 +304,8 @@
               <form id="family-form" class="form-stack" hidden>
                 <h4>Hubungkan Keluarga Yang Masih Hidup</h4>
                 <div class="field-row">
-                  <label>Nama Anggota Keluarga<input name="full_name" maxlength="120" required></label>
-                  <label>Hubungan Keluarga<input name="relationship" maxlength="60" required placeholder="Contoh: Anak"></label>
+                  <label>Nama Anggota Keluarga<input name="full_name" maxlength="120"></label>
+                  <label>Hubungan Keluarga<input name="relationship" maxlength="60" placeholder="Contoh: Anak"></label>
                 </div>
                 <p class="form-error" id="family-error" role="alert"></p>
                 <button class="primary-button" type="submit">Tambahkan Hubungan <span aria-hidden="true">→</span></button>
@@ -394,6 +397,12 @@
         <button id="user-create-submit" class="primary-button" type="submit">Simpan pengguna <span aria-hidden="true">→</span></button>
       </div>
     </form>
+  </dialog>
+  <dialog id="processing-dialog" class="processing-dialog" aria-labelledby="processing-label" tabindex="-1">
+    <div class="processing-status" role="status" aria-live="polite" aria-atomic="true">
+      <span class="processing-spinner" aria-hidden="true"></span>
+      <p id="processing-label">Sedang Diproses</p>
+    </div>
   </dialog>
 </body>
 </html>

@@ -373,7 +373,7 @@ def parse_import_file(filename, content):
 	if not rows:
 		raise ImportFormatError("Tidak menemukan tabel dengan kolom Nama. Gunakan baris judul kolom seperti Nama, RT, RW, dan Tanggal Wafat.")
 	if any(not row.get("date_of_death") for row in rows):
-		warnings.add("Tanggal wafat tidak ditemukan pada sebagian baris. Lengkapi tanggal wafat dengan benar sebelum baris tersebut dapat diimpor.")
+		warnings.add("Tanggal wafat belum terbaca pada sebagian baris. Baris tetap dapat diimpor dan dilengkapi kemudian.")
 	return {"rows": rows, "warnings": sorted(warnings), "filename": Path(filename).name}
 
 

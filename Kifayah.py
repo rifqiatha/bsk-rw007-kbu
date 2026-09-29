@@ -182,36 +182,50 @@ def image_extension(content):
 	return None
 
 
+def optional_import_area_number(value, label, maximum):
+	if value is None or (isinstance(value, str) and not value.strip()):
+		return None
+	try:
+		number = int(value)
+	except (ValueError, TypeError):
+		raise ValueError(f"{label} harus berupa angka.")
+	if isinstance(value, float) and value != number:
+		raise ValueError(f"{label} harus berupa angka bulat.")
+	if not 1 <= number <= maximum:
+		raise ValueError(f"{label} harus 1-{maximum}.")
+	return number
+
+
 def validate_import_row(payload, settings):
 	if not isinstance(payload, dict):
 		raise ValueError("Baris impor tidak valid.")
-	full_name = payload.get("full_name", "")
-	gender = payload.get("gender", "")
-	date_of_death = payload.get("date_of_death", "")
-	address = payload.get("address", "")
-	if not all(isinstance(value, str) for value in (full_name, gender, date_of_death, address)):
-		raise ValueError("Nama, tanggal wafat, dan alamat harus berupa teks.")
-	full_name = full_name.strip()
-	gender = gender.strip().upper()
-	date_of_death = date_of_death.strip()
-	address = address.strip()
-	if not full_name or len(full_name) > 120:
-		raise ValueError("Nama wajib diisi dan maksimal 120 karakter.")
-	if gender not in ("P", "L"):
-		raise ValueError("Jenis kelamin wajib dipilih: P atau L.")
-	if not date_of_death:
-		raise ValueError("Tanggal wafat wajib diisi sebelum data dapat diimpor.")
-	if date.fromisoformat(date_of_death).isoformat() != date_of_death:
+	text_fields = {}
+	for field in ("full_name", "gender", "date_of_death", "address"):
+		value = payload.get(field, "")
+		if value is None:
+			value = ""
+		if not isinstance(value, str):
+			raise ValueError("Nama, tanggal wafat, dan alamat harus berupa teks.")
+		text_fields[field] = value.strip()
+	full_name = text_fields["full_name"]
+	gender = text_fields["gender"].upper()
+	date_of_death = text_fields["date_of_death"]
+	address = text_fields["address"]
+	if len(full_name) > 120:
+		raise ValueError("Nama maksimal 120 karakter.")
+	if gender and gender not in ("P", "L"):
+		raise ValueError("Jenis kelamin harus P atau L.")
+	if date_of_death and date.fromisoformat(date_of_death).isoformat() != date_of_death:
 		raise ValueError("Tanggal wafat harus berformat YYYY-MM-DD.")
 	if len(address) > 300:
 		raise ValueError("Alamat maksimal 300 karakter.")
-	try:
-		rt = int(payload.get("rt"))
-		rw = int(payload.get("rw"))
-	except (TypeError, ValueError):
-		raise ValueError("RT dan RW wajib diisi dengan angka.")
-	if not 1 <= rt <= settings["rt_count"] or not 1 <= rw <= settings["rw_count"]:
-		raise ValueError(f"RT harus 1-{settings['rt_count']} dan RW harus 1-{settings['rw_count']}.")
+	rt = optional_import_area_number(payload.get("rt"), "RT", settings["rt_count"])
+	rw = optional_import_area_number(payload.get("rw"), "RW", settings["rw_count"])
+	area_parts = []
+	if rt is not None:
+		area_parts.append(f"RT {rt:03d}")
+	if rw is not None:
+		area_parts.append(f"RW {rw:03d}")
 	private_fields = {
 		"family_card_number": (32, "Nomor kartu keluarga"),
 		"national_id_number": (32, "NIK"),
@@ -221,6 +235,7 @@ def validate_import_row(payload, settings):
 		"living_family_relationship": (60, "Hubungan keluarga"),
 	}
 	values = {field: payload.get(field, "") for field in private_fields}
+	values = {field: "" if value is None else value for field, value in values.items()}
 	if not all(isinstance(value, str) for value in values.values()):
 		raise ValueError("Detail privat harus berupa teks.")
 	for field, (limit, label) in private_fields.items():
@@ -233,8 +248,6 @@ def validate_import_row(payload, settings):
 	birth_date = birth_date.strip()
 	if birth_date and date.fromisoformat(birth_date).isoformat() != birth_date:
 		raise ValueError("Tanggal lahir harus berformat YYYY-MM-DD.")
-	if bool(values["living_family_name"]) != bool(values["living_family_relationship"]):
-		raise ValueError("Nama anggota keluarga dan hubungan harus diisi berpasangan.")
 	return {
 		"full_name": full_name,
 		"gender": gender,
@@ -242,10 +255,16 @@ def validate_import_row(payload, settings):
 		"address": address,
 		"rt": rt,
 		"rw": rw,
-		"area": f"RT {rt:03d} / RW {rw:03d}",
+		"area": " / ".join(area_parts),
 		"birth_date": birth_date,
 		**values,
 	}
+
+
+def import_duplicate_key(row):
+	if not row["full_name"] or not row["date_of_death"]:
+		return None
+	return (row["full_name"].casefold(), row["area"], row["date_of_death"])
 
 
 class KifayahServer(ThreadingHTTPServer):
@@ -1173,8 +1192,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Data hubungan keluarga tidak valid.")
 				full_name = full_name.strip()
 				relationship = relationship.strip()
-				if not full_name or not relationship or len(full_name) > 120 or len(relationship) > 60:
-					raise ValueError("Nama dan hubungan keluarga wajib diisi sesuai batas yang tersedia.")
+				if (not full_name and not relationship) or len(full_name) > 120 or len(relationship) > 60:
+					raise ValueError("Isi nama atau hubungan keluarga; masing-masing memiliki batas karakter.")
 			except (ValueError, TypeError) as error:
 				self.send_json(400, {"error": str(error) or "Data keluarga tidak valid."})
 				return
@@ -1200,8 +1219,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Nama dan hubungan keluarga wajib diisi.")
 				full_name = full_name.strip()
 				relationship = relationship.strip()
-				if not full_name or not relationship or len(full_name) > 120 or len(relationship) > 60:
-					raise ValueError("Nama dan hubungan keluarga wajib diisi.")
+				if (not full_name and not relationship) or len(full_name) > 120 or len(relationship) > 60:
+					raise ValueError("Isi nama atau hubungan keluarga.")
 			except (ValueError, TypeError) as error:
 				self.send_json(400, {"error": str(error) or "Data keluarga tidak valid."})
 				return
@@ -1242,8 +1261,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						validated = validate_import_row(row, settings)
 					except (ValueError, TypeError):
 						continue
-					key = (validated["full_name"].casefold(), validated["area"], validated["date_of_death"])
-					row["duplicate"] = key in existing
+					key = import_duplicate_key(validated)
+					row["duplicate"] = key is not None and key in existing
 					if row["duplicate"]:
 						parsed["warnings"].append(f"{row['full_name']} sudah ada dengan RT/RW dan tanggal wafat yang sama.")
 				parsed["warnings"] = sorted(set(parsed["warnings"]))
@@ -1276,8 +1295,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					created = 0
 					skipped = 0
 					for row in validated_rows:
-						duplicate_key = (row["full_name"].casefold(), row["area"], row["date_of_death"])
-						if duplicate_key in existing:
+						duplicate_key = import_duplicate_key(row)
+						if duplicate_key is not None and duplicate_key in existing:
 							skipped += 1
 							continue
 						cursor = connection.execute(
@@ -1291,12 +1310,13 @@ class KifayahHandler(BaseHTTPRequestHandler):
 							),
 						)
 						record_id = cursor.lastrowid
-						if row["living_family_name"] and row["living_family_relationship"]:
+						if row["living_family_name"] or row["living_family_relationship"]:
 							connection.execute(
 								"INSERT INTO family_connections (record_id, full_name, relationship) VALUES (?, ?, ?)",
 								(record_id, row["living_family_name"], row["living_family_relationship"]),
 							)
-						existing.add(duplicate_key)
+						if duplicate_key is not None:
+							existing.add(duplicate_key)
 						created += 1
 			except (ValueError, TypeError, sqlite3.Error) as error:
 				self.send_json(400, {"error": str(error) or "Data impor tidak valid."})

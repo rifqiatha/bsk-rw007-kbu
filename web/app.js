@@ -56,24 +56,52 @@ function applyIconZoom(slot, value) {
   document.documentElement.style.setProperty(`--brand-logo-zoom-${slot}`, String(value / 100));
 }
 
+function importDateIsValid(value) {
+  const parsedDate = new Date(`${value}T00:00:00Z`);
+  return Boolean(value) && !Number.isNaN(parsedDate.valueOf()) && parsedDate.toISOString().slice(0, 10) === value;
+}
+
 function importRowIsValid(row) {
-  const rt = Number(row.rt);
-  const rw = Number(row.rw);
-  const parsedDate = new Date(`${row.date_of_death || ""}T00:00:00Z`);
-  return Boolean(row.full_name?.trim())
-    && ["P", "L"].includes((row.gender || "").toUpperCase())
-    && !Number.isNaN(parsedDate.valueOf()) && parsedDate.toISOString().slice(0, 10) === row.date_of_death
-    && Number.isInteger(rt) && rt >= 1 && rt <= settings.rt_count
-    && Number.isInteger(rw) && rw >= 1 && rw <= settings.rw_count;
+  const text = (field) => typeof row[field] === "string" ? row[field].trim() : "";
+  const fullName = text("full_name");
+  const gender = text("gender").toUpperCase();
+  const dateOfDeath = text("date_of_death");
+  const birthDate = text("birth_date");
+  const rtText = text("rt");
+  const rwText = text("rw");
+  const rt = Number(rtText);
+  const rw = Number(rwText);
+  const familyName = text("living_family_name");
+  const familyRelationship = text("living_family_relationship");
+  return fullName.length <= 120
+    && (!gender || ["P", "L"].includes(gender))
+    && (!dateOfDeath || importDateIsValid(dateOfDeath))
+    && (!rtText || (Number.isInteger(rt) && /^\d+$/.test(rtText) && rt >= 1 && rt <= settings.rt_count))
+    && (!rwText || (Number.isInteger(rw) && /^\d+$/.test(rwText) && rw >= 1 && rw <= settings.rw_count))
+    && text("address").length <= 300
+    && text("family_card_number").length <= 32
+    && text("national_id_number").length <= 32
+    && text("birthplace").length <= 100
+    && (!birthDate || importDateIsValid(birthDate))
+    && text("religion").length <= 50
+    && familyName.length <= 120
+    && familyRelationship.length <= 60;
 }
 
 function updateImportSummary() {
   const selectedRows = importRows.filter((row) => row.selected);
-  const invalidCount = selectedRows.filter((row) => !importRowIsValid(row)).length;
+  const validCount = selectedRows.filter(importRowIsValid).length;
+  const skippedCount = selectedRows.length - validCount;
+  const selectableRows = importRows.filter((row) => !row.duplicate);
+  const selectedSelectableCount = selectableRows.filter((row) => row.selected).length;
+  const selectAll = document.querySelector("#import-select-all");
+  selectAll.disabled = selectableRows.length === 0;
+  selectAll.checked = selectableRows.length > 0 && selectedSelectableCount === selectableRows.length;
+  selectAll.indeterminate = selectedSelectableCount > 0 && selectedSelectableCount < selectableRows.length;
   const button = document.querySelector("#import-commit");
-  button.disabled = selectedRows.length === 0 || invalidCount > 0;
+  button.disabled = validCount === 0;
   document.querySelector("#import-summary").textContent = importRows.length
-    ? `${importRows.length} baris ditemukan. ${selectedRows.length} dipilih${invalidCount ? `; ${invalidCount} perlu nama, RT/RW, dan tanggal wafat yang valid` : " siap ditinjau"}.`
+    ? `${importRows.length} baris ditemukan. ${selectedRows.length} dipilih; ${validCount} siap diimpor${skippedCount ? `; ${skippedCount} baris memiliki format di luar batas dan akan dilewati` : ""}.`
     : "";
 }
 
@@ -91,6 +119,7 @@ function renderImportRows() {
     const select = document.createElement("input");
     select.type = "checkbox";
     select.checked = !row.duplicate;
+    select.disabled = Boolean(row.duplicate);
     row.selected = select.checked;
     select.addEventListener("change", () => {
       row.selected = select.checked;
@@ -182,7 +211,7 @@ function openRecordDetail(record, index) {
   }
   const title = document.createElement("h2");
   title.id = "record-detail-name";
-  title.textContent = `${String(index + 1).padStart(2, "0")}. ${record.full_name}`;
+  title.textContent = `${String(index + 1).padStart(2, "0")}. ${record.full_name || "Nama belum dilengkapi"}`;
   const metadata = document.createElement("div");
   metadata.className = "record-detail-meta";
   const details = [formatAreaLabel(record.area)];
@@ -234,19 +263,19 @@ function render() {
     const name = document.createElement("button");
     name.className = "record-detail-trigger";
     name.type = "button";
-    name.textContent = `${String(index + 1).padStart(2, "0")}. ${record.full_name}`;
+    name.textContent = `${String(index + 1).padStart(2, "0")}. ${record.full_name || "Nama belum dilengkapi"}`;
     name.setAttribute("aria-haspopup", "dialog");
-    name.setAttribute("aria-label", `Buka detail ${record.full_name}`);
+    name.setAttribute("aria-label", `Buka detail ${record.full_name || "warga tanpa nama"}`);
     name.addEventListener("click", () => openRecordDetail(record, index));
     const meta = document.createElement("div");
     meta.className = "record-meta";
     const area = document.createElement("span");
-    area.textContent = formatAreaLabel(record.area);
+    area.textContent = formatAreaLabel(record.area) || "Wilayah belum dilengkapi";
     const gender = document.createElement("span");
     gender.textContent = record.gender === "L" ? "Laki-Laki" : record.gender === "P" ? "Perempuan" : "";
     const date = document.createElement("span");
-    date.textContent = formatDate(record.date_of_death);
-    meta.append(area);
+    date.textContent = record.date_of_death ? formatDate(record.date_of_death) : "Tanggal wafat belum dilengkapi";
+    if (area.textContent) meta.append(area);
     if (gender.textContent) meta.append(gender);
     meta.append(date);
     main.append(name, meta);
@@ -380,15 +409,68 @@ document.querySelector("#news-detail-close")?.addEventListener("click", () => {
 document.querySelector("#record-detail-close")?.addEventListener("click", () => {
   document.querySelector("#record-detail-dialog").close();
 });
+for (const selector of ["#news-detail-dialog", "#record-detail-dialog"]) {
+  const detailDialog = document.querySelector(selector);
+  detailDialog.addEventListener("click", (event) => {
+    if (event.target !== detailDialog) return;
+    const bounds = detailDialog.getBoundingClientRect();
+    if (
+      event.clientX < bounds.left || event.clientX > bounds.right
+      || event.clientY < bounds.top || event.clientY > bounds.bottom
+    ) {
+      detailDialog.close();
+    }
+  });
+}
+
+const processingDialog = document.querySelector("#processing-dialog");
+let processingCount = 0;
+let processingTimer;
+
+processingDialog.addEventListener("cancel", (event) => event.preventDefault());
+
+function beginProcessing() {
+  window.clearTimeout(processingTimer);
+  processingCount += 1;
+  if (!processingDialog.open) processingDialog.showModal();
+  document.body.setAttribute("aria-busy", "true");
+}
+
+function endProcessing() {
+  processingCount = Math.max(0, processingCount - 1);
+  if (processingCount) return;
+  processingTimer = window.setTimeout(() => {
+    processingTimer = null;
+    if (!processingCount && processingDialog.open) {
+      processingDialog.close();
+      document.body.removeAttribute("aria-busy");
+    }
+  }, 120);
+}
+
+async function withProcessing(operation) {
+  beginProcessing();
+  try {
+    return await operation();
+  } finally {
+    endProcessing();
+  }
+}
 
 async function request(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Permintaan tidak dapat diproses.");
-  return payload;
+  const sendRequest = async () => {
+    const response = await fetch(url, {
+      ...options,
+      headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Permintaan tidak dapat diproses.");
+    return payload;
+  };
+  if (["/api/admin/media", "/api/admin/import/preview", "/api/admin/import/commit"].includes(url)) {
+    return withProcessing(sendRequest);
+  }
+  return sendRequest();
 }
 
 function fillLocationSelect(select, prefix, count) {
@@ -466,7 +548,7 @@ function renderManageList() {
   records.forEach((record) => {
     const item = document.createElement("li");
     const text = document.createElement("span");
-    text.textContent = record.full_name;
+    text.textContent = record.full_name || `Nama belum dilengkapi (ID ${record.id})`;
     const detail = document.createElement("small");
     detail.textContent = record.publish_address ? "Alamat tampil untuk publik" : "Alamat hanya untuk pengelola";
     text.append(detail);
@@ -527,12 +609,14 @@ function renderManageList() {
 
 function openEditRecord(record) {
   const form = document.querySelector("#edit-record-form");
-  const area = record.area.match(/RT\s*0*(\d+).*?RW\s*0*(\d+)/i);
+  const area = String(record.area || "");
+  const rt = area.match(/RT\s*0*(\d+)/i);
+  const rw = area.match(/RW\s*0*(\d+)/i);
   form.dataset.recordId = String(record.id);
   form.elements.full_name.value = record.full_name || "";
   form.elements.gender.value = record.gender || "";
-  form.elements.rt.value = area?.[1] || "";
-  form.elements.rw.value = area?.[2] || "";
+  form.elements.rt.value = rt?.[1] || "";
+  form.elements.rw.value = rw?.[1] || "";
   form.elements.date_of_death.value = record.date_of_death || "";
   form.elements.address.value = record.address || "";
   form.elements.publish_address.checked = Boolean(record.publish_address);
@@ -571,7 +655,7 @@ function showSelectedPrivateData() {
   for (const relative of record.family || []) {
     const item = document.createElement("li");
     const label = document.createElement("span");
-    label.textContent = `${relative.full_name} · ${relative.relationship}`;
+    label.textContent = `${relative.full_name || "Nama belum diisi"} · ${relative.relationship || "Hubungan belum diisi"}`;
     const actions = document.createElement("div");
     actions.className = "manage-item-actions";
     const edit = document.createElement("button");
@@ -584,13 +668,11 @@ function showSelectedPrivateData() {
     const nameInput = document.createElement("input");
     nameInput.name = "full_name";
     nameInput.maxLength = 120;
-    nameInput.required = true;
     nameInput.value = relative.full_name;
     nameInput.setAttribute("aria-label", "Nama anggota keluarga");
     const relationshipInput = document.createElement("input");
     relationshipInput.name = "relationship";
     relationshipInput.maxLength = 60;
-    relationshipInput.required = true;
     relationshipInput.value = relative.relationship;
     relationshipInput.setAttribute("aria-label", "Hubungan keluarga");
     const save = document.createElement("button");
@@ -649,12 +731,14 @@ function showSelectedPrivateData() {
 }
 
 async function imageBase64(file) {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  }
-  return btoa(binary);
+  return withProcessing(async () => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return btoa(binary);
+  });
 }
 
 async function uploadImage(file, kind, extra = {}) {
@@ -665,14 +749,16 @@ async function uploadImage(file, kind, extra = {}) {
 }
 
 async function uploadNewsImage(articleId, file) {
-  const response = await fetch(`/api/admin/news/${articleId}/image`, {
-    method: "POST",
-    headers: { "Content-Type": file.type },
-    body: file,
+  return withProcessing(async () => {
+    const response = await fetch(`/api/admin/news/${articleId}/image`, {
+      method: "POST",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Foto berita tidak dapat diunggah.");
+    return payload;
   });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Foto berita tidak dapat diunggah.");
-  return payload;
 }
 
 // PANEL PENGELOLA: navigasi dan kontrol sesuai jabatan.
@@ -1288,6 +1374,15 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
     errorElement.textContent = error.message;
   }
 });
+document.querySelector("#import-select-all").addEventListener("change", (event) => {
+  const checkboxes = document.querySelectorAll("#import-preview-list .import-row-select input");
+  checkboxes.forEach((checkbox, index) => {
+    if (importRows[index].duplicate) return;
+    importRows[index].selected = event.currentTarget.checked;
+    checkbox.checked = event.currentTarget.checked;
+  });
+  updateImportSummary();
+});
 document.querySelector("#import-cancel").addEventListener("click", () => {
   importRows = [];
   document.querySelector("#import-preview-panel").hidden = true;
@@ -1297,19 +1392,25 @@ document.querySelector("#import-commit").addEventListener("click", async () => {
   const errorElement = document.querySelector("#import-commit-error");
   const resultElement = document.querySelector("#import-result");
   errorElement.textContent = "";
-  const selectedRows = importRows.filter((row) => row.selected).map((row) => {
+  const selectedImportRows = importRows.filter((row) => row.selected);
+  const invalidCount = selectedImportRows.filter((row) => !importRowIsValid(row)).length;
+  const selectedRows = selectedImportRows.filter(importRowIsValid).map((row) => {
     const cleanRow = {};
     for (const [field] of importFields) cleanRow[field] = row[field] ?? "";
     cleanRow.rt = Number(cleanRow.rt);
     cleanRow.rw = Number(cleanRow.rw);
     return cleanRow;
   });
+  if (!selectedRows.length) {
+    errorElement.textContent = "Pilih minimal satu baris dengan data valid untuk diimpor.";
+    return;
+  }
   try {
     const result = await request("/api/admin/import/commit", {
       method: "POST",
       body: JSON.stringify({ rows: selectedRows }),
     });
-    resultElement.textContent = `Impor selesai: ${result.created} data ditambahkan; ${result.skipped_duplicates} duplikat dilewati.`;
+    resultElement.textContent = `Impor selesai: ${result.created} data ditambahkan; ${result.skipped_duplicates} duplikat dilewati${invalidCount ? `; ${invalidCount} baris tidak valid dilewati` : ""}.`;
     resultElement.hidden = false;
     importRows = [];
     document.querySelector("#import-preview-list").replaceChildren();
