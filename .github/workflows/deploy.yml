@@ -29,7 +29,3 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/rifqiatha/bsk-rw007-kbu:latest
-
-      - name: Trigger Portainer Webhook
-        run: |
-          curl -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}"
