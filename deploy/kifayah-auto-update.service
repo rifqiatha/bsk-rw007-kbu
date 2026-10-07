@@ -1,0 +1,9 @@
+[Unit]
+Description=Pull perubahan Kifayah dari repo dan bangun ulang container
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/kifayah/deploy/auto-update.sh

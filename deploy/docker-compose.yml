@@ -1,0 +1,28 @@
+services:
+  kifayah:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: kifayah:latest
+    container_name: kifayah
+    restart: unless-stopped
+    environment:
+      PORT: "8000"
+      TZ: Asia/Jakarta
+    # Hanya localhost agar wajib lewat reverse proxy (HTTPS).
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Data pengguna: database + foto/berita. Jangan dihapus.
+      - ./persist:/app/persist
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/', timeout=5).status == 200 else 1)"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

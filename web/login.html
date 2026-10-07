@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ededed">
+  <title>Masuk Warga | Kifayah</title>
+  <link rel="stylesheet" href="/auth.css">
+  <script src="/auth.js" defer></script>
+</head>
+<body>
+  <main class="auth-shell">
+    <section id="auth-panel" class="auth-card" aria-labelledby="auth-title">
+      <header class="auth-heading">
+        <div><p class="eyebrow">Ruang Warga</p><h1 id="auth-title">Masuk Warga</h1></div>
+        <a class="auth-close" href="/" aria-label="Kembali ke halaman utama" title="Kembali ke halaman utama">×</a>
+      </header>
+      <p id="auth-description" class="auth-description">Masuk untuk membuka dashboard warga.</p>
+      <form id="login-form" class="auth-form">
+        <label>Nama Pengguna<input name="username" autocomplete="username" required placeholder="Masukkan nama pengguna"></label>
+        <label>Password<span class="password-control"><input name="password" type="password" autocomplete="current-password" required placeholder="Masukkan password"><button class="password-toggle" type="button" data-password-toggle aria-label="Tampilkan password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+        <p id="login-error" class="error-message" role="alert"></p>
+        <button class="submit-button" type="submit">Masuk</button>
+        <div class="auth-links"><button id="forgot-button" type="button">Lupa password?</button><button id="show-register" type="button">Daftar baru sebagai warga</button></div>
+        <p id="forgot-message" class="help-message" hidden>Untuk menjaga keamanan akun, hubungi admin BSK atau pengurus RT untuk verifikasi dan reset password.</p>
+      </form>
+      <form id="register-form" class="auth-form" hidden>
+        <label>Nama Lengkap<input name="full_name" autocomplete="name" maxlength="100" required placeholder="Masukkan nama lengkap"></label>
+        <label>Password<span class="password-control"><input name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="Minimal 8 karakter"><button class="password-toggle" type="button" data-password-toggle aria-label="Tampilkan password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+        <label>Ulangi Password<input name="confirm_password" type="password" autocomplete="new-password" minlength="8" required placeholder="Ulangi password"></label>
+        <p class="form-hint">Username akan dibuat otomatis dari nama lengkap Anda.</p>
+        <p id="register-error" class="error-message" role="alert"></p>
+        <button class="submit-button" type="submit">Daftar</button>
+        <div class="auth-links auth-links-end"><button id="show-login" type="button">Sudah punya akun? Masuk</button></div>
+      </form>
+      <section id="resident-dashboard" class="resident-dashboard" hidden aria-label="Dashboard warga">
+        <header class="resident-content-heading">
+          <div><p class="eyebrow">Ruang Warga</p><h1>Dashboard Warga</h1><p>Halo, <strong id="dashboard-greeting"></strong>. Pilih layanan yang ingin dibuka.</p></div>
+          <details class="resident-account-control">
+            <summary class="resident-account-trigger" aria-label="Menu akun warga">
+              <span class="resident-account-avatar" aria-hidden="true"><span class="resident-account-initial">W</span><img class="theme-profile-logo" src="/assets/bsk-logo-light.png" alt=""></span>
+              <span class="resident-account-details"><strong id="dashboard-name"></strong><small>Warga &middot; <span id="dashboard-username"></span></small></span>
+              <span class="resident-account-chevron" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+            </summary>
+            <div class="resident-account-menu">
+              <div class="resident-account-menu-copy"><strong id="dashboard-menu-name"></strong><small>Warga &middot; <span id="dashboard-menu-username"></span></small></div>
+              <button id="resident-logout" class="resident-account-logout" type="button">Keluar</button>
+            </div>
+          </details>
+        </header>
+        <div class="resident-menu-list" aria-label="Menu layanan warga">
+          <details class="resident-menu-group" data-resident-group="payments">
+            <summary>Pembayaran Iuran</summary>
+            <section class="resident-view resident-menu-content" data-resident-view="payments">
+            <div class="resident-view-heading"><div><p class="eyebrow">Iuran BSK</p><h2>Pembayaran Iuran</h2></div><p>Isi sesuai nominal yang berlaku.</p></div>
+            <form id="payment-form" class="payment-form">
+              <label>Periode iuran<input name="period" type="month" required></label>
+              <label>Nominal dibayar<input name="amount" type="number" min="1" step="1" inputmode="numeric" required placeholder="Contoh: 10000"></label>
+              <label>Tanggal pembayaran<input name="paid_at" type="date" required></label>
+              <label>Metode pembayaran<select name="method" required><option value="">Pilih metode</option><option>Transfer Bank</option><option>E-Wallet</option><option>Tunai</option></select></label>
+              <label class="payment-proof-field">Bukti pembayaran<input name="proof" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" required><span class="form-hint">JPG, PNG, WebP, atau PDF. Maksimal 5 MB.</span></label>
+              <p id="payment-error" class="error-message" role="alert"></p>
+              <button class="submit-button" type="submit">Kirim Bukti Pembayaran</button>
+            </form>
+            <div class="payment-history-heading"><h3>Riwayat Pembayaran</h3><button id="payment-refresh" class="quiet-button" type="button">Perbarui</button></div>
+            <div id="payment-history" class="payment-history" aria-live="polite"><p class="form-hint">Riwayat pembayaran akan tampil di sini.</p></div>
+            </section>
+          </details>
+          <details class="resident-menu-group" data-resident-group="program">
+            <summary>Informasi Program</summary>
+            <section class="resident-view resident-menu-content" data-resident-view="program">
+            <p class="eyebrow">Badan Sosial Kifayah</p><h2>Informasi Program</h2>
+            <div id="resident-program-info" class="resident-info-card" aria-live="polite">Memuat informasi program?</div>
+            </section>
+          </details>
+          <details class="resident-menu-group" data-resident-group="deaths">
+            <summary>Data Kematian</summary>
+            <section class="resident-view resident-menu-content" data-resident-view="deaths">
+            <p class="eyebrow">Arsip warga</p><h2>Data Kematian</h2>
+            <div id="resident-death-list" class="resident-data-list" aria-live="polite">Memuat arsip warga?</div>
+            </section>
+          </details>
+          <details class="resident-menu-group" data-resident-group="finances">
+            <summary>Data Keuangan</summary>
+            <section class="resident-view resident-menu-content" data-resident-view="finances">
+            <p class="eyebrow">Laporan terbuka</p><h2>Data Keuangan</h2>
+            <div id="resident-finance-summary" class="resident-finance-summary"></div>
+            <div id="resident-finance-list" class="resident-data-list" aria-live="polite">Memuat laporan keuangan?</div>
+            </section>
+          </details>
+        </div>
+        <main id="resident-workspace-content" class="resident-workspace-content" aria-live="polite"></main>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

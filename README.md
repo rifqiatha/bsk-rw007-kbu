@@ -4,6 +4,14 @@ Website pemantau data-data kematian di RW 007 Kelurahan Bambu Utara.
 
 Website sederhana untuk melihat daftar warga yang telah berpulang dan mengelola entri bersama melalui satu server.
 
+## Arah perancangan UCD
+
+Rancangan mengikuti User-Centered Design berdasarkan wawancara warga RT 005 dan RT 011, Admin/Ketua Program BSK, serta Ketua RW 007. Temuan yang menjadi acuan meliputi sulitnya memeriksa status iuran, risiko kartu fisik hilang, informasi WA yang tertumpuk, pencatatan Excel, validasi melalui RT/admin, kebutuhan monitoring peserta/keuangan/kematian, serta perlindungan NIK dan NKK. Antarmuka ditujukan untuk ponsel Android dengan teks dan tombol yang jelas, serta dukungan pengurus/keluarga bagi warga yang memerlukannya.
+
+Pain point utama: status pembayaran sulit diperiksa mandiri; bukti masih bergantung pada kartu; informasi program mudah terlewat; validasi dan pembaruan data dilakukan manual; data peserta, keuangan, dan kematian belum terpusat; kemampuan digital warga beragam.
+
+Website menyediakan arsip data kematian serta dashboard Warga dan Pengelola yang terpisah. Warga membuka **Masuk** di kanan atas, lalu memilih daftar akun; username dibuat dari nama (nama yang sama mendapat akhiran angka) dan warga memilih password sendiri. Dashboard warga memuat **Pembayaran Iuran** (periode, nominal, metode/tanggal, dan bukti JPG/PNG/WebP/PDF maksimal 5 MB), **Informasi Program**, **Data Kematian**, dan **Data Keuangan**. Admin dapat memverifikasi pembayaran, memperbarui informasi program, dan mencatat pemasukan/pengeluaran yang dibagikan kepada warga. Catatan keuangan bersifat ringkasan publik bagi akun warga; jangan masukkan data pribadi atau nomor rekening. Besaran iuran mengikuti ketentuan BSK dan diisi warga; aplikasi tidak menentukan nominal.
+
 ## Peta Kode
 
 - `web/index.html`: HEADER, COVER, ARSIP, FOOTER, dan panel PENGELOLA.
@@ -33,7 +41,7 @@ Server mendengarkan pada semua antarmuka jaringan, jadi tidak memerlukan perubah
 
 Jangan membuat port forwarding router atau membagikan network ID ke orang yang tidak berwenang. Batasi anggota jaringan/aturan akses ZeroTier karena admin dan data warga tersedia bagi perangkat yang dapat mencapai server.
 
-Pada instalasi yang belum memiliki akun, login awal adalah username `admin` dan kata sandi `admin`. Kata sandi ini wajib diganti menjadi minimal 8 karakter sebelum dashboard dapat digunakan. Buka ikon perisai atau `/admin` untuk masuk. Perubahan tersimpan pada `kifayah.sqlite3` dan muncul pada pengunjung lain dalam paling lama 15 detik.
+Pada instalasi yang belum memiliki akun, login awal adalah username `admin` dan kata sandi `admin`. Akun pengguna baru dibuat dengan kata sandi awal `user` dan wajib menggantinya saat login pertama. Kata sandi baru tidak memiliki batas minimum karakter, tetapi tidak boleh kosong. Buka ikon perisai atau `/admin` untuk masuk. Perubahan tersimpan pada `kifayah.sqlite3` dan muncul pada pengunjung lain dalam paling lama 15 detik.
 
 Super Admin dapat menambah pengguna lewat tombol **Tambah Pengguna**, menyimpan nama depan/belakang, kontak, foto opsional, dan memilih **Level**. Aksi **Edit** membuka form yang sama untuk memperbarui profil. Dari tabel **Akun & Jabatan**, Super Admin juga dapat mengubah level/status, mereset sandi, atau menghapus akun. Akun yang sedang digunakan tidak dapat dihapus dan Super Admin aktif terakhir tidak dapat diturunkan/nonaktifkan. Admin dan Super Admin dapat menulis, mengedit, serta menghapus berita melalui tab **Berita**; artikel manual dapat memuat foto, tampil sebagai berita unggulan dan carousel arsip yang dapat dibuka untuk membaca isi lengkap. Semua berita lama tetap dapat dijelajahi. Staff tidak memiliki akses mengelola berita. Admin dapat mengelola data warga, detail privat, keluarga, dan impor; Staff dapat melihat data dasar dan menambahkan entri, tetapi tidak dapat melihat detail privat, mengedit/menghapus, atau mempublikasikan alamat. Hanya Super Admin yang dapat mengelola pengguna, mengubah pengaturan wilayah/tampilan, dan mengunduh ekspor XLSX.
 
@@ -45,11 +53,13 @@ Untuk mengubah record yang sudah ada, buka tab **Data Warga**, tekan **Edit** pa
 
 Admin dapat menyimpan nomor kartu keluarga, NIK, tempat/tanggal lahir, agama, dan hubungan keluarga pada tiap entri. Informasi tersebut hanya dikirim melalui endpoint admin dan tidak disertakan di daftar publik. Foto almarhum/almarhumah bersifat privat sampai admin mencentang izin tampil publik. Ikon situs, gambar utama, foto profil, dan foto warga menerima PNG, JPEG, atau WebP hingga 5 MB. Foto berita tidak memiliki batas ukuran yang ditetapkan aplikasi dan diunggah secara streaming; ukuran praktis tetap bergantung pada kapasitas disk, hosting, dan koneksi. PNG/WebP dapat menyimpan transparansi; JPEG selalu opak, dan latar putih yang sudah menyatu di dalam gambar tidak otomatis menjadi transparan.
 
-Admin dapat mengimpor XLSX, XLS, CSV, DOCX, PDF, PNG, JPG, atau WebP dari bagian **Impor data dari file**. Unduh template XLSX untuk format yang paling akurat. PDF dan gambar diproses OCR secara lokal; selalu periksa dan koreksi pratinjau sebelum impor, termasuk jenis kelamin P/L yang mungkin terlalu kecil terbaca OCR. Baris tanpa nama, jenis kelamin, RT/RW, atau tanggal wafat yang valid tidak dapat disimpan. Data alamat tetap privat, dan informasi KK/NIK/keluarga hanya disimpan pada detail admin. Batas impor satu file 10 MB dan 500 baris. Simpan nomor KK/NIK sebagai teks di Excel agar digitnya tidak dibulatkan Excel.
+Admin dapat memilih tujuan impor **Daftar Warga - Wafat** atau **Daftar Warga - Iuran** pada menu **Impor Data**. Masing-masing tujuan memiliki template XLSX sendiri; template iuran memuat data profil warga, **Disetorkan Kepada**, dan kolom setoran opsional. Untuk mengimpor setoran, isi **Bulan Iuran**, **Tanggal Pembayaran**, dan **Nominal Setoran** bersama-sama. XLSX, XLS, CSV, DOCX, PDF, PNG, JPG, dan WebP didukung; PDF dan gambar diproses OCR secara lokal. Periksa dan koreksi pratinjau sebelum impor. Baris warga wafat tanpa nama, RT/RW, atau tanggal wafat valid tidak dapat disimpan. Foto warga tidak diimpor dari template iuran dan dapat diunggah lewat **Edit Data Warga**. Data alamat tetap privat; informasi KK/NIK/keluarga hanya disimpan untuk pengelola. Batas impor satu file 10 MB dan 500 baris. Simpan nomor KK/NIK sebagai teks di Excel agar digitnya tidak dibulatkan Excel.
 
 Pada tab **Data warga**, admin dapat mencetak roster dasar atau mengunduh XLSX dengan sheet Data Warga, Identitas Privat, dan Keluarga. File XLSX mencakup informasi privat; batasi akses dan simpan dengan aman.
 
 Pilih **Logo pertama** atau **Logo kedua** pada dropdown admin, lalu unggah gambar untuk mengganti slot tersebut. Keduanya tampil berdampingan dengan pemisah `|`. Ikon transparan ditampilkan tanpa latar dan tanpa dipotong. Ukuran kedua logo dapat diatur terpisah dari 50% sampai 200%; masing-masing slider menampilkan pratinjau langsung dan punya tombol simpan sendiri.
+
+Di bagian **Logo Situs**, admin dapat memilih lokasi **Logo Pertama**, **Logo Kedua**, **Gambar Utama**, atau **Slideshow Foto dan Video**, lalu mengatur gambar untuk tema terang dan gelap pada lokasi tersebut. Unggah varian teks hitam untuk tema terang dan teks putih untuk tema gelap. Kontrol yang dipilih dibuka dalam popup pada tampilan mobile. Jika unggahan tema dihapus, situs memakai gambar standar untuk lokasi itu.
 
 ## Sebelum dibuka ke internet
 

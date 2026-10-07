@@ -1,0 +1,13 @@
+.git/
+.gitignore
+.venv/
+__pycache__/
+*.py[cod]
+kifayah.sqlite3*
+run.log
+run.err.log
+server_startup.log
+File Mentah/
+uploads/
+deploy/persist/
+deploy/auto-update.log

@@ -1,0 +1,77 @@
+/* Theme Pack 164 — CERAMIC (id: ceramic) v1.9.0
+   Sumber: Sixth Design Studio. Semua komponen memakai var(--tp-*) saja.
+   Rebrand: ubah hanya --tp-h (0-360) pada elemen yang sama dengan data-theme. */
+
+@keyframes tp-pop{0%{transform:scale(.88);opacity:0}62%{transform:scale(1.05)}100%{transform:scale(1);opacity:1}}
+@keyframes tp-up{from{transform:translateY(var(--tp-reveal-dist,16px));opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes tp-down{from{transform:translateY(-16px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes tp-sheet{from{transform:translateY(102%)}to{transform:translateY(0)}}
+@keyframes tp-fade{from{opacity:0}to{opacity:1}}
+@keyframes tp-wipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes tp-curtain{from{clip-path:inset(100% 0 0 0);transform:translateY(var(--tp-reveal-dist,16px))}to{clip-path:inset(0 0 0 0);transform:translateY(0)}}
+@keyframes tp-rise{from{clip-path:inset(0 0 100% 0);transform:translateY(var(--tp-reveal-dist,16px))}to{clip-path:inset(0 0 0 0);transform:translateY(0)}}
+@keyframes tp-blur-in{from{opacity:0;filter:blur(16px);transform:scale(1.05) translateY(var(--tp-reveal-dist,16px))}to{opacity:1;filter:blur(0);transform:scale(1) translateY(0)}}
+@keyframes tp-glitch{0%{opacity:0;transform:translate3d(-6px,0,0);clip-path:inset(40% 0 38% 0)}18%{opacity:1;transform:translate3d(5px,0,0);clip-path:inset(12% 0 62% 0)}36%{transform:translate3d(-3px,0,0);clip-path:inset(68% 0 6% 0)}54%{transform:translate3d(2px,0,0);clip-path:inset(0 0 0 0)}72%{transform:translate3d(-1px,0,0)}100%{opacity:1;transform:none;clip-path:inset(0 0 0 0)}}
+@keyframes tp-tape{from{opacity:0;transform:rotate(-9deg) translateY(var(--tp-reveal-dist,16px)) scale(.95)}to{opacity:1;transform:rotate(var(--tp-img-tilt,0deg)) translateY(0) scale(1)}}
+@keyframes tp-zoom{from{transform:scale(1.16)}to{transform:scale(1)}}
+@keyframes tp-bar{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes tp-shake{10%,90%{transform:translateX(-2px)}30%,70%{transform:translateX(3px)}50%{transform:translateX(-4px)}}
+@keyframes tp-pulse{0%,100%{opacity:1}50%{opacity:.42}}
+@keyframes tp-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}
+@keyframes tp-shimmer{from{background-position:-160% 0}to{background-position:260% 0}}
+@keyframes tp-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+@keyframes tp-spin{to{transform:rotate(360deg)}}
+@keyframes tp-blink{50%{opacity:0}}
+@keyframes tp-tilt{0%,100%{transform:rotate(-2.5deg)}50%{transform:rotate(2.5deg)}}
+@keyframes tp-drift{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(4%,-3%,0) scale(1.12)}100%{transform:translate3d(0,0,0) scale(1)}}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important}}
+
+/* Lapisan tekstur (Wild collection). CERAMIC tenang: --tp-fx:none, opacity 0. */
+.tp-web-stage{position:relative;isolation:isolate;overflow:hidden;animation:var(--tp-3d-web,none);transform-origin:50% 50%}
+.tp-web-stage>.tp-fx{inset:-20%}
+.tp-fx{position:absolute;inset:-40%;z-index:-1;pointer-events:none;background:var(--tp-fx);background-size:var(--tp-fx-size);opacity:var(--tp-fx-op);mix-blend-mode:var(--tp-fx-blend);transform:var(--tp-fx-tf);animation:var(--tp-fx-anim)}
+.tp-screen{position:relative;isolation:isolate;overflow:hidden}
+.tp-stage{transform:var(--tp-3d);animation:var(--tp-3d-anim);transform-style:preserve-3d}
+
+/* Paket token CERAMIC */
+[data-theme="ceramic"]{--tp-h:60;--tp-fx:none;--tp-fx-size:auto;--tp-fx-anim:none;--tp-fx-op:0;--tp-fx-blend:normal;--tp-fx-tf:none;--tp-3d:none;--tp-3d-anim:none;--tp-3d-web:none;--tp-dur-slow:760ms;--tp-stagger:90ms;--tp-reveal:tp-up;--tp-reveal-dist:12px;--tp-img-r:32px;--tp-img-frame:none;--tp-img-sh:none;--tp-img-filter:saturate(.8) contrast(1.02);--tp-img-overlay-op:0;--tp-img-blend:normal;--tp-img-tilt:0deg;--tp-img-ar:1 / 1;--tp-bg:#f3efe8;--tp-canvas:#f3efe8;--tp-surf:#fbf9f5;--tp-surf-2:#e6dfd3;--tp-ink:#26211b;--tp-mute:#6b6257;--tp-acc:oklch(0.42 0.04 calc(var(--tp-h) + 0));--tp-acc-2:oklch(0.7 0.07 calc(var(--tp-h) + 150));--tp-acc-ink:#fbf9f5;--tp-line:#dbd2c4;--tp-grad:linear-gradient(135deg, #3a332b, #26211b);--tp-r:32px;--tp-r-sm:18px;--tp-r-lg:40px;--tp-r-btn:99px;--tp-sh:0 18px 34px rgba(38,33,27,.1), inset 0 1px 0 rgba(255,255,255,.8);--tp-sh-sm:0 4px 12px rgba(38,33,27,.07);--tp-bw:1px;--tp-font-display:'Hanken Grotesk', system-ui;--tp-font-body:'Hanken Grotesk', system-ui;--tp-font-mono:'JetBrains Mono', monospace;--tp-w-display:300;--tp-track-display:-0.05em;--tp-case-display:none;--tp-hero:80px;--tp-dur:200ms;--tp-ease:cubic-bezier(.22,1,.36,1);--tp-press:0.99;--tp-tex:none;--tp-blur:none;}
+
+/* Ekstensi paket: token keadaan destruktif/kesalahan. Paket CERAMIC tidak
+   menyediakan nada untuk galat, jadi satu nada tanah liat dideklarasikan di
+   lapisan tema ini — bukan ditulis langsung di komponen. */
+[data-theme="ceramic"]{
+  --tp-clay:oklch(0.52 0.12 38);
+  --tp-clay-ink:#fbf9f5;
+  --tp-mono-track:0.01em;
+}
+
+[data-theme="ceramic"] {
+  --tp-dur-slow: 400ms;
+  --tp-stagger: 30ms;
+  --tp-reveal-dist: 4px;
+}
+
+/* Palet grayscale untuk seluruh tampilan aplikasi. */
+[data-theme="ceramic"] {
+  --tp-bg: #ededed;
+  --tp-canvas: #ededed;
+  --tp-surf: #f8f8f8;
+  --tp-surf-2: #e2e2e2;
+  --tp-ink: #171717;
+  --tp-mute: #5b5b5b;
+  --tp-acc: #292929;
+  --tp-acc-2: #bdbdbd;
+  --tp-acc-ink: #fff;
+  --tp-line: #d0d0d0;
+  --tp-grad: linear-gradient(135deg, #3a3a3a, #171717);
+  --tp-clay: #555;
+  --tp-clay-ink: #fff;
+  --tp-sh: 0 18px 34px rgba(0, 0, 0, .1), inset 0 1px 0 rgba(255, 255, 255, .8);
+  --tp-sh-sm: 0 4px 12px rgba(0, 0, 0, .07);
+}
+
+/* Perlakuan gambar: bungkus foto dengan .tp-img, overlay opsional .tp-img-glaze. */
+.tp-img{position:relative;overflow:hidden;aspect-ratio:var(--tp-img-ar);border-radius:var(--tp-img-r);border:var(--tp-img-frame);box-shadow:var(--tp-img-sh);filter:var(--tp-img-filter);transform:rotate(var(--tp-img-tilt));background:var(--tp-surf-2)}
+.tp-img>.tp-img-glaze{position:absolute;inset:0;pointer-events:none;background:var(--tp-grad);opacity:var(--tp-img-overlay-op);mix-blend-mode:var(--tp-img-blend)}
+.tp-img>img,.tp-img>video{display:block;width:100%;height:100%;object-fit:cover}
+.tp-plate{border:var(--tp-bw) solid var(--tp-line);border-radius:var(--tp-r);background:var(--tp-surf);box-shadow:var(--tp-sh)}

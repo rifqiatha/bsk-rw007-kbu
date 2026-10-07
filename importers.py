@@ -23,6 +23,13 @@ FIELD_ALIASES = {
 	},
 	"address": {"alamat", "alamat lengkap", "address"},
 	"religion": {"agama", "religion"},
+	"payment_recipient": {"disetorkan kepada", "disetor kepada", "penerima setoran", "recipient"},
+	"relationship": {"hubungan", "hubungan keluarga", "status hubungan", "relation"},
+	"phone": {"no hp", "nomor hp", "no handphone", "nomor handphone", "hp", "phone", "telepon"},
+	"residence_status": {"status", "status domisili", "status kependudukan", "tetap/kontrak/kos", "tetap kontrak kos"},
+	"payment_period": {"bulan iuran", "periode iuran", "periode pembayaran", "payment period"},
+	"paid_at": {"tanggal pembayaran", "tanggal setoran", "paid at"},
+	"amount": {"nominal setoran", "nominal dibayar", "jumlah setoran", "amount"},
 	"living_family_name": {"nama keluarga", "nama anggota keluarga", "nama kerabat", "nama keluarga yang hidup"},
 	"living_family_relationship": {"hubungan keluarga", "hubungan kerabat", "relationship keluarga", "hubungan"},
 }
@@ -123,8 +130,19 @@ def _normalize_record(source, warnings):
 				"P": "P", "PEREMPUAN": "P", "WANITA": "P",
 				"L": "L", "LAKI LAKI": "L", "PRIA": "L",
 			}.get(normalized_gender, normalized_gender)
-		elif field in ("birth_date", "date_of_death"):
+		elif field in ("birth_date", "date_of_death", "paid_at"):
 			record[field] = _parse_date(record[field])
+		elif field == "payment_period":
+			value = record[field]
+			if isinstance(value, (datetime, date)):
+				record[field] = value.isoformat()[:7]
+			else:
+				text = _text(value)
+				if re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", text):
+					record[field] = text
+				else:
+					parsed = _parse_date(value)
+					record[field] = parsed[:7] if re.fullmatch(r"\d{4}-\d{2}-\d{2}", parsed) else text
 		else:
 			value = record[field]
 			record[field] = _text(value)
@@ -135,13 +153,43 @@ def _normalize_record(source, warnings):
 	return record
 
 
+def _records_with_known_fields(matrix, fields, warnings):
+	results = []
+	for values in matrix:
+		if not any(_text(value) for value in values):
+			continue
+		if "full_name" in [_field_for_header(value) for value in values]:
+			continue  # baris judul kolom yang terulang
+		source = {}
+		for column_index, field in enumerate(fields):
+			if field and column_index < len(values):
+				source[field] = values[column_index]
+		record = _normalize_record(source, warnings)
+		if record["full_name"]:
+			results.append(record)
+	return results
+
+
 def _header_row_to_records(matrix, warnings, datemode=None):
 	for row_index, row in enumerate(matrix[:50]):
+		if sum(1 for value in row if _text(value)) < 2:
+			continue  # lewati baris kosong atau baris judul kop
 		fields = [_field_for_header(value) for value in row]
+		next_row = matrix[row_index + 1] if row_index + 1 < len(matrix) else None
+		if next_row is not None:
+			for column_index, field in enumerate(fields):
+				if field is None and column_index < len(next_row):
+					combined = f"{_text(row[column_index])} {_text(next_row[column_index])}".strip()
+					merged = _field_for_header(combined)
+					if merged:
+						fields[column_index] = merged
 		if "full_name" not in fields or sum(field is not None for field in fields) < 2:
 			continue
+		data_start = row_index + 1
+		if next_row is not None and any(_field_for_header(value) for value in next_row):
+			data_start = row_index + 2
 		results = []
-		for values in matrix[row_index + 1:]:
+		for values in matrix[data_start:]:
 			if not any(_text(value) for value in values):
 				continue
 			source = {}
@@ -327,7 +375,25 @@ def _parse_pdf(content, warnings):
 		document = pymupdf.open(stream=content, filetype="pdf")
 	except Exception as error:
 		raise ImportFormatError(f"PDF tidak dapat dibuka: {error}") from error
+	last_header_fields = None
 	for page in document:
+		page_results = []
+		try:
+			for table in page.find_tables().tables:
+				matrix = table.extract()
+				found = _header_row_to_records(matrix, warnings)
+				if found:
+					page_header = [_field_for_header(v) for v in matrix[0]] if matrix else []
+					if "full_name" in page_header:
+						last_header_fields = page_header
+					page_results.extend(found)
+				elif last_header_fields:
+					page_results.extend(_records_with_known_fields(matrix, last_header_fields, warnings))
+		except Exception:
+			page_results = []
+		if page_results:
+			results.extend(page_results)
+			continue
 		words = page.get_text("words")
 		if words:
 			tokens = [
@@ -400,6 +466,46 @@ def template_xlsx():
 	for row in worksheet.iter_rows(min_row=2, max_row=1001, min_col=7, max_col=8):
 		for cell in row:
 			cell.number_format = "@"
+	stream = io.BytesIO()
+	workbook.save(stream)
+	return stream.getvalue()
+
+
+def contribution_template_xlsx():
+	from openpyxl import Workbook
+	from openpyxl.styles import Font, PatternFill
+
+	workbook = Workbook()
+	worksheet = workbook.active
+	worksheet.title = "Daftar Warga Iuran"
+	headers = [
+		"Nama", "Nomor Kartu Keluarga", "NIK", "RT", "RW", "Jenis Kelamin",
+		"Tempat Lahir", "Tanggal Lahir", "Agama", "Hubungan", "No HP",
+		"Status", "Alamat Lengkap", "Disetorkan Kepada", "Bulan Iuran",
+		"Tanggal Pembayaran", "Nominal Setoran",
+	]
+	worksheet.append(headers)
+	for cell in worksheet[1]:
+		cell.font = Font(bold=True, color="FFFFFF")
+		cell.fill = PatternFill("solid", fgColor="174D3C")
+	worksheet.freeze_panes = "A2"
+	worksheet.auto_filter.ref = f"A1:Q1"
+	for column, width in enumerate((28, 28, 28, 8, 8, 16, 20, 16, 14, 18, 18, 12, 34, 28, 20, 22, 22), start=1):
+		worksheet.column_dimensions[chr(64 + column)].width = width
+	for row in worksheet.iter_rows(min_row=2, max_row=1001, min_col=2, max_col=3):
+		for cell in row:
+			cell.number_format = "@"
+	instructions = workbook.create_sheet("Petunjuk")
+	instructions.append(["Petunjuk Template Daftar Warga BSK"])
+	instructions.append(["Isi satu baris untuk setiap warga sesuai kolom Data BSK. Hubungan, No HP, Alamat, Disetorkan Kepada, Status, dan kolom iuran dapat diisi sesuai kebutuhan."])
+	instructions.append(["Tanggal lahir dapat memakai format YYYY-MM-DD atau DD/MM/YYYY."])
+	instructions.append(["Kolom Bulan Iuran, Tanggal Pembayaran, dan Nominal Setoran opsional; isi ketiganya bersama-sama untuk mencatat setoran."])
+	instructions.append(["Bulan Iuran gunakan format YYYY-MM, tanggal gunakan YYYY-MM-DD atau DD/MM/YYYY, nominal isi angka tanpa pemisah ribuan atau simbol mata uang."])
+	instructions.append(["RT dan RW harus berada dalam jumlah wilayah yang diatur di panel admin."])
+	instructions.append(["NIK dan Nomor Kartu Keluarga sebaiknya disimpan sebagai teks di Excel."])
+	instructions.append(["Foto warga tidak diimpor dari file ini; unggah foto melalui Edit Data Warga."])
+	instructions.column_dimensions["A"].width = 110
+	instructions["A1"].font = Font(bold=True, color="174D3C")
 	stream = io.BytesIO()
 	workbook.save(stream)
 	return stream.getvalue()

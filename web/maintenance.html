@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3efe8">
+  <title>Sedang Maintenance | Data Kifayah</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    /* Palet CERAMIC (id: ceramic) pada --tp-h:60. Nilai aksen sama dengan paket tema. */
+    :root { color-scheme: light; --ink: #26211b; --muted: #6b6257; --line: #dbd2c4; --paper: #f3efe8; --surface: #fbf9f5; --surface-soft: #e6dfd3; --clay: #5e4837; --glaze: #68abb6; --clay-tint: color-mix(in srgb, var(--clay) 9%, var(--surface)); --font-body: {{FONT_BODY}}; --font-display: {{FONT_DISPLAY}}; --font-mono: "JetBrains Mono", monospace; --font-scale: {{FONT_SCALE}}; --text-align: {{TEXT_ALIGNMENT}}; }
+    * { box-sizing: border-box; }
+    body { display: grid; min-height: 100vh; place-items: center; margin: 0; padding: 24px; color: var(--ink); background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--glaze) 20%, transparent), transparent 62%), var(--paper); font-family: var(--font-body); font-size: calc(16px * var(--font-scale)); }
+    main { width: min(100%, 680px); padding: 48px; border: 1px solid var(--line); border-radius: 40px; background: var(--surface); text-align: center; box-shadow: 0 18px 34px rgba(38, 33, 27, .1), inset 0 1px 0 rgba(255, 255, 255, .8); }
+    .barrier { display: block; width: min(100%, 230px); height: auto; margin: 0 auto 20px; }
+    .eyebrow { margin: 0 0 10px; color: var(--clay); font-size: calc(11px * var(--font-scale)); font-weight: 600; letter-spacing: .2em; text-transform: uppercase; }
+    h1 { margin: 0; color: var(--ink); font-family: var(--font-display); font-size: calc(50px * var(--font-scale)); font-weight: 300; line-height: 1.05; letter-spacing: -.05em; }
+    .message { max-width: 460px; margin: 16px auto 0; color: var(--muted); font-size: calc(16px * var(--font-scale)); line-height: 1.7; text-align: var(--text-align); }
+    .timer-label { margin: 30px 0 8px; color: var(--muted); font-size: calc(13px * var(--font-scale)); }
+    #countdown { margin: 0; color: var(--clay); font-family: var(--font-mono); font-size: calc(46px * var(--font-scale)); font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: .01em; }
+    #end-time { margin: 9px 0 0; color: var(--muted); font-size: calc(14px * var(--font-scale)); }
+    .refresh { min-height: 46px; margin-top: 27px; padding: 0 24px; border: 0; border-radius: 99px; color: var(--surface); background: var(--clay); font: inherit; font-weight: 600; cursor: pointer; transition: transform 200ms cubic-bezier(.22, 1, .36, 1), box-shadow 200ms cubic-bezier(.22, 1, .36, 1); }
+    .refresh:hover { box-shadow: 0 10px 22px rgba(38, 33, 27, .18); transform: translateY(-2px); }
+    .refresh:active { transform: scale(.99); }
+    .footnote { margin: 22px 0 0; color: var(--muted); font-size: calc(12px * var(--font-scale)); }
+    @media (max-width: 650px) {
+      body { align-items: start; padding: 16px; }
+      main { padding: 26px 20px; border-radius: 32px; }
+      .barrier { width: 154px; margin-bottom: 16px; }
+      h1 { font-size: calc(34px * var(--font-scale)); line-height: 1.1; }
+      .message { margin-top: 12px; font-size: calc(15px * var(--font-scale)); line-height: 1.6; }
+      .timer-label { margin-top: 24px; }
+      #countdown { font-size: calc(32px * var(--font-scale)); letter-spacing: .01em; }
+      #end-time { font-size: calc(13px * var(--font-scale)); }
+      .refresh { min-height: 48px; margin-top: 22px; }
+      .footnote { margin-top: 17px; line-height: 1.5; }
+    }
+    @media (max-width: 360px) {
+      body { padding: 12px; }
+      main { padding: 21px 15px; }
+      h1 { font-size: calc(32px * var(--font-scale)); }
+      #countdown { font-size: calc(28px * var(--font-scale)); }
+    }
+    @media (prefers-reduced-motion: reduce) { .refresh { transition: none; } .refresh:hover { transform: none; } }
+    @media (prefers-reduced-motion: no-preference) {
+      main { animation: arrive .45s ease-out both; }
+      @keyframes arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <svg class="barrier" viewBox="0 0 240 132" role="img" aria-label="Pembatas jalan sedang diperbaiki">
+      <path d="M42 115h156M63 89l-10 26m124-26 10 26" fill="none" stroke="#5e4837" stroke-width="10" stroke-linecap="round" />
+      <rect x="17" y="26" width="206" height="64" rx="14" fill="#5e4837" />
+      <path d="m41 28 42 0-38 60H17zm83 0h42l-40 62H84zm81 0h18v28l-20 32h-42z" fill="#f3efe8" />
+      <path d="M28 104h184" stroke="#68abb6" stroke-width="5" stroke-linecap="round" />
+    </svg>
+    <p class="eyebrow">Data Kifayah</p>
+    <h1>Sedang Maintenance</h1>
+    <p class="message">{{MESSAGE}}</p>
+    <p class="timer-label">Perkiraan waktu tersisa</p>
+    <p id="countdown" role="timer" aria-label="Hitung mundur maintenance">--:--:--</p>
+    <p id="end-time"></p>
+    <button class="refresh" type="button" onclick="location.reload()">Cek Kembali</button>
+    <p id="status" class="footnote" role="status">Halaman akan pulih otomatis setelah maintenance selesai.</p>
+  </main>
+  <script>
+    const endAt = {{END_TIMESTAMP}};
+    const countdown = document.querySelector("#countdown");
+    const endLabel = document.querySelector("#end-time");
+    let reloadScheduled = false;
+    if (endAt) endLabel.textContent = `Perkiraan selesai ${new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeStyle: "short" }).format(new Date(endAt))}`;
+    function updateCountdown() {
+      const remaining = Math.max(0, Math.floor((endAt - Date.now()) / 1000));
+      const days = Math.floor(remaining / 86400);
+      const hours = Math.floor(remaining % 86400 / 3600);
+      const minutes = Math.floor(remaining % 3600 / 60);
+      const seconds = remaining % 60;
+      countdown.textContent = `${days ? `${days} hari ` : ""}${[hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":")}`;
+      if (remaining === 0 && !reloadScheduled) {
+        reloadScheduled = true;
+        document.querySelector("#status").textContent = "Waktu maintenance terlewati. Halaman sedang memeriksa kembali.";
+        window.setTimeout(() => location.reload(), 15000);
+      }
+    }
+    updateCountdown();
+    window.setInterval(updateCountdown, 1000);
+  </script>
+</body>
+</html>
