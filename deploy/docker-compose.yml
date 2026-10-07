@@ -2,7 +2,7 @@ services:
   kifayah:
     build:
       context: ..
-      dockerfile: deploy/Dockerfile
+      dockerfile: Dockerfile
     image: kifayah:latest
     container_name: kifayah
     restart: unless-stopped

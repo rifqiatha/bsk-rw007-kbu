@@ -8,7 +8,7 @@ Yang sudah disiapkan di repo:
 
 | Berkas | Fungsi |
 | --- | --- |
-| `deploy/Dockerfile` | Build image Python 3.11 + dependensi |
+| `Dockerfile` | Build image Python 3.10 + dependensi |
 | `deploy/entrypoint.sh` | Menautkan `kifayah.sqlite3` dan `uploads/` ke folder persisten |
 | `deploy/docker-compose.yml` | Menjalankan layanan di port 8000, hanya localhost |
 | `deploy/auto-update.sh` | Tarik perubahan dari repo, backup DB, bangun ulang container |
