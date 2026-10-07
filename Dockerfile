@@ -1,19 +1,30 @@
 FROM python:3.10-slim
 
-# Pasang dependensi sistem yang sering dibutuhkan oleh modul Python tertentu
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
-# Salin requirements dan instal (abaikan error jika ada modul yang tidak cocok versi)
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt --break-system-packages
+# Zona waktu Indonesia dan port aplikasi
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    TZ=Asia/Jakarta \
+    PORT=8000
 
-COPY . .
+# Pasang tzdata supaya jadwal server mengikuti WIB
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
-# Menjalankan aplikasi utama Anda
+# Pasang dependensi (openpyxl, PyMuPDF, RapidOCR, Pillow, dll)
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Salin semua file proyek ke dalam container
+COPY . /app
+
+# Siapkan skrip entrypoint dan folder data persisten
+RUN chmod +x /app/deploy/entrypoint.sh && mkdir -p /app/persist
+
+EXPOSE 8000
+
+# Mulai aplikasi
+ENTRYPOINT ["/app/deploy/entrypoint.sh"]
 CMD ["python", "Kifayah.py"]
