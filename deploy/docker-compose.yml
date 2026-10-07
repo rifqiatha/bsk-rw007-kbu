@@ -11,7 +11,7 @@ services:
       TZ: Asia/Jakarta
     # Hanya localhost agar wajib lewat reverse proxy (HTTPS).
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8081:8000"
     volumes:
       # Data pengguna: database + foto/berita. Jangan dihapus.
       - ./persist:/app/persist
