@@ -161,6 +161,8 @@ def _initialize_database(connection):
 		"religion": "TEXT NOT NULL DEFAULT ''",
 		"portrait_file": "TEXT NOT NULL DEFAULT ''",
 		"publish_portrait": "INTEGER NOT NULL DEFAULT 0",
+		"updated_at": "TEXT NOT NULL DEFAULT ''",
+		"updated_by": "TEXT NOT NULL DEFAULT ''",
 	}
 	for name, definition in new_columns.items():
 		if name not in columns:
@@ -248,6 +250,31 @@ def _initialize_database(connection):
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)"""
 	)
+	connection.execute(
+		"""CREATE TABLE IF NOT EXISTS data_issues (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			destination TEXT NOT NULL DEFAULT 'records',
+			record_id INTEGER,
+			resident_id INTEGER,
+			full_name TEXT NOT NULL DEFAULT '',
+			source_file TEXT NOT NULL DEFAULT '',
+			row_index INTEGER NOT NULL DEFAULT 0,
+			field TEXT NOT NULL DEFAULT '',
+			raw_value TEXT NOT NULL DEFAULT '',
+			message TEXT NOT NULL DEFAULT '',
+			resolved INTEGER NOT NULL DEFAULT 0,
+			resolved_at TEXT NOT NULL DEFAULT '',
+			resolved_by TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)"""
+	)
+	connection.execute(
+		"CREATE INDEX IF NOT EXISTS idx_data_issues_name ON data_issues(full_name)"
+	)
+	connection.execute(
+		"CREATE INDEX IF NOT EXISTS idx_data_issues_open ON data_issues(resolved)"
+	)
+
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS news_articles (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -469,12 +496,15 @@ def validate_import_row(payload, settings):
 	gender = text_fields["gender"].upper()
 	date_of_death = text_fields["date_of_death"]
 	address = text_fields["address"]
+	if not full_name:
+		raise ValueError("Nama warga wajib diisi.")
 	if len(full_name) > 120:
 		raise ValueError("Nama maksimal 120 karakter.")
+	gender = normalize_import_gender(gender) or gender
 	if gender and gender not in ("P", "L"):
 		raise ValueError("Jenis kelamin harus P atau L.")
-	if date_of_death and date.fromisoformat(date_of_death).isoformat() != date_of_death:
-		raise ValueError("Tanggal wafat harus berformat YYYY-MM-DD.")
+	date_of_death = normalize_import_date(date_of_death) or date_of_death
+	parse_iso_date(date_of_death, "Tanggal wafat")
 	if len(address) > 300:
 		raise ValueError("Alamat maksimal 300 karakter.")
 	rt = optional_import_area_number(payload.get("rt"), "RT", settings["rt_count"])
@@ -498,15 +528,16 @@ def validate_import_row(payload, settings):
 		raise ValueError("Detail privat harus berupa teks.")
 	for field, (limit, label) in private_fields.items():
 		values[field] = values[field].strip()
+		if field in ("family_card_number", "national_id_number"):
+			values[field] = clean_number_text(values[field], limit)
 		if len(values[field]) > limit:
 			raise ValueError(f"{label} maksimal {limit} karakter.")
 	values["living_family_name"] = values["living_family_name"].upper()
 	birth_date = payload.get("birth_date", "")
 	if not isinstance(birth_date, str):
 		raise ValueError("Tanggal lahir tidak valid.")
-	birth_date = birth_date.strip()
-	if birth_date and date.fromisoformat(birth_date).isoformat() != birth_date:
-		raise ValueError("Tanggal lahir harus berformat YYYY-MM-DD.")
+	birth_date = normalize_import_date(birth_date.strip())
+	parse_iso_date(birth_date, "Tanggal lahir")
 	return {
 		"full_name": full_name,
 		"gender": gender,
@@ -520,10 +551,296 @@ def validate_import_row(payload, settings):
 	}
 
 
+def import_row_meta(row, index):
+	"""Keterangan asal baris (file sumber dan urutan) untuk laporan hasil impor."""
+	"""Keterangan asal baris (file sumber dan urutan) untuk laporan hasil impor."""
+	meta = {"row_index": index}
+	if isinstance(row, dict):
+		name = row.get("source_file")
+		if isinstance(name, str) and name:
+			meta["source_file"] = name[:180]
+		person = row.get("full_name")
+		if isinstance(person, str):
+			meta["full_name"] = person.strip()[:120]
+	return meta
+
+
+def parse_iso_date(value, label):
+	"""Periksa tanggal YYYY-MM-DD tanpa membocorkan pesan internal Python."""
+	if not value:
+		return ""
+	try:
+		parsed = date.fromisoformat(value)
+	except (TypeError, ValueError):
+		raise ValueError(f"{label} harus berformat YYYY-MM-DD.") from None
+	if parsed.isoformat() != value:
+		raise ValueError(f"{label} harus berformat YYYY-MM-DD.")
+	return value
+
+
+def normalize_import_date(value):
+	"""Rapikan tanggal yang diketik Organize sebelum divalidasi.
+
+	Format tak lazim seperti "07\'08\'1976" atau "14/01/969" diubah menjadi
+	YYYY-MM-DD. Nilai yang tidak bisa ditebak dikembalikan apa adanya supaya
+	pesan error tetap informatif.
+	"""
+	text = str(value or "").strip()
+	if not text:
+		return ""
+	from importers import normalize_flexible_date
+
+	return normalize_flexible_date(text)
+
+
+def normalize_import_gender(value):
+	from importers import normalize_gender_value
+
+	return normalize_gender_value(value)
+
+
+def clean_number_text(value, limit=32):
+	from importers import clean_number_text as cleaner
+
+	return cleaner(value, limit)
+
+
 def import_duplicate_key(row):
 	if not row["full_name"] or not row["date_of_death"]:
 		return None
 	return (row["full_name"].casefold(), row["area"], row["date_of_death"])
+
+
+def save_data_issues(connection, destination, meta, record_id, resident_id, issues):
+	"""Catat setiap field bermasalah supaya bisa dicari dan ditinjau."""
+	for issue in issues:
+		connection.execute(
+			"INSERT INTO data_issues (destination, record_id, resident_id, full_name, source_file, "
+			"row_index, field, raw_value, message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			(
+				destination,
+				record_id,
+				resident_id,
+				meta.get("full_name", ""),
+				meta.get("source_file", ""),
+				meta.get("row_index", 0),
+				issue.get("field", ""),
+				str(issue.get("raw_value", ""))[:120],
+				issue.get("message", "")[:200],
+			),
+		)
+
+
+def open_issue_counts(connection):
+	"""Jumlah isu belum selesai per warga, untuk penanda di daftar."""
+	counts = {}
+	query = (
+		"SELECT record_id, resident_id, COUNT(*) AS total FROM data_issues "
+		"WHERE resolved = 0 GROUP BY record_id, resident_id"
+	)
+	for row in connection.execute(query):
+		if row["record_id"]:
+			counts[("record", row["record_id"])] = row["total"]
+		if row["resident_id"]:
+			counts[("resident", row["resident_id"])] = row["total"]
+	return counts
+
+
+def collect_row_issues(destination, payload, settings):
+	"""Kumpulkan isu tanpa mematikan baris.
+
+	Nilai yang tidak bisa dinormalisasi tetap disimpan apa adanya supaya data
+	warga tidak hilang, dan catatannya muncul di Tinjauan Data.
+	"""
+	issues = []
+	if not isinstance(payload, dict):
+		return issues
+
+	def note(field, raw_value, message):
+		issues.append({"field": field, "raw_value": raw_value, "message": message})
+
+	gender = payload.get("gender", "")
+	normalized_gender = normalize_import_gender(gender)
+	if normalized_gender not in ("", "P", "L"):
+		note("gender", gender, f"Jenis kelamin \"{gender}\" tidak dikenali; dikosongkan.")
+
+	for field, label in (("birth_date", "Tanggal lahir"), ("date_of_death", "Tanggal wafat"),
+						 ("paid_at", "Tanggal pembayaran")):
+		raw = payload.get(field, "")
+		raw = "" if raw is None else str(raw).strip()
+		if not raw:
+			continue
+		normalized = normalize_import_date(raw)
+		try:
+			date.fromisoformat(normalized)
+		except (TypeError, ValueError):
+			note(field, raw, f"{label} \"{raw}\" tidak bisa dibaca; dikosongkan.")
+
+	for field, label in (("rt", "RT"), ("rw", "RW")):
+		raw = payload.get(field, "")
+		if raw in (None, ""):
+			continue
+		limit = settings["rt_count"] if field == "rt" else settings["rw_count"]
+		digits = re.sub(r"[^0-9]", "", str(raw))
+		if not digits:
+			note(field, raw, f"{label} \"{raw}\" bukan angka; dikosongkan.")
+		elif not 1 <= int(digits) <= limit:
+			note(field, raw, f"{label} {digits} di luar 1-{limit}; dikosongkan.")
+
+	for field, label in (("family_card_number", "Nomor KK"), ("national_id_number", "NIK")):
+		raw = payload.get(field, "")
+		if not raw:
+			continue
+		cleaned = clean_number_text(raw, 32)
+		if len(str(raw).strip()) != len(cleaned):
+			note(field, raw, f"{label}含有 pemisah; dirapikan menjadi {cleaned}.")
+		elif len(cleaned) > 32:
+			note(field, raw, f"{label} melebihi 32 karakter; dipotong.")
+
+	if destination == "contributions":
+		period = str(payload.get("payment_period", "") or "").strip()
+		amount = str(payload.get("amount", "") if payload.get("amount") is not None else "").strip()
+		paid_at = str(payload.get("paid_at", "") or "").strip()
+		if (period or amount or paid_at):
+			if period and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
+				note("payment_period", period, f"Bulan iuran \"{period}\" tidak berformat YYYY-MM; dikosongkan.")
+			if amount and not amount.isdigit():
+				note("amount", amount, f"Nominal \"{amount}\" bukan angka; dikosongkan.")
+			if not paid_at:
+				note("paid_at", paid_at, "Setoran dicatat tanpa tanggal pembayaran; dikosongkan.")
+
+	return issues
+
+
+def salvage_import_row(destination, payload, settings):
+	"""Bentuk baris yang bisa disimpan meski ada field bermasalah.
+
+	Nilai manager yang tidak terbaca dikosongkan supaya database tetap rapi;
+	aslinya dicatat di data_issues dan bisa dicari Organize.
+	"""
+	clean = dict(payload) if isinstance(payload, dict) else {}
+	clean.setdefault("full_name", "")
+	clean["full_name"] = str(clean.get("full_name") or "").upper().strip()
+	if destination == "records":
+		clean["gender"] = normalize_import_gender(clean.get("gender", ""))
+		if clean["gender"] not in ("P", "L"):
+			clean["gender"] = ""
+		for field in ("birth_date", "date_of_death", "paid_at"):
+			if field in clean and clean[field]:
+				value = normalize_import_date(str(clean[field]))
+				try:
+					date.fromisoformat(value)
+					clean[field] = value
+				except (TypeError, ValueError):
+					clean[field] = ""
+		for field, key in (("rt", "rt_count"), ("rw", "rw_count")):
+			if field not in clean or clean[field] in (None, ""):
+				continue
+			digits = re.sub(r"[^0-9]", "", str(clean[field]))
+			if digits and 1 <= int(digits) <= settings[key]:
+				clean[field] = int(digits)
+			else:
+				clean[field] = ""
+		area_parts = []
+		if clean.get("rt") is not None and clean["rt"] != "":
+			area_parts.append(f"RT {int(clean['rt']):03d}")
+		if clean.get("rw") is not None and clean["rw"] != "":
+			area_parts.append(f"RW {int(clean['rw']):03d}")
+		clean["area"] = " / ".join(area_parts)
+		clean["family_card_number"] = clean_number_text(clean.get("family_card_number", ""), 32)
+		clean["national_id_number"] = clean_number_text(clean.get("national_id_number", ""), 32)
+		for field in ("address", "birthplace", "religion", "living_family_name",
+					  "living_family_relationship"):
+			clean[field] = str(clean.get(field, "") or "")[:300]
+	else:
+		clean["gender"] = normalize_import_gender(clean.get("gender", ""))
+		if clean["gender"] not in ("P", "L"):
+			clean["gender"] = ""
+		if clean.get("birth_date"):
+			value = normalize_import_date(str(clean["birth_date"]))
+			try:
+				date.fromisoformat(value)
+				clean["birth_date"] = value
+			except (TypeError, ValueError):
+				clean["birth_date"] = ""
+		for field, key in (("rt", "rt_count"), ("rw", "rw_count")):
+			if field not in clean or clean[field] in (None, ""):
+				continue
+			digits = re.sub(r"[^0-9]", "", str(clean[field]))
+			if digits and 1 <= int(digits) <= settings[key]:
+				clean[field] = digits
+			else:
+				clean[field] = ""
+		period = str(clean.get("payment_period", "") or "").strip()
+		amount = str(clean.get("amount", "") if clean.get("amount") is not None else "").strip()
+		paid_at = str(clean.get("paid_at", "") or "").strip()
+		valid_payment = bool(
+			re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period)
+			and paid_at and normalize_import_date(paid_at) == paid_at
+			and amount.isdigit() and 1 <= int(amount) <= 1_000_000_000_000
+		)
+		if valid_payment:
+			clean["payment_period"] = period
+			clean["paid_at"] = paid_at
+			clean["amount"] = int(amount)
+		else:
+			clean["payment_period"] = ""
+			clean["paid_at"] = ""
+			clean["amount"] = None
+		clean["family_card_number"] = clean_number_text(clean.get("family_card_number", ""), 32)
+		clean["national_id_number"] = clean_number_text(clean.get("national_id_number", ""), 32)
+		clean["residence_status"] = normalize_residence_status(clean.get("residence_status", ""))
+	return clean
+
+
+def records_import_keys(row):
+	"""Kunci unik warga wafat.
+
+	Tanggal wafat tidak selalu tersedia, jadi NIK dan kombinasi nama + area
+	dipakai sebagai kunci cadangan. Tanpa ini, impor data yang belum berstatus
+	wafat selalu lolos sebagai data baru dan menggandakan entri.
+	"""
+	name = " ".join(str(row.get("full_name") or "").casefold().split())
+	if not name:
+		return set()
+	area = str(row.get("area") or "")
+	date_of_death = str(row.get("date_of_death") or "")
+	national_id = re.sub(r"\D", "", str(row.get("national_id_number") or ""))
+	keys = set()
+	if date_of_death:
+		keys.add(("wafat", name, area, date_of_death))
+	if national_id:
+		keys.add(("nik", national_id))
+	keys.add(("nama-area", name, area))
+	return keys
+
+
+RESIDENCE_STATUS_ALIASES = {
+	"TETAP": "TETAP", "PERMANEN": "TETAP", "PERMANENT": "TETAP",
+	"KONTRAK": "KONTRAK", "SEWA": "KONTRAK", "SEWAKONTRAK": "KONTRAK", "RENT": "KONTRAK",
+	"KOS": "KOS", "KOST": "KOS", "MENGUNI": "KOS", "BOARDS": "KOS", "SEWAKOS": "KOS",
+}
+
+
+def normalize_residence_status(value):
+	"""Status domisili tidak lagi memakai pilihan tertutup.
+
+	Kolom Status pada Excel sering memuat beberapa pilihan sekaligus
+	(misal "Tetap/Kontrak/Kos") atau istilah lain. Nilai yang dikenali
+	pertama dipakai; yang tidak dikenali disimpan apa adanya supaya
+	satu sel aneh tidak menggagalkan impor seluruh file.
+	"""
+	text = str(value or "").strip()
+	if not text:
+		return ""
+	key = re.sub(r"[^A-Z]", "", text.upper())
+	if key in RESIDENCE_STATUS_ALIASES:
+		return RESIDENCE_STATUS_ALIASES[key]
+	for part in re.split(r"[/,;\-\s]+", text.upper()):
+		part_key = re.sub(r"[^A-Z]", "", part)
+		if part_key in RESIDENCE_STATUS_ALIASES:
+			return RESIDENCE_STATUS_ALIASES[part_key]
+	return text[:20]
 
 
 def validate_contribution_import_row(payload, settings):
@@ -537,6 +854,7 @@ def validate_contribution_import_row(payload, settings):
 	gender = gender.strip().upper()
 	if not name or len(name) > 120:
 		raise ValueError("Nama warga wajib diisi dan maksimal 120 karakter.")
+	gender = normalize_import_gender(gender) or gender
 	if gender and gender not in ("L", "P"):
 		raise ValueError("Jenis kelamin harus L atau P.")
 	rt = optional_import_area_number(payload.get("rt"), "RT", settings["rt_count"])
@@ -554,19 +872,14 @@ def validate_contribution_import_row(payload, settings):
 		if not isinstance(value, str):
 			raise ValueError("Kolom profil warga harus berupa teks.")
 		value = value.strip()
+		if field in ("family_card_number", "national_id_number"):
+			value = clean_number_text(value, limit)
 		if len(value) > limit:
 			raise ValueError(f"{field.replace('_', ' ').capitalize()} maksimal {limit} karakter.")
 		fields[field] = value
-	if fields["residence_status"]:
-		status_value = re.sub(r"[^A-Z]", "", fields["residence_status"].upper())
-		if status_value in ("KOS", "KOST"):
-			fields["residence_status"] = "KOS"
-		elif status_value in ("TETAP", "KONTRAK"):
-			fields["residence_status"] = status_value
-		else:
-			raise ValueError("Status harus TETAP, KONTRAK, atau KOS.")
-	if fields["birth_date"] and date.fromisoformat(fields["birth_date"]).isoformat() != fields["birth_date"]:
-		raise ValueError("Tanggal lahir harus berformat YYYY-MM-DD.")
+	fields["residence_status"] = normalize_residence_status(fields["residence_status"])
+	fields["birth_date"] = normalize_import_date(fields["birth_date"])
+	parse_iso_date(fields["birth_date"], "Tanggal lahir")
 	period = payload.get("payment_period", "")
 	paid_at = payload.get("paid_at", "")
 	amount = payload.get("amount", "")
@@ -588,8 +901,7 @@ def validate_contribution_import_row(payload, settings):
 			raise ValueError("Bulan iuran harus berformat YYYY-MM.")
 		if not paid_at:
 			raise ValueError("Tanggal pembayaran wajib diisi jika setoran dicatat.")
-		if date.fromisoformat(paid_at).isoformat() != paid_at:
-			raise ValueError("Tanggal pembayaran tidak valid.")
+		parse_iso_date(paid_at, "Tanggal pembayaran")
 		if isinstance(amount, bool) or not str(amount).isdigit():
 			raise ValueError("Nominal setoran harus berupa angka bulat tanpa pemisah.")
 		amount = int(amount)
@@ -622,10 +934,10 @@ def contribution_import_keys(row):
 def load_import_existing_keys(connection, destination):
 	"""Kumpulan kunci warga yang sudah tersimpan, dipakai untuk menandai duplikat."""
 	if destination == "records":
-		return {
-			(row["full_name"].casefold(), row["area"], row["date_of_death"])
-			for row in connection.execute("SELECT full_name, area, date_of_death FROM records")
-		}
+		existing = set()
+		for existing_row in connection.execute("SELECT full_name, area, date_of_death, national_id_number FROM records"):
+			existing.update(records_import_keys(dict(existing_row)))
+		return existing
 	existing = set()
 	existing_rows = connection.execute(
 		"SELECT COALESCE(NULLIF(r.full_name, ''), u.display_name) AS full_name, r.rt, r.rw, r.national_id_number "
@@ -645,12 +957,14 @@ def mark_import_duplicates(destination, rows, settings, existing):
 		except (ValueError, TypeError):
 			continue
 		if destination == "records":
-			key = import_duplicate_key(validated)
-			row["duplicate"] = key is not None and key in existing
+			keys = records_import_keys(validated)
+			duplicate_keys = sorted(keys & existing)
+			row["duplicate"] = bool(duplicate_keys)
 			if row["duplicate"]:
-				warnings.append(f"{row['full_name']} sudah ada dengan RT/RW dan tanggal wafat yang sama.")
-			elif key is not None:
-				existing.add(key)
+				reason = "NIK" if any(key[0] == "nik" for key in duplicate_keys) else "nama dan RT/RW"
+				warnings.append(f"{row['full_name']} sudah ada dengan {reason} yang sama.")
+			else:
+				existing.update(keys)
 		else:
 			keys = contribution_import_keys(validated)
 			has_payment_data = any(row.get(field) not in (None, "") for field in ("payment_period", "paid_at", "amount"))
@@ -1190,8 +1504,20 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		user["role_level"] = ROLE_LEVELS.get(user["role"], ROLE_LEVELS["Admin"])
 		return user
 
+	def query_param(self, name, default=""):
+		query = parse_qs(urlparse(self.path).query)
+		values = query.get(name)
+		return values[0] if values else default
+
 	def is_admin(self):
 		return self.current_user() is not None
+
+	def editor_label(self):
+		"""Nama pengelola yang sedang acting, untuk jejak perubahan data warga."""
+		user = self.current_admin
+		if not user:
+			return "Sistem"
+		return user.get("display_name") or user.get("username") or "Pengelola"
 
 	def permission_for_path(self):
 		path = urlparse(self.path).path
@@ -1432,6 +1758,45 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				result.append(article)
 			self.send_json(200, {"articles": result})
 			return
+		if path == "/api/admin/data-issues":
+			if not self.require_admin("Staff"):
+				return
+			with connect_database() as connection:
+				query = (
+					"SELECT id, destination, record_id, resident_id, full_name, source_file, "
+					"row_index, field, raw_value, message, resolved, resolved_at, resolved_by, created_at "
+					"FROM data_issues"
+				)
+				arguments = []
+				if self.query_param("status", "open") == "open":
+					query += " WHERE resolved = 0"
+				elif self.query_param("status", "open") == "done":
+					query += " WHERE resolved = 1"
+				search = self.query_param("q", "").strip()
+				if search:
+					query += (" AND" if " WHERE " in query else " WHERE") + (
+						" (full_name LIKE ? OR source_file LIKE ? OR field LIKE ? "
+						"OR raw_value LIKE ? OR message LIKE ?)"
+					)
+					pattern = f"%{search}%"
+					arguments.extend([pattern] * 5)
+				field_filter = self.query_param("field", "").strip()
+				if field_filter:
+					query += (" AND" if " WHERE " in query else " WHERE") + " field = ?"
+					arguments.append(field_filter)
+				query += " ORDER BY resolved, created_at DESC, id DESC LIMIT 500"
+				rows = connection.execute(query, arguments).fetchall()
+				issues = [dict(row) for row in rows]
+				summary = connection.execute(
+					"SELECT COUNT(*) AS total, "
+					"SUM(CASE WHEN resolved = 0 THEN 1 ELSE 0 END) AS open_total FROM data_issues"
+				).fetchone()
+			self.send_json(200, {
+				"issues": issues,
+				"total": summary["total"] or 0,
+				"open_total": summary["open_total"] or 0,
+			})
+			return
 		if path == "/api/admin/users":
 			if not self.require_super_admin():
 				return
@@ -1461,6 +1826,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						"SELECT id, full_name, gender, area, date_of_death, publish_address, portrait_file, publish_portrait "
 						"FROM records ORDER BY date_of_death DESC, full_name COLLATE NOCASE"
 					).fetchall()
+					issue_counts = open_issue_counts(connection)
 					records = []
 					for row in rows:
 						record = dict(row)
@@ -1469,6 +1835,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						record.pop("portrait_file", None)
 						record.pop("publish_portrait", None)
 						record.pop("publish_address", None)
+						record["issue_count"] = issue_counts.get(("record", record["id"]), 0)
 						records.append(record)
 					self.send_json(200, {"records": records, "role": self.current_admin["role"]})
 					return
@@ -1478,6 +1845,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				family_rows = connection.execute(
 					"SELECT id, record_id, full_name, relationship FROM family_connections ORDER BY full_name COLLATE NOCASE"
 				).fetchall()
+				issue_counts = open_issue_counts(connection)
 			records = [dict(row) for row in rows]
 			family_by_record = {}
 			for family_row in family_rows:
@@ -1487,6 +1855,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			for record in records:
 				record["portrait_url"] = f"/media/portrait/{record['id']}" if record["portrait_file"] else ""
 				record["family"] = family_by_record.get(record["id"], [])
+				record["issue_count"] = issue_counts.get(("record", record["id"]), 0)
 			self.send_json(200, {"records": records, "role": self.current_admin["role"]})
 			return
 		if path == "/api/session":
@@ -1956,14 +2325,10 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				if not all(isinstance(value, str) for value in fields.values()):
 					raise ValueError("Lengkapi data warga dengan format yang benar.")
 				fields = {key: value.strip() for key, value in fields.items()}
-				if fields["residence_status"]:
-					status_value = re.sub(r"[^A-Z]", "", fields["residence_status"].upper())
-					fields["residence_status"] = "KOS" if status_value in ("KOS", "KOST") else status_value
-					if fields["residence_status"] not in ("TETAP", "KONTRAK", "KOS"):
-						raise ValueError("Status harus TETAP, KONTRAK, atau KOS.")
-				if fields["birth_date"]:
-					if date.fromisoformat(fields["birth_date"]).isoformat() != fields["birth_date"]:
-						raise ValueError("Tanggal lahir tidak valid.")
+				fields["residence_status"] = normalize_residence_status(fields["residence_status"])
+				fields["birth_date"] = normalize_import_date(fields["birth_date"])
+				fields["gender"] = normalize_import_gender(fields["gender"])
+				parse_iso_date(fields["birth_date"], "Tanggal lahir")
 				if len(fields["address"]) > 300 or len(fields["family_card_number"]) > 32 or len(fields["national_id_number"]) > 32:
 					raise ValueError("Alamat atau nomor identitas melebihi batas karakter.")
 				if len(fields["payment_recipient"]) > 120:
@@ -2276,6 +2641,36 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				},
 				{"Set-Cookie": f"kifayah_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200"},
 			)
+			return
+		if path == "/api/admin/data-issues/resolve":
+			if not self.require_admin("Admin"):
+				return
+			try:
+				payload = self.read_json()
+				issue_id = payload.get("issue_id")
+				all_issues = bool(payload.get("all"))
+				with connect_database() as connection:
+					if all_issues:
+						cursor = connection.execute(
+							"UPDATE data_issues SET resolved = 1, resolved_at = CURRENT_TIMESTAMP, "
+							"resolved_by = ? WHERE resolved = 0",
+							(self.editor_label(),),
+						)
+					else:
+						if type(issue_id) is not int:
+							raise ValueError("Pilih catatan yang akan ditandai selesai.")
+						cursor = connection.execute(
+							"UPDATE data_issues SET resolved = 1, resolved_at = CURRENT_TIMESTAMP, "
+							"resolved_by = ? WHERE id = ?",
+							(self.editor_label(), issue_id),
+						)
+						if cursor.rowcount == 0:
+							self.send_json(404, {"error": "Catatan tidak ditemukan."})
+							return
+			except (ValueError, TypeError, sqlite3.Error) as error:
+				self.send_json(400, {"error": str(error) or "Catatan gagal diperbarui."})
+				return
+			self.send_json(200, {"resolved": cursor.rowcount})
 			return
 		if path == "/api/admin/change-password":
 			user = self.current_user()
@@ -2697,14 +3092,15 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Periksa kembali data identitas.")
 				if address is not None and (not address.strip() or len(address) > 300):
 					raise ValueError("Alamat wajib diisi dan maksimal 300 karakter.")
+				fields["gender"] = normalize_import_gender(fields["gender"])
+				fields["birth_date"] = normalize_import_date(fields["birth_date"])
 				if fields["gender"] not in ("P", "L"):
 					raise ValueError("Pilih jenis kelamin P atau L.")
 				if len(fields["family_card_number"]) > 32 or len(fields["national_id_number"]) > 32:
 					raise ValueError("Nomor identitas terlalu panjang.")
 				if len(fields["birthplace"]) > 100 or len(fields["religion"]) > 50:
 					raise ValueError("Tempat lahir atau agama terlalu panjang.")
-				if fields["birth_date"] and date.fromisoformat(fields["birth_date"]).isoformat() != fields["birth_date"]:
-					raise ValueError("Tanggal lahir tidak valid.")
+				parse_iso_date(fields["birth_date"], "Tanggal lahir")
 			except (ValueError, TypeError) as error:
 				self.send_json(400, {"error": str(error) or "Periksa kembali data identitas."})
 				return
@@ -2712,12 +3108,13 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				cursor = connection.execute(
 					"UPDATE records SET gender = ?, address = COALESCE(?, address), "
 					"publish_address = COALESCE(?, publish_address), family_card_number = ?, "
-					"national_id_number = ?, birthplace = ?, birth_date = ?, religion = ? WHERE id = ?",
+					"national_id_number = ?, birthplace = ?, birth_date = ?, religion = ?, "
+					"updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE id = ?",
 					(
 						fields["gender"], address,
 						int(publish_address) if publish_address is not None else None,
 						fields["family_card_number"], fields["national_id_number"], fields["birthplace"],
-						fields["birth_date"], fields["religion"], record_id,
+						fields["birth_date"], fields["religion"], self.editor_label(), record_id,
 					),
 				)
 			if cursor.rowcount == 0:
@@ -2740,11 +3137,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					cursor = connection.execute(
 						"UPDATE records SET full_name = ?, gender = ?, address = ?, area = ?, date_of_death = ?, "
 						"publish_address = ?, family_card_number = ?, national_id_number = ?, birthplace = ?, "
-						"birth_date = ?, religion = ? WHERE id = ?",
+						"birth_date = ?, religion = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE id = ?",
 						(
 							row["full_name"], row["gender"], row["address"], row["area"], row["date_of_death"],
 							int(publish_address), row["family_card_number"], row["national_id_number"],
-							row["birthplace"], row["birth_date"], row["religion"], record_id,
+							row["birthplace"], row["birth_date"], row["religion"], self.editor_label(), record_id,
 						),
 					)
 			except (ValueError, TypeError, sqlite3.Error) as error:
@@ -2985,11 +3382,30 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					with connect_database() as connection:
 						settings = get_settings(connection)
 					validated_rows = []
+					row_meta = []
+					pending_issues = []
+					outcomes = []
 					for index, row in enumerate(rows, start=1):
+						meta = import_row_meta(row, index)
 						try:
 							validated_rows.append(validate_contribution_import_row(row, settings))
+							row_meta.append(meta)
+							pending_issues.append([])
+							continue
 						except (ValueError, TypeError) as error:
-							raise ValueError(f"Baris {index}: {error}") from error
+							pass
+						# Baris bermasalah tetap disimpan sebagian supaya data warga
+						# tidak hilang; field yang tak terbaca dicatat sebagai isu.
+						name = str(row.get("full_name", "") or "").strip() if isinstance(row, dict) else ""
+						if not name:
+							outcomes.append(dict(meta, outcome="invalid", reason="Nama warga kosong, baris tidak disimpan."))
+							continue
+						issues = collect_row_issues("contributions", row, settings)
+						if not issues:
+							issues = [{"field": "", "raw_value": "", "message": str(error)}]
+						validated_rows.append(salvage_import_row("contributions", row, settings))
+						row_meta.append(meta)
+						pending_issues.append(issues)
 					with connect_database() as connection:
 						resident_ids = {}
 						existing_rows = connection.execute(
@@ -3015,7 +3431,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						payments_created = 0
 						payments_updated = 0
 						skipped = 0
-						for row in validated_rows:
+						for meta, row, issues in zip(row_meta, validated_rows, pending_issues):
 							keys = contribution_import_keys(row)
 							national_id_key = next((key for key in keys if key[0] == "nik"), None)
 							resident_key = next(key for key in keys if key[0] == "resident")
@@ -3051,6 +3467,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 									),
 								)
 								updated += 1
+								outcomes.append(dict(meta, outcome="updated"))
 							if resident_id is None:
 								cursor = connection.execute(
 									"INSERT INTO contribution_residents (full_name, rt, rw, birth_date, address, family_card_number, "
@@ -3064,16 +3481,21 @@ class KifayahHandler(BaseHTTPRequestHandler):
 								)
 								resident_id = cursor.lastrowid
 								created += 1
+								outcomes.append(dict(meta, outcome="created"))
 								for key in keys:
 									resident_ids[key] = resident_id
+							if issues:
+								save_data_issues(connection, "contributions", meta, None, resident_id, issues)
 							if row["amount"] is None:
 								if resident_exists and not replace_duplicates:
 									skipped += 1
+									outcomes.append(dict(meta, outcome="skipped", reason="warga sudah ada dan tidak ada setoran baru"))
 								continue
 							payment_key = (resident_id, row["payment_period"])
 							if payment_key in payment_keys:
 								if not replace_duplicates:
 									skipped += 1
+									outcomes.append(dict(meta, outcome="skipped", detail=True, reason="setoran bulan ini sudah tercatat"))
 									continue
 								connection.execute(
 									"UPDATE contribution_payments SET amount = ?, paid_at = ? "
@@ -3081,6 +3503,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 									(row["amount"], row["paid_at"], resident_id, row["payment_period"]),
 								)
 								payments_updated += 1
+								outcomes.append(dict(meta, outcome="payment_updated", detail=True, reason="setoran bulan ini diperbarui"))
 								continue
 							connection.execute(
 								"INSERT INTO contribution_payments (resident_id, period, amount, paid_at) VALUES (?, ?, ?, ?)",
@@ -3088,43 +3511,66 @@ class KifayahHandler(BaseHTTPRequestHandler):
 							)
 							payment_keys.add(payment_key)
 							payments_created += 1
+							outcomes.append(dict(meta, outcome="payment_created", detail=True, reason="setoran baru dicatat"))
 					self.send_json(201, {
 						"created": created, "updated": updated,
 						"payments_created": payments_created, "payments_updated": payments_updated,
 						"skipped_duplicates": skipped,
+						"outcomes": outcomes,
 					})
 					return
 				with connect_database() as connection:
 					settings = get_settings(connection)
 				validated_rows = []
+				row_meta = []
+				pending_issues = []
+				outcomes = []
 				for index, row in enumerate(rows, start=1):
+					meta = import_row_meta(row, index)
 					try:
 						validated_rows.append(validate_import_row(row, settings))
+						row_meta.append(meta)
+						pending_issues.append([])
+						continue
 					except (ValueError, TypeError) as error:
-						raise ValueError(f"Baris {index}: {error}") from error
+						pass
+					# Baris bermasalah tetap disimpan sebagian supaya data warga
+					# tidak hilang; field yang tak terbaca dicatat sebagai isu.
+					name = str(row.get("full_name", "") or "").strip() if isinstance(row, dict) else ""
+					if not name:
+						outcomes.append(dict(meta, outcome="invalid", reason="Nama warga kosong, baris tidak disimpan."))
+						continue
+					issues = collect_row_issues("records", row, settings)
+					if not issues:
+						issues = [{"field": "", "raw_value": "", "message": str(error)}]
+					validated_rows.append(salvage_import_row("records", row, settings))
+					row_meta.append(meta)
+					pending_issues.append(issues)
 				with connect_database() as connection:
-					existing = {
-						(item["full_name"].casefold(), item["area"], item["date_of_death"]): item["id"]
-						for item in connection.execute("SELECT id, full_name, area, date_of_death FROM records")
-					}
+					existing = {}
+					for item in connection.execute("SELECT id, full_name, area, date_of_death, national_id_number FROM records"):
+						for key in records_import_keys(dict(item)):
+							existing.setdefault(key, item["id"])
 					created = 0
 					updated = 0
 					skipped = 0
-					for row in validated_rows:
-						duplicate_key = import_duplicate_key(row)
-						existing_id = existing.get(duplicate_key) if duplicate_key is not None else None
+					for meta, row, issues in zip(row_meta, validated_rows, pending_issues):
+						row_keys = records_import_keys(row)
+						existing_id = next((existing[key] for key in row_keys if key in existing), None)
 						if existing_id is not None:
 							if not replace_duplicates:
 								skipped += 1
+								outcomes.append(dict(meta, outcome="skipped", reason="data dengan identitas sama sudah ada"))
 								continue
 							connection.execute(
 								"UPDATE records SET gender = ?, address = ?, "
 								"family_card_number = ?, national_id_number = ?, birthplace = ?, "
-								"birth_date = ?, religion = ? WHERE id = ?",
+								"birth_date = ?, religion = ?, updated_at = CURRENT_TIMESTAMP, "
+								"updated_by = ? WHERE id = ?",
 								(
 									row["gender"], row["address"], row["family_card_number"],
 									row["national_id_number"], row["birthplace"], row["birth_date"],
-									row["religion"], existing_id,
+									row["religion"], self.editor_label(), existing_id,
 								),
 							)
 							connection.execute(
@@ -3135,16 +3581,20 @@ class KifayahHandler(BaseHTTPRequestHandler):
 									"INSERT INTO family_connections (record_id, full_name, relationship) VALUES (?, ?, ?)",
 									(existing_id, row["living_family_name"], row["living_family_relationship"]),
 								)
+							if issues:
+								connection.execute("DELETE FROM data_issues WHERE record_id = ? AND resolved = 0", (existing_id,))
+								save_data_issues(connection, "records", meta, existing_id, None, issues)
 							updated += 1
+							outcomes.append(dict(meta, outcome="updated"))
 							continue
 						cursor = connection.execute(
 							"INSERT INTO records (full_name, gender, address, area, date_of_death, publish_address, "
-							"family_card_number, national_id_number, birthplace, birth_date, religion) "
-							"VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
+							"family_card_number, national_id_number, birthplace, birth_date, religion, "
+							"updated_at, updated_by) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)",
 							(
 								row["full_name"], row["gender"], row["address"], row["area"], row["date_of_death"],
 								row["family_card_number"], row["national_id_number"], row["birthplace"],
-								row["birth_date"], row["religion"],
+								row["birth_date"], row["religion"], self.editor_label(),
 							),
 						)
 						record_id = cursor.lastrowid
@@ -3153,13 +3603,17 @@ class KifayahHandler(BaseHTTPRequestHandler):
 								"INSERT INTO family_connections (record_id, full_name, relationship) VALUES (?, ?, ?)",
 								(record_id, row["living_family_name"], row["living_family_relationship"]),
 							)
-						if duplicate_key is not None:
-							existing[duplicate_key] = record_id
+						for key in row_keys:
+							existing.setdefault(key, record_id)
 						created += 1
+						if issues:
+							save_data_issues(connection, "records", meta, record_id, None, issues)
+						outcomes.append(dict(meta, outcome="created"))
 			except (ValueError, TypeError, sqlite3.Error) as error:
 				self.send_json(400, {"error": str(error) or "Data impor tidak valid."})
 				return
-			self.send_json(201, {"created": created, "updated": updated, "skipped_duplicates": skipped})
+			self.send_json(201, {"created": created, "updated": updated,
+				"skipped_duplicates": skipped, "outcomes": outcomes})
 			return
 		if path == "/api/admin/media":
 			if not self.require_admin("Admin"):
@@ -3192,17 +3646,16 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				address = address.strip()
 				if not name or not address or len(name) > 120 or len(address) > 300:
 					raise ValueError("Nama dan alamat wajib diisi sesuai batas yang tersedia.")
-				if date.fromisoformat(date_of_death).isoformat() != date_of_death:
-					raise ValueError("Tanggal tidak valid.")
+				parse_iso_date(date_of_death, "Tanggal wafat")
 				with connect_database() as connection:
 					settings = get_settings(connection)
 					if not 1 <= rt <= settings["rt_count"] or not 1 <= rw <= settings["rw_count"]:
 						raise ValueError("Pilihan RT atau RW sudah tidak tersedia. Muat ulang formulir.")
 					area = f"RT {rt:03d} / RW {rw:03d}"
 					cursor = connection.execute(
-						"INSERT INTO records (full_name, gender, address, area, date_of_death, publish_address) "
-						"VALUES (?, ?, ?, ?, ?, ?)",
-						(name, gender, address, area, date_of_death, int(publish_address)),
+						"INSERT INTO records (full_name, gender, address, area, date_of_death, publish_address, "
+						"updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)",
+						(name, gender, address, area, date_of_death, int(publish_address), self.editor_label()),
 					)
 			except (ValueError, TypeError) as error:
 				self.send_json(400, {"error": str(error) or "Periksa kembali tanggal."})

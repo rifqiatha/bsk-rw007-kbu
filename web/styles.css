@@ -133,7 +133,7 @@ body:not(.admin-page) .topbar:has(#mobile-nav-toggle[aria-expanded="true"]) { bo
 .section-navigation a:hover { color: var(--ink); background: color-mix(in srgb, var(--surface) 70%, transparent); }
 .section-navigation a[aria-current="location"] { color: var(--on-action); background: var(--action); }
 .topbar-status { display: grid; justify-items: start; gap: 2px; }
-.topbar-status #last-updated { margin-left: 15px; color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); }
+
 .live-indicator { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); }
 .live-indicator i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); animation: live-pulse 2.8s var(--tp-ease) infinite; }
 .icon-button { display: grid; place-items: center; width: 44px; height: 44px; color: var(--green); border: var(--tp-bw) solid var(--line); background: var(--surface); border-radius: 50%; font-size: calc((22px) * var(--site-font-scale, 1)); line-height: 1; transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease), border-color var(--tp-dur) var(--tp-ease); }
@@ -690,6 +690,7 @@ dialog:not([open]) { display: none !important; }
 .family-inline-edit input { min-width: 0; min-height: 44px; padding: 9px 12px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); color: var(--ink); background: var(--surface-soft); font-size: calc((14px) * var(--site-font-scale, 1)); }
 .family-inline-edit .edit-button { min-height: 38px; }
 .manage-list small { display: block; margin-top: 4px; color: var(--muted); font-size: calc((12.5px) * var(--site-font-scale, 1)); }
+.manage-list .manage-item-audit { color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11.5px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); }
 .admin-record-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 14px; }
 .admin-record-pagination .action-button { width: 44px; min-width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: calc((18px) * var(--site-font-scale, 1)); line-height: 1; }
 .admin-record-pagination .action-button:disabled { cursor: default; opacity: .4; }
@@ -920,6 +921,18 @@ dialog:not([open]) { display: none !important; }
 .import-done-stats li.is-error::before { content: "\2715"; }
 .import-done-stats li.is-more { color: var(--muted); background: rgba(0, 0, 0, .04); }
 .import-done-stats li.is-more::before { content: "\2022"; }
+/* Statistik impor jadi tombol: klik membuka rincian per baris. */
+.import-done-stats button { display: block; width: 100%; padding: 0; border: 0; color: inherit; background: none; font: inherit; text-align: left; cursor: pointer; }
+.import-done-stats button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.import-done-stats button:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; border-radius: 4px; }
+.import-report-dialog { width: min(860px, 94vw); }
+.import-report-scroll { max-height: 55vh; overflow: auto; margin: 12px 0; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); }
+.import-report-table { width: 100%; border-collapse: collapse; font-size: calc((13px) * var(--site-font-scale, 1)); }
+.import-report-table th, .import-report-table td { padding: 8px 10px; border-bottom: var(--tp-bw) solid var(--line); text-align: left; vertical-align: top; }
+.import-report-table th { position: sticky; top: 0; color: var(--muted); background: var(--surface-soft); font-size: calc((11px) * var(--site-font-scale, 1)); letter-spacing: .1em; text-transform: uppercase; }
+.import-report-table td:nth-child(1) { max-width: 200px; overflow-wrap: anywhere; }
+.import-report-table td:nth-child(2) { width: 70px; font-family: var(--site-font-mono); font-variant-numeric: tabular-nums; }
+.import-report-table tbody tr:last-child td { border-bottom: 0; }
 .import-warnings { display: grid; gap: 6px; max-height: 220px; margin: 0; padding: 0 0 0 22px; font-size: inherit; line-height: 1.55; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb-color, transparent) transparent; }
 .import-warnings li.import-file-summary { font-weight: 700; }
 .import-warnings li.is-more { color: var(--muted); font-style: italic; }
@@ -935,6 +948,7 @@ dialog:not([open]) { display: none !important; }
 .import-status { flex: none; color: var(--green); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 600; }
 .import-status.duplicate { color: var(--rust); }
 .import-status.review { color: var(--muted); }
+.import-status.invalid { flex: 1 1 auto; color: var(--rust); font-weight: 500; overflow-wrap: anywhere; }
 .import-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
 .import-fields label { display: grid; min-width: 0; gap: 5px; color: var(--muted); font-size: calc((12.5px) * var(--site-font-scale, 1)); }
 .import-fields input { min-width: 0; min-height: 42px !important; padding: 9px !important; border-radius: var(--radius-control); font-size: calc((13px) * var(--site-font-scale, 1)) !important; }
@@ -1267,3 +1281,28 @@ dialog:not([open]) { display: none !important; }
 .record-table-wrap { animation-delay: calc(var(--tp-stagger) * .9); }
 .record-footer { animation-delay: calc(var(--tp-stagger) * 1.2); }
 .footer { animation-delay: calc(var(--tp-stagger) * .6); }
+
+/* TINJAUAN DATA: penanda isu dan panel peninjauan */
+.issue-tab-badge { display: inline-block; min-width: 20px; padding: 1px 6px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--rust); color: var(--paper, #fff); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 700; line-height: 1.5; text-align: center; }
+.admin-task-nav .issue-tab-badge { margin-left: 0; }
+.issue-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 16px 0 10px; }
+.issue-toolbar label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 600; }
+.issue-search { flex: 1 1 260px; }
+.issue-search input, .issue-toolbar select { min-height: 40px; padding: 0 12px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); font: inherit; font-size: calc((13.5px) * var(--site-font-scale, 1)); }
+.issue-search input:focus, .issue-toolbar select:focus { border-color: var(--green); outline: none; }
+.issue-table-scroll { overflow-x: auto; border: var(--tp-bw) solid var(--line); border-radius: var(--radius); margin-top: 10px; }
+.issue-table { width: 100%; min-width: 860px; border-collapse: collapse; font-size: calc((13px) * var(--site-font-scale, 1)); }
+.issue-table th { padding: 10px 12px; border-bottom: var(--tp-bw) solid var(--line); background: var(--surface-soft); color: var(--muted); font-size: calc((11.5px) * var(--site-font-scale, 1)); font-weight: 700; letter-spacing: var(--tp-mono-track); text-align: left; text-transform: uppercase; white-space: nowrap; }
+.issue-table td { padding: 10px 12px; border-bottom: var(--tp-bw) solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+.issue-table tbody tr:last-child td { border-bottom: none; }
+.issue-table tbody tr.is-resolved { color: var(--muted); }
+.issue-table tbody tr.is-resolved td:first-child { text-decoration: line-through; text-decoration-thickness: 1px; }
+.manage-item-issue { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--rust) 14%, transparent); color: var(--rust); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 700; line-height: 1.6; white-space: nowrap; }
+@media (max-width: 720px) {
+  .issue-toolbar { gap: 8px; }
+  .issue-search { flex: 1 1 100%; }
+  .issue-toolbar select { min-width: 140px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .issue-tab-badge, .manage-item-issue { animation: none; }
+}

@@ -16,10 +16,10 @@ FIELD_ALIASES = {
 	"rt": {"rt", "rukun tetangga"},
 	"rw": {"rw", "rukun warga"},
 	"birthplace": {"tempat lahir", "kota lahir"},
-	"birth_date": {"tanggal lahir", "tgl lahir", "date of birth"},
+	"birth_date": {"tanggal lahir", "tgl lahir", "date of birth", "birth_date", "birthdate"},
 	"date_of_death": {
 		"tanggal wafat", "tgl wafat", "tanggal meninggal", "tgl meninggal",
-		"tanggal kematian", "date of death", "death date",
+		"tanggal kematian", "date of death", "death date", "date_of_death", "dateofdeath",
 	},
 	"address": {"alamat", "alamat lengkap", "address"},
 	"religion": {"agama", "religion"},
@@ -90,15 +90,10 @@ def _parse_date(value, excel_datemode=None):
 	text = _text(value)
 	if not text:
 		return ""
-	for format_string in (
-		"%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y/%m/%d",
-		"%d/%m/%y", "%d-%m-%y", "%d %B %Y", "%d %b %Y",
-	):
-		try:
-			return datetime.strptime(text, format_string).date().isoformat()
-		except ValueError:
-			continue
-	return text
+	# Format tak lazim (pemisah campur, tahun 2-3 digit, salah ketik OCR)
+	# ditangani normalize_flexible_date; hasilnya dikembalikan apa adanya
+	# bila memang tidak bisa ditebak supaya Organize bisa memperbaiki.
+	return normalize_flexible_date(text)
 
 
 def _parse_number(value):
@@ -124,12 +119,9 @@ def _normalize_record(source, warnings):
 			number = _parse_number(record[field])
 			record[field] = number if number is not None else ""
 		elif field == "gender":
-			gender = _text(record[field]).upper().replace("-", " ")
-			normalized_gender = re.sub(r"\s+", " ", gender).strip()
-			record[field] = {
-				"P": "P", "PEREMPUAN": "P", "WANITA": "P",
-				"L": "L", "LAKI LAKI": "L", "PRIA": "L",
-			}.get(normalized_gender, normalized_gender)
+			record[field] = normalize_gender_value(record[field])
+		elif field in ("family_card_number", "national_id_number"):
+			record[field] = clean_number_text(record[field])
 		elif field in ("birth_date", "date_of_death", "paid_at"):
 			record[field] = _parse_date(record[field])
 		elif field == "payment_period":
@@ -509,3 +501,261 @@ def contribution_template_xlsx():
 	stream = io.BytesIO()
 	workbook.save(stream)
 	return stream.getvalue()
+
+
+# --- Jenis kelamin ----------------------------------------------------------
+GENDER_MAP = {
+    "P": "P", "PRIA": "L", "LAKI": "L", "LAKI LAKI": "L", "LAKI-LAKI": "L",
+    "LAKI2": "L", "Pria": "L", "WANITA": "P", "PEREMPUAN": "P", "PEREMPUAAN": "P",
+    "PERPPUAN": "P", "PR": "L", "J": "L", "JOWO": "L", "JE": "L", "JENIS KELAMIN LAKI": "L",
+}
+GENDER_BY_KEYWORD = (
+    ("LAKI", "L"), ("PRIA", "L"), ("PANTUN", "L"), ("JOWO", "L"), ("PANTUNKER", "L"),
+    ("PR", "L"), ("PEREMPUA", "P"), ("WANI", "P"), ("PRIP", "P"), ("PUTRI", "P"),
+)
+
+
+def normalize_gender_value(value):
+	"""Petakan berbagai ejaan jenis kelamin ke P atau L."""
+	text = str(value or "").strip().upper()
+	if not text:
+		return ""
+	cleaned = re.sub(r"[^A-Z]", "", text)
+	if cleaned in ("P", "L"):
+		return cleaned
+	spaced = re.sub(r"\s+", " ", text.replace("-", " ").replace("_", " ")).strip()
+	if spaced in GENDER_MAP:
+		return GENDER_MAP[spaced]
+	if cleaned in GENDER_MAP:
+		return GENDER_MAP[cleaned]
+	for keyword, gender in GENDER_BY_KEYWORD:
+		if keyword in spaced:
+			return gender
+	# Kata "J" lazim dipakai untuk.jackson pada kolom ini; perlakukan sebagai L.
+	if cleaned.startswith("J"):
+		return "L"
+	return text
+
+
+# --- Nomor identitas --------------------------------------------------------
+def clean_number_text(value, limit=32):
+	"""Buang separator dari nomor KK/NIK dan batasi panjangnya."""
+	text = str(value or "")
+	digits = re.sub(r"\D", "", text)
+	if len(digits) > limit:
+		# Nomor hasil OCR bisa menempel dengan digit lain; potong dari depan
+		# hanya bila sisa panjangnya tepat sesuai nomor identitas Indonesia.
+		if len(digits) == 16:
+			digits = digits[-16:]
+		else:
+			digits = digits[:limit]
+	return digits
+
+
+# --- Tanggal ----------------------------------------------------------------
+DATE_TEXT_FORMATS = (
+	"%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y/%m/%d",
+	"%d/%m/%y", "%d-%m-%y", "%d %B %Y", "%d %b %Y", "%Y%m%d",
+)
+
+
+def _year_from_digits(digits, today=None):
+	"""Lengkapi tahun yang hilang digitnya, mis. 79 -> 1979, 969 -> 1969."""
+	today = today or date.today()
+	current_century = today.year // 100 * 100
+	if len(digits) == 4:
+		return int(digits)
+	if len(digits) == 3:
+		# "969" -> 1969, "982" -> 1982
+		candidate = 1000 + int(digits)
+		if 1900 <= candidate <= today.year + 5:
+			return candidate
+		candidate = int("1" + digits)
+		return candidate if 1900 <= candidate <= today.year + 5 else None
+	if len(digits) == 2:
+		value = int(digits)
+		for century in (current_century, current_century - 100):
+			candidate = century + value
+			if 1900 <= candidate <= today.year + 5:
+				return candidate
+		return None
+	return None
+
+
+def _try_build(year, month, day):
+	if not year or not month or not day:
+		return None
+	try:
+		return date(year, month, day).isoformat()
+	except ValueError:
+		return None
+
+
+def _candidate_splits(numbers):
+	"""Kombinasikan potongan angka menjadi (tahun, bulan, hari)."""
+	if len(numbers) == 3:
+		first, second, third = numbers
+		if len(first) == 4:
+			return [(first, second, third)]
+		return [(third, second, first)]
+	if len(numbers) == 2:
+		first, second = numbers
+		if len(first) == 4:
+			return [(first, second, "")]
+		return [(second, first, "")]
+	return []
+
+
+def _is_real_date(year, month, day):
+	try:
+		date(year, month, day)
+	except (ValueError, TypeError):
+		return False
+	return True
+
+
+def _from_concatenated(digits):
+	"""Coba baca gabungan angka sebagai DDMMYYYY, YYYYMMDD, atau YYYYMMDDYY."""
+	total = len(digits)
+	if not digits.isdigit() or total not in (6, 7, 8):
+		return None
+	layouts = {
+		8: [("%Y%m%d", "dmy"), ("%Y%m%d", "ymd"), ("%d%m%Y", "dmy")],
+		7: [("%Y%m%d", "ymd"), ("%d%m%Y", "dmy")],
+		6: [("%y%m%d", "dmy"), ("%Y%m%d", "ymd")],
+	}
+	for format_string, order in layouts[total]:
+		try:
+			parsed = datetime.strptime(digits, format_string)
+		except ValueError:
+			continue
+		candidate = parsed.date().isoformat()
+		if _plausible_age(candidate):
+			return candidate
+		# some layouts only differ by month/day swap
+		if order == "dmy":
+			swapped = _swap_month_day(parsed)
+			if swapped and _plausible_age(swapped):
+				return swapped
+	return None
+
+
+def _swap_month_day(parsed):
+	try:
+		return date(parsed.year, parsed.day, parsed.month).isoformat()
+	except ValueError:
+		return None
+
+
+def _plausible_age(iso_text):
+	"""Terima tanggal lahir antara 1900 dan tahun ini."""
+	parsed = date.fromisoformat(iso_text)
+	age = date.today().year - parsed.year
+	return 0 <= age <= 125
+
+
+def normalize_flexible_date(value, today=None):
+	"""Ubah berbagai ejaan tanggal menjadi YYYY-MM-DD.
+
+	Menangani pemisah campuran (/ - . ' spasi), tahun 2-3 digit, dan salah
+	ketik akibat OCR seperti "16/101/982" atau "18/081977". Nilai yang tidak
+	mungkin ditebak dikembalikan apa adanya supaya Organize bisa reviewing.
+	"""
+	if isinstance(value, datetime):
+		return value.date().isoformat()
+	if isinstance(value, date):
+		return value.isoformat()
+	text = str(value or "").strip()
+	if not text:
+		return ""
+	if not re.search(r"\d", text):
+		return ""
+	if re.fullmatch(r"0{4}-0{2}-0{2}", text):
+		return ""
+
+	for format_string in DATE_TEXT_FORMATS:
+		try:
+			parsed = datetime.strptime(text, format_string).date().isoformat()
+		except ValueError:
+			continue
+		if _plausible_age(parsed):
+			return parsed
+		return parsed
+
+	groups = [group for group in re.split(r"[^0-9]+", text) if group]
+	if not groups:
+		return ""
+	numbers = []
+	for group in groups:
+		if len(group) > 4:
+			numbers.append(group[:4])
+			numbers.extend(group[4:])
+		else:
+			numbers.append(group)
+
+	# 1. Susun dari kelompok yang jumlah digitnya wajar.
+	if len(numbers) == 3:
+		first, second, third = numbers
+		if len(first) == 4:
+			orders = [(first, second, third)]
+		elif len(third) == 4:
+			orders = [(third, second, first)]
+		elif len(second) == 4:
+			orders = [(second, first, third)]
+		else:
+			orders = [(third, second, first)]
+		for year_text, month_text, day_text in orders:
+			for year in _year_candidates(year_text, today):
+				month = int(month_text) if month_text.isdigit() else 0
+				day = int(day_text) if day_text.isdigit() else 0
+				if _is_real_date(year, month, day):
+					return date(year, month, day).isoformat()
+				if _is_real_date(year, day, month):
+					return date(year, day, month).isoformat()
+		# 2. Kelompok dua atau tiga digit, mis. "123/10/1979" -> 1/23 atau 12/3.
+		if len(first) == 3 and first.isdigit():
+			for month, day in ((int(first[:1]), int(first[1:])), (int(first[:2]), int(first[2:]))):
+				year = _year_from_digits(third, today)
+				if year and _is_real_date(year, month, day):
+					return date(year, month, day).isoformat()
+	if len(numbers) == 2:
+		first, second = numbers
+		if len(first) == 4 and second.isdigit():
+			for month, day in ((int(second[:1]), int(second[1:])), (int(second[:2]), int(second[2:]))):
+				if _is_real_date(int(first), month, day):
+					return date(int(first), month, day).isoformat()
+			return ""
+		if len(second) == 4 and first.isdigit():
+			for month, day in ((int(first[:1]), int(first[1:])), (int(first[:2]), int(first[2:]))):
+				if _is_real_date(int(second), month, day):
+					return date(int(second), month, day).isoformat()
+
+	# 3. Semua angka digabung, mis. "16/101/982" -> 16/10/1982.
+	joined = "".join(numbers)
+	if len(joined) != len(text.replace(" ", "")):
+		pass
+	candidate = _from_concatenated(joined)
+	if candidate:
+		return candidate
+	# Strip pemisah lalu ulangi.
+	return _from_concatenated(re.sub(r"\D", "", text)) or text
+
+
+def _year_candidates(digits, today=None):
+	"""Semua tahun yang masuk akal dari 1-4 digit, terurut."""
+	today = today or date.today()
+	current_century = today.year // 100 * 100
+	if not digits or not digits.isdigit():
+		return []
+	found = []
+	if len(digits) == 4:
+		found.append(int(digits))
+	elif len(digits) == 3:
+		found.extend([int("1" + digits), int(digits) + 1000 * (int(digits[0]) // 10 + 1)])
+		found.append(current_century + int(digits))
+	elif len(digits) == 2:
+		found.extend([current_century + int(digits), current_century - 100 + int(digits)])
+	else:
+		found.append(int(digits))
+	limit = today.year + 5
+	return [year for year in dict.fromkeys(found) if 1900 <= year <= limit]

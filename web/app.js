@@ -19,7 +19,6 @@ const settingsForm = document.querySelector("#settings-form");
 const records = [];
 let hasRenderedRecords = false;
 let settingsPayloadSignature = null;
-let refreshUnavailable = false;
 const settings = { rt_count: 1, rw_count: 7, icon_zoom_1: 100, icon_zoom_2: 100, hero_background_scale: 100, hero_image_position: "right", site_font_preset: "kifayah", site_font_scale: 100, intro_text_alignment: "left", news_text_alignment: "left", directory_text_alignment: "left" };
 let familyFilterKK = null;
 const siteIconAvailability = { 1: false, 2: false };
@@ -51,6 +50,7 @@ function themedBskLogoUrl(target, theme) {
 }
 const HOME_NOTIFICATIONS_STORAGE_KEY = "kifayah-home-notifications-seen";
 let importRows = [];
+let lastImportReport = null;
 let importDestination = "records";
 let isAdmin = false;
 let currentUser = null;
@@ -336,8 +336,11 @@ function importDateIsValid(value) {
   return Boolean(value) && !Number.isNaN(parsedDate.valueOf()) && parsedDate.toISOString().slice(0, 10) === value;
 }
 
-function importRowIsValid(row) {
+// Kembalikan daftar alasan kenapa satu baris tidak bisa diimpor.
+// Dipakai untuk memberi tahu pengelola, bukan sekadar menolak diam-diam.
+function importRowProblems(row) {
   const text = (field) => typeof row[field] === "string" ? row[field].trim() : "";
+  const problems = [];
   const fullName = text("full_name");
   const gender = text("gender").toUpperCase();
   const dateOfDeath = text("date_of_death");
@@ -352,36 +355,43 @@ function importRowIsValid(row) {
   const paymentDate = text("paid_at");
   const amountText = row.amount == null ? "" : String(row.amount).trim();
   const hasPaymentData = Boolean(paymentPeriod || paymentDate || amountText);
-  const validPaymentData = !hasPaymentData || (/^\d{4}-(0[1-9]|1[0-2])$/.test(paymentPeriod)
-    && importDateIsValid(paymentDate) && /^\d+$/.test(amountText)
-    && Number(amountText) >= 1 && Number(amountText) <= 1_000_000_000_000);
-  const validArea = (!rtText || (Number.isInteger(rt) && /^\d+$/.test(rtText) && rt >= 1 && rt <= settings.rt_count))
-    && (!rwText || (Number.isInteger(rw) && /^\d+$/.test(rwText) && rw >= 1 && rw <= settings.rw_count));
-  if (importDestination === "contributions") {
-    return fullName.length > 0 && fullName.length <= 120
-      && (!gender || ["P", "L"].includes(gender))
-      && validArea
-      && (!birthDate || importDateIsValid(birthDate))
-      && text("address").length <= 300
-      && text("family_card_number").length <= 32
-      && text("national_id_number").length <= 32
-      && text("birthplace").length <= 100
-      && text("religion").length <= 50
-      && text("payment_recipient").length <= 120
-      && validPaymentData;
+  const contributions = importDestination === "contributions";
+
+  if (!fullName.length) problems.push("nama warga kosong");
+  else if (fullName.length > 120) problems.push("nama warga lebih dari 120 karakter");
+  if (gender && !["P", "L"].includes(gender)) problems.push(`jenis kelamin "${gender}" bukan P atau L`);
+  if (rtText && (!/^\d+$/.test(rtText) || rt < 1 || rt > settings.rt_count)) {
+    problems.push(`RT "${rtText}" di luar 1-${settings.rt_count}`);
   }
-  return fullName.length <= 120
-    && (!gender || ["P", "L"].includes(gender))
-    && (!dateOfDeath || importDateIsValid(dateOfDeath))
-    && validArea
-    && text("address").length <= 300
-    && text("family_card_number").length <= 32
-    && text("national_id_number").length <= 32
-    && text("birthplace").length <= 100
-    && (!birthDate || importDateIsValid(birthDate))
-    && text("religion").length <= 50
-    && familyName.length <= 120
-    && familyRelationship.length <= 60;
+  if (rwText && (!/^\d+$/.test(rwText) || rw < 1 || rw > settings.rw_count)) {
+    problems.push(`RW "${rwText}" di luar 1-${settings.rw_count}`);
+  }
+  if (birthDate && !importDateIsValid(birthDate)) problems.push(`tanggal lahir "${birthDate}" tidak berformat YYYY-MM-DD`);
+  if (!contributions && dateOfDeath && !importDateIsValid(dateOfDeath)) {
+    problems.push(`tanggal wafat "${dateOfDeath}" tidak berformat YYYY-MM-DD`);
+  }
+  if (text("address").length > 300) problems.push("alamat lebih dari 300 karakter");
+  if (text("family_card_number").length > 32) problems.push("nomor KK lebih dari 32 karakter");
+  if (text("national_id_number").length > 32) problems.push("NIK lebih dari 32 karakter");
+  if (text("birthplace").length > 100) problems.push("tempat lahir lebih dari 100 karakter");
+  if (text("religion").length > 50) problems.push("agama lebih dari 50 karakter");
+  if (contributions && text("payment_recipient").length > 120) problems.push("penerima setoran lebih dari 120 karakter");
+  if (!contributions && familyName.length > 120) problems.push("nama keluarga lebih dari 120 karakter");
+  if (!contributions && familyRelationship.length > 60) problems.push("hubungan keluarga lebih dari 60 karakter");
+  if (hasPaymentData) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(paymentPeriod)) {
+      problems.push(`bulan iuran "${paymentPeriod}" tidak berformat YYYY-MM`);
+    }
+    if (!paymentDate) problems.push("tanggal pembayaran kosong padahal ada setoran");
+    else if (!importDateIsValid(paymentDate)) problems.push(`tanggal pembayaran "${paymentDate}" tidak berformat YYYY-MM-DD`);
+    if (!/^\d+$/.test(amountText)) problems.push(`nominal "${amountText}" bukan angka bulat`);
+    else if (Number(amountText) < 1 || Number(amountText) > 1_000_000_000_000) problems.push("nominal di luar 1 sampai 1.000.000.000.000");
+  }
+  return problems;
+}
+
+function importRowIsValid(row) {
+  return importRowProblems(row).length === 0;
 }
 
 function updateImportSummary() {
@@ -411,9 +421,29 @@ function updateImportSummary() {
   const duplicateNote = duplicateTotal
     ? `; ${duplicateTotal} suspected duplikat (${duplicateCount} dicentang)`
     : "";
-  document.querySelector("#import-summary").textContent = importRows.length
-    ? `${importRows.length} baris ditemukan. ${selectedRows.length} dipilih; ${validCount} siap diimpor${duplicateNote}${skippedCount ? `; ${skippedCount} baris memiliki format di luar batas dan akan dilewati` : ""}.`
+  const problemCounts = new Map();
+  for (const row of selectedRows) {
+    for (const problem of importRowProblems(row)) {
+      problemCounts.set(problem, (problemCounts.get(problem) || 0) + 1);
+    }
+  }
+  const problemNote = problemCounts.size
+    ? `; ${skippedCount} baris dilewati karena: ${[...problemCounts.entries()].map(([problem, count]) => `${problem} (${count} baris)`).join(", ")}`
     : "";
+  document.querySelector("#import-summary").textContent = importRows.length
+    ? `${importRows.length} baris ditemukan. ${selectedRows.length} dipilih; ${validCount} siap diimpor${duplicateNote}${problemNote}.`
+    : "";
+  const detail = document.querySelector("#import-problem-detail");
+  if (detail) {
+    const list = detail.querySelector("ul");
+    list.replaceChildren();
+    for (const [problem, count] of problemCounts) {
+      const item = document.createElement("li");
+      item.textContent = `${count} baris: ${problem}`;
+      list.append(item);
+    }
+    detail.hidden = !problemCounts.size;
+  }
 }
 
 document.querySelector("#import-preview-previous")?.addEventListener("click", () => {
@@ -472,8 +502,8 @@ function renderImportRows() {
     selectLabel.className = "import-row-select";
     const select = document.createElement("input");
     select.type = "checkbox";
-    select.checked = !row.duplicate;
-    row.selected = select.checked;
+    if (typeof row.selected !== "boolean") row.selected = !row.duplicate;
+    select.checked = row.selected;
     select.addEventListener("change", () => {
       row.selected = select.checked;
       updateImportSummary();
@@ -482,9 +512,17 @@ function renderImportRows() {
     const title = document.createElement("strong");
     title.textContent = row.full_name || "Nama belum terbaca";
     if (row.source_file) title.title = `Sumber: ${row.source_file}`;
+    const problems = importRowProblems(row);
     const status = document.createElement("span");
-    status.className = row.duplicate ? "import-status duplicate" : row.ocr_confidence < 0.7 ? "import-status review" : "import-status";
-    status.textContent = row.duplicate ? "Duplikat (boleh di-replace)" : row.ocr_confidence < 0.7 ? "Periksa OCR" : "Pratinjau";
+    status.className = problems.length
+      ? "import-status invalid"
+      : row.duplicate
+        ? "import-status duplicate"
+        : row.ocr_confidence < 0.7 ? "import-status review" : "import-status";
+    status.textContent = problems.length
+      ? `Tidak valid: ${problems.join("; ")}`
+      : row.duplicate ? "Duplikat (boleh di-replace)" : row.ocr_confidence < 0.7 ? "Periksa OCR" : "Pratinjau";
+    if (problems.length) status.title = problems.join("; ");
     heading.append(selectLabel, title, status);
     if (row.source_file) {
       const source = document.createElement("small");
@@ -547,6 +585,17 @@ function formatDate(value) {
   const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return raw;
   return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(date);
+}
+
+function formatAuditTimestamp(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return raw;
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+  }).format(date);
 }
 
 function formatWords(value) {
@@ -1771,24 +1820,19 @@ function showHeroSlide(index) {
 
 async function refreshRecords(forceRender = false) {
   try {
-    const settingsChanged = await loadSettings();
+    await loadSettings();
     const payload = await request(isAdmin ? "/api/admin/records" : "/api/records");
     const recordsChanged = forceRender || JSON.stringify(records) !== JSON.stringify(payload.records);
     if (recordsChanged) {
       records.splice(0, records.length, ...payload.records);
       render();
     }
-    const newsChanged = await loadNews();
+    await loadNews();
     const contributionView = document.querySelector("#admin-view-contributions");
     if (isAdmin && contributionView && !contributionView.hidden) await loadContributionResidents();
-    if (settingsChanged || recordsChanged || newsChanged || refreshUnavailable) {
-      document.querySelector("#last-updated").textContent = `Diperbarui ${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit" }).format(new Date())}`;
-      refreshUnavailable = false;
-    }
     if (isAdmin && recordsChanged) renderManageList();
   } catch {
-    document.querySelector("#last-updated").textContent = "Koneksi belum tersedia";
-    refreshUnavailable = true;
+    // Polling gagal diam-diam; data lama tetap ditampilkan sampai koneksi kembali.
   }
 }
 
@@ -1824,6 +1868,19 @@ function renderManageList() {
     text.textContent = record.full_name || `Nama belum dilengkapi (ID ${record.id})`;
     const detail = document.createElement("small");
     detail.textContent = [formatAreaLabel(record.area), record.date_of_death ? `Wafat ${formatDate(record.date_of_death)}` : "Tanggal wafat belum dilengkapi", record.publish_address ? "Alamat tampil untuk publik" : "Alamat hanya untuk pengelola"].join(" · ");
+    if (record.issue_count) {
+      const flag = document.createElement("span");
+      flag.className = "manage-item-issue";
+      flag.textContent = `${record.issue_count} field bermasalah`;
+      flag.title = "Buka menu Tinjauan Data untuk melihat file dan baris asalnya.";
+      text.append(flag);
+    }
+    const audit = document.createElement("small");
+    audit.className = "manage-item-audit";
+    audit.textContent = record.updated_at
+      ? `Terakhir diubah ${formatAuditTimestamp(record.updated_at)}${record.updated_by ? ` oleh ${record.updated_by}` : ""}`
+      : "Belum ada catatan perubahan";
+    text.append(audit);
     text.append(detail);
     const actions = document.createElement("div");
     actions.className = "manage-item-actions";
@@ -3407,6 +3464,7 @@ function setAdminTab(name, focus = false, openGroup = true) {
     if (active && focus) tab.focus();
     if (active && tab.dataset.adminTab === "news") loadAdminNews();
     if (active && tab.dataset.adminTab === "program") loadAdminProgramInfo();
+    if (active && tab.dataset.adminTab === "issues") loadDataIssues();
     if (active && tab.dataset.adminTab === "finance") {
       if (currentUser?.permissions?.includes("finance") || rolePermissionDefaults[currentUser?.role]?.includes("finance")) loadAdminFinance();
       if (currentUser?.permissions?.includes("payments") || rolePermissionDefaults[currentUser?.role]?.includes("payments")) loadAdminPayments();
@@ -3419,6 +3477,131 @@ function setAdminTab(name, focus = false, openGroup = true) {
   });
   renderAdminTaskNavigation(name);
 }
+
+// TINJAUAN DATA: daftar field bermasalah hasil impor.
+const ISSUE_FIELD_LABELS = {
+  gender: "Jenis Kelamin", rt: "RT", rw: "RW",
+  birth_date: "Tanggal Lahir", date_of_death: "Tanggal Wafat",
+  paid_at: "Tanggal Pembayaran", payment_period: "Bulan Iuran",
+  amount: "Nominal Setoran", family_card_number: "Nomor KK",
+  national_id_number: "NIK",
+};
+let dataIssues = [];
+let issueSearchTimer = null;
+
+function formatIssueTimestamp(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "-";
+  const date = new Date(raw.includes("T") ? raw : raw.replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return raw;
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  }).format(date);
+}
+
+function updateIssueTabBadge(openTotal) {
+  const badge = document.querySelector("#issue-tab-badge");
+  if (!badge) return;
+  badge.textContent = String(openTotal);
+  badge.hidden = !openTotal;
+  const tab = document.querySelector("#admin-tab-issues");
+  if (tab) tab.setAttribute("title", openTotal ? `${openTotal} field bermasalah belum diperbaiki` : "Tidak ada field bermasalah");
+}
+
+async function loadDataIssues() {
+  const errorElement = document.querySelector("#issue-error");
+  if (!errorElement) return;
+  errorElement.textContent = "";
+  const search = document.querySelector("#issue-search").value.trim();
+  const status = document.querySelector("#issue-status").value;
+  const field = document.querySelector("#issue-field").value;
+  const parameters = new URLSearchParams({ status, q: search, field });
+  try {
+    const payload = await request(`/api/admin/data-issues?${parameters}`);
+    dataIssues = payload.issues || [];
+    renderDataIssues(payload);
+    updateIssueTabBadge(payload.open_total || 0);
+  } catch (error) {
+    errorElement.textContent = error.message;
+  }
+}
+
+function renderDataIssues(payload) {
+  const list = document.querySelector("#issue-list");
+  const summary = document.querySelector("#issue-summary");
+  list.replaceChildren();
+  summary.textContent = `${dataIssues.length} catatan ditampilkan. Total belum diperbaiki: ${payload.open_total || 0} dari ${payload.total || 0}.`;
+  if (!dataIssues.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 8;
+    cell.textContent = "Tidak ada catatan untuk pencarian ini.";
+    row.append(cell);
+    list.append(row);
+    return;
+  }
+  for (const issue of dataIssues) {
+    const row = document.createElement("tr");
+    if (issue.resolved) row.className = "is-resolved";
+    const values = [
+      issue.full_name || "(tanpa nama)",
+      issue.source_file || "-",
+      issue.row_index || "-",
+      ISSUE_FIELD_LABELS[issue.field] || issue.field || "-",
+      issue.raw_value || "-",
+      issue.message || "-",
+      issue.resolved
+        ? `Selesai${issue.resolved_by ? ` oleh ${issue.resolved_by}` : ""} · ${formatIssueTimestamp(issue.resolved_at)}`
+        : `Menunggu · ${formatIssueTimestamp(issue.created_at)}`,
+    ];
+    for (const value of values) {
+      const cell = document.createElement("td");
+      cell.textContent = String(value);
+      row.append(cell);
+    }
+    const actionCell = document.createElement("td");
+    if (!issue.resolved) {
+      const button = document.createElement("button");
+      button.className = "text-button";
+      button.type = "button";
+      button.textContent = "Tandai Selesai";
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          await request("/api/admin/data-issues/resolve", {
+            method: "POST",
+            body: JSON.stringify({ issue_id: issue.id }),
+          });
+          await loadDataIssues();
+          await refreshRecords();
+        } catch (error) {
+          document.querySelector("#issue-error").textContent = error.message;
+          button.disabled = false;
+        }
+      });
+      actionCell.append(button);
+    }
+    row.append(actionCell);
+    list.append(row);
+  }
+}
+
+document.querySelector("#issue-search")?.addEventListener("input", () => {
+  clearTimeout(issueSearchTimer);
+  issueSearchTimer = setTimeout(loadDataIssues, 250);
+});
+document.querySelector("#issue-status")?.addEventListener("change", loadDataIssues);
+document.querySelector("#issue-field")?.addEventListener("change", loadDataIssues);
+document.querySelector("#issue-resolve-all")?.addEventListener("click", async () => {
+  if (!window.confirm("Tandai semua catatan yang belum diperbaiki sebagai selesai?")) return;
+  try {
+    await request("/api/admin/data-issues/resolve", { method: "POST", body: JSON.stringify({ all: true }) });
+    await loadDataIssues();
+    await refreshRecords();
+  } catch (error) {
+    document.querySelector("#issue-error").textContent = error.message;
+  }
+});
 
 function setAdminGroupOpen(group, open) {
   group.open = open;
@@ -4036,15 +4219,23 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
     importDestinationSelect.disabled = false;
   }
 });
-document.querySelector("#import-select-all").addEventListener("change", (event) => {
-  const checked = event.currentTarget.checked;
+// Terapkan pilihan ke seluruh baris, bukan hanya halaman pratinjau yang tampil.
+function setAllImportRowsSelected(selected) {
+  importRows.forEach((row) => { row.selected = selected; });
+  syncVisibleImportCheckboxes();
+}
+
+function syncVisibleImportCheckboxes() {
   document.querySelectorAll("#import-preview-list .import-row").forEach((card) => {
     const row = importRows[Number(card.dataset.rowIndex)];
     if (!row) return;
-    row.selected = checked;
     const checkbox = card.querySelector(".import-row-select input");
-    if (checkbox) checkbox.checked = checked;
+    if (checkbox) checkbox.checked = Boolean(row.selected);
   });
+}
+
+document.querySelector("#import-select-all").addEventListener("change", (event) => {
+  setAllImportRowsSelected(event.currentTarget.checked);
   updateImportSummary();
 });
 document.querySelector("#import-cancel").addEventListener("click", () => {
@@ -4060,10 +4251,17 @@ document.querySelector("#import-commit").addEventListener("click", async () => {
   const resultElement = document.querySelector("#import-result");
   errorElement.textContent = "";
   const selectedImportRows = importRows.filter((row) => row.selected);
-  const invalidCount = selectedImportRows.filter((row) => !importRowIsValid(row)).length;
+  const problemCounts = new Map();
+  for (const row of selectedImportRows) {
+    for (const problem of importRowProblems(row)) {
+      problemCounts.set(problem, (problemCounts.get(problem) || 0) + 1);
+    }
+  }
+  const invalidCount = selectedImportRows.filter((row) => importRowProblems(row).length > 0).length;
   const selectedRows = selectedImportRows.filter(importRowIsValid).map((row) => {
     const cleanRow = {};
     for (const [field] of currentImportFields()) cleanRow[field] = row[field] ?? "";
+    if (row.source_file) cleanRow.source_file = row.source_file;
     cleanRow.rt = cleanRow.rt === "" ? "" : Number(cleanRow.rt);
     cleanRow.rw = cleanRow.rw === "" ? "" : Number(cleanRow.rw);
     return cleanRow;
@@ -4102,7 +4300,13 @@ document.querySelector("#import-commit").addEventListener("click", async () => {
     importDestinationSelect.disabled = false;
     if (importDestination === "contributions") await loadContributionResidents();
     else await refreshRecords();
-    showImportDone(result, destinationLabel, duplicateAction, invalidCount);
+    showImportDone(
+      result,
+      destinationLabel,
+      duplicateAction,
+      invalidCount,
+      [...problemCounts.entries()].sort((left, right) => right[1] - left[1]),
+    );
   } catch (error) {
     errorElement.textContent = error.message;
   }
@@ -4110,35 +4314,220 @@ document.querySelector("#import-commit").addEventListener("click", async () => {
 document.querySelector("#import-duplicate-choice")?.addEventListener("change", (event) => {
   if (!event.target.matches('input[name="import_duplicate_action"]')) return;
   const useReplace = event.target.value === "replace";
-  document.querySelectorAll("#import-preview-list .import-row").forEach((card) => {
-    const row = importRows[Number(card.dataset.rowIndex)];
-    if (!row || !row.duplicate) return;
-    row.selected = useReplace;
-    const checkbox = card.querySelector(".import-row-select input");
-    if (checkbox) checkbox.checked = useReplace;
+  importRows.forEach((row) => {
+    if (row.duplicate) row.selected = useReplace;
   });
+  syncVisibleImportCheckboxes();
   updateImportSummary();
 });
-function showImportDone(result, destinationLabel, duplicateAction, invalidCount) {
-  const items = [[`${result.created} ${destinationLabel} ditambahkan`, "is-added"]];
-  if (result.updated) items.push([`${result.updated} data diperbarui`, "is-updated"]);
-  if (result.payments_created) items.push([`${result.payments_created} setoran dicatat`, "is-added"]);
-  if (result.payments_updated) items.push([`${result.payments_updated} setoran diperbarui`, "is-updated"]);
+const IMPORT_OUTCOME_LABELS = {
+  created: "Ditambahkan",
+  updated: "Diperbarui",
+  skipped: "Dilewati",
+  invalid: "Tidak valid",
+  payment_created: "Setoran baru",
+  payment_updated: "Setoran diperbarui",
+};
+
+const IMPORT_OUTCOME_FIELDS = {
+  created: ["created"],
+  updated: ["updated"],
+  payment_created: ["payments_created"],
+  payment_updated: ["payments_updated"],
+};
+
+// Setiap butir statistik menyimpan daftar baris yang membentuknya.
+let importReportGroups = [];
+
+function buildImportReportGroups(result, problemCounts) {
+  const outcomes = Array.isArray(result.outcomes) ? result.outcomes : [];
+  const byOutcome = new Map();
+  for (const item of outcomes) {
+    const key = item.outcome || "skipped";
+    if (!byOutcome.has(key)) byOutcome.set(key, []);
+    byOutcome.get(key).push({
+      row: item.row_index || 0,
+      file: item.source_file || "-",
+      name: item.full_name || "(tanpa nama)",
+      reason: item.reason || "",
+      detail: Boolean(item.detail),
+    });
+  }
+  // Nomor baris harus sama dengan yang dikirim ke server, yaitu urutan baris
+  // yang DIPILIH saja. importRows.indexOf() tidak bisa dipakai karena O(n^2).
+  const clientProblems = new Map();
+  const clientProblemRows = new Map();
+  const selectedRows = importRows.filter((row) => row.selected);
+  selectedRows.forEach((row, position) => {
+    const entry = {
+      row: position + 1,
+      file: row.source_file || "-",
+      name: row.full_name || "(tanpa nama)",
+      reason: "",
+    };
+    for (const problem of importRowProblems(row)) {
+      if (!clientProblems.has(problem)) clientProblems.set(problem, []);
+      clientProblems.get(problem).push(entry);
+      if (!clientProblemRows.has(problem)) clientProblemRows.set(problem, new Map());
+      clientProblemRows.get(problem).set(`${entry.file}|${entry.row}`, entry);
+    }
+  });
+  const groups = [];
+  for (const [outcome, items] of byOutcome) {
+    groups.push({
+      id: outcome,
+      label: IMPORT_OUTCOME_LABELS[outcome] || outcome,
+      count: items.length,
+      items,
+      // Satu baris bisa punya beberapa status (warga dibuat + setoran dicatat).
+      // onlyRows dipakai agar jumlah pada tombol sama dengan jumlah baris.
+      onlyRows: items.filter((item) => !item.detail),
+      source: "server",
+    });
+  }
+  for (const [problem, items] of clientProblems) {
+    const unique = [...(clientProblemRows.get(problem) || new Map()).values()];
+    groups.push({
+      id: `problem:${problem}`,
+      label: problem,
+      count: items.length,
+      items: unique,
+      source: "klien",
+    });
+  }
+  return groups;
+}
+
+function importReportToCsv(groups) {
+  const escape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const lines = [["File", "Baris", "Nama", "Kategori", "Keterangan"].map(escape).join(",")];
+  for (const group of groups) {
+    for (const rawItem of group.items) {
+      const entries = rawItem && Array.isArray(rawItem.rows)
+        ? rawItem.rows.map((item) => ({ ...item, reason: rawItem.label }))
+        : [rawItem];
+      for (const item of entries) {
+        lines.push([item.file, item.row, item.name, group.label, item.reason || ""].map(escape).join(","));
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
+function openImportReport(groupId) {
+  const group = importReportGroups.find((item) => item.id === groupId);
+  if (!group) return;
+  const title = document.querySelector("#import-report-title");
+  const note = document.querySelector("#import-report-note");
+  const body = document.querySelector("#import-report-body");
+  const download = document.querySelector("#import-report-download");
+  title.textContent = `${group.label} - ${group.count} baris`;
+  note.textContent = group.source === "server"
+    ? "Daftar baris yang dilaporkan server saat impor."
+    : "Daftar baris yang ditolak pemeriksaan pratinjau di peramban.";
+  body.replaceChildren();
+  for (const rawItem of group.items) {
+    // Grup "alasan" menyimpan daftar {alasan, baris}; grup lain satu baris biasa.
+    const entries = rawItem && Array.isArray(rawItem.rows)
+      ? rawItem.rows.map((item) => ({ ...item, reason: rawItem.label }))
+      : [rawItem];
+    for (const item of entries) {
+      const row = document.createElement("tr");
+      for (const value of [item.file ?? "-", item.row ?? "-", item.name ?? "-", item.reason || "-"]) {
+        const cell = document.createElement("td");
+        cell.textContent = String(value);
+        row.append(cell);
+      }
+      body.append(row);
+    }
+  }
+  download.onclick = () => {
+    const blob = new Blob(["\ufeff" + importReportToCsv([group])], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `impor-${group.id.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+  const dialog = document.querySelector("#import-report-dialog");
+  if (dialog && !dialog.open) dialog.showModal();
+}
+
+function showImportDone(result, destinationLabel, duplicateAction, invalidCount, problemCounts = []) {
+  const groups = buildImportReportGroups(result, problemCounts);
+  importReportGroups = groups;
+  const items = [];
+  const addGroup = (group, text, className) => {
+    if (!group) return;
+    const count = group.onlyRows ? group.onlyRows.length : group.count;
+    if (!count) return;
+    const row = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.textContent = `${text} - klik untuk rincian`;
+    button.addEventListener("click", () => openImportReport(group.id));
+    row.append(button);
+    items.push(row);
+  };
+  addGroup(groups.find((group) => group.id === "created"), `${result.created} ${destinationLabel} ditambahkan`, "is-added");
+  addGroup(groups.find((group) => group.id === "updated"), `${result.updated} data diperbarui`, "is-updated");
+  addGroup(groups.find((group) => group.id === "payment_created"), `${result.payments_created} setoran dicatat`, "is-added");
+  addGroup(groups.find((group) => group.id === "payment_updated"), `${result.payments_updated} setoran diperbarui`, "is-updated");
   if (result.skipped_duplicates) {
-    items.push([
+    addGroup(
+      groups.find((group) => group.id === "skipped"),
       `${result.skipped_duplicates} data duplikat dilewati`,
       duplicateAction === "replace" ? "is-more" : "is-error",
-    ]);
+    );
   }
-  if (invalidCount) items.push([`${invalidCount} baris tidak valid dilewati`, "is-more"]);
+  // Baris tidak valid: gabungan temuan server dan pemeriksaan peramban,
+  // dikunci per file+baris supaya tidak terhitung ganda.
+  const invalidRows = [];
+  const seenInvalid = new Set();
+  for (const group of groups) {
+    if (group.id !== "invalid" && group.source !== "klien") continue;
+    for (const item of group.items) {
+      const key = `${item.file}|${item.row}`;
+      if (seenInvalid.has(key)) continue;
+      seenInvalid.add(key);
+      invalidRows.push(item);
+    }
+  }
+  const invalidGroup = {
+    id: "__invalid",
+    count: invalidRows.length,
+    items: invalidRows,
+    label: "tidak valid",
+    source: "klien",
+  };
+  addGroup(invalidGroup, `${invalidCount} baris tidak valid dilewati`, "is-more");
   const stats = document.querySelector("#import-done-stats");
   stats.replaceChildren();
-  items.forEach(([text, className]) => {
-    const item = document.createElement("li");
-    item.className = className;
-    item.textContent = text;
-    stats.append(item);
-  });
+  items.forEach((row) => stats.append(row));
+  // Tabel "alasan" menampilkan satu baris per alasan, jadi jumlahnya sama
+  // dengan jumlah alasan, bukan jumlah baris bermasalah.
+  const problemGroup = {
+    id: "__problems",
+    count: problemCounts.length,
+    label: "alasan tidak valid",
+    source: "klien",
+    items: problemCounts.map(([problem]) => {
+      const group = groups.find((item) => item.id === `problem:${problem}`);
+      return { label: problem, rows: group ? group.items : [{ file: "-", row: 0, name: "-" }] };
+    }),
+  };
+  importReportGroups = [...groups, invalidGroup, problemGroup].filter((group) => group.count > 0);
+  if (problemGroup.count) {
+    const row = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "is-more";
+    button.textContent = `${problemCounts.length} alasan - klik untuk rincian`;
+    button.addEventListener("click", () => openImportReport("__problems"));
+    row.append(button);
+    stats.append(row);
+  }
   const totalChanges =
     result.created + (result.updated || 0) + (result.payments_created || 0) + (result.payments_updated || 0);
   document.querySelector("#import-done-note").textContent = totalChanges
@@ -4151,6 +4540,18 @@ function showImportDone(result, destinationLabel, duplicateAction, invalidCount)
 }
 document.querySelector("#import-done-confirm")?.addEventListener("click", () => {
   document.querySelector("#import-done-dialog").close();
+});
+
+// Dialog rincian: tutup lewat tombol, Escape, atau klik di luar isi.
+function closeImportReport() {
+  document.querySelector("#import-report-dialog")?.close();
+}
+for (const selector of ["#import-report-close", "#import-report-done"]) {
+  document.querySelector(selector)?.addEventListener("click", closeImportReport);
+}
+document.querySelector("#import-report-dialog")?.addEventListener("click", (event) => {
+  if (event.target.closest(".import-report-scroll, .dialog-top, .import-actions")) return;
+  closeImportReport();
 });
 document.querySelector("#detail-record-select").addEventListener("change", () => {
   document.querySelector("#identity-form").dataset.recordId = "";

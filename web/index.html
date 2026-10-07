@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   <link id="dynamic-favicon" rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/styles.css?v=20261006-21">
-  <script src="/app.js?v=20261006-21" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=20261006-30">
+  <script src="/app.js?v=20261006-30" defer></script>
   <script type="module" src="/reveal.js"></script>
 </head>
 <body>
@@ -37,7 +37,6 @@
     <div class="topbar-right">
       <div class="topbar-status">
         <span class="live-indicator"><i></i> Data diperbarui berkala</span>
-        <span id="last-updated">Menunggu pembaruan</span>
       </div>
       <div class="notifications-control">
         <button id="notifications-toggle" class="icon-button notifications-toggle" type="button" aria-label="Notifikasi" aria-expanded="false" aria-controls="notifications-panel" title="Notifikasi">
@@ -211,6 +210,9 @@
           </details>
           <details class="admin-nav-group" data-admin-group="import">
             <summary id="admin-tab-import" class="admin-tab" aria-expanded="false" data-admin-tab="import">Impor Data</summary>
+          </details>
+          <details class="admin-nav-group" data-admin-group="issues">
+            <summary id="admin-tab-issues" class="admin-tab" aria-expanded="false" data-admin-tab="issues">Tinjauan Data <span id="issue-tab-badge" class="issue-tab-badge" hidden>0</span></summary>
           </details>
           <details class="admin-nav-group" data-admin-group="news">
             <summary id="admin-tab-news" class="admin-tab" aria-expanded="false" data-admin-tab="news">Berita</summary>
@@ -511,8 +513,12 @@
               <p id="import-result" class="form-success" role="status" hidden></p>
               <div id="import-preview-panel" class="import-preview-panel" hidden>
                 <div class="import-selection">
-                  <label class="check-row"><input id="import-select-all" type="checkbox"><span>Pilih Semua</span></label>
+                  <label class="check-row"><input id="import-select-all" type="checkbox"><span>Pilih Semua <small>Menerapkan ke seluruh halaman pratinjau.</small></span></label>
                   <p class="form-hint" id="import-summary"></p>
+                  <details id="import-problem-detail" class="import-details" hidden>
+                    <summary>Rincian baris yang tidak valid</summary>
+                    <ul></ul>
+                  </details>
                 </div>
                 <div id="import-notice" class="import-notice" hidden>
                   <p id="import-notice-summary" class="import-notice-summary" role="status" aria-live="polite"></p>
@@ -538,6 +544,42 @@
                   <button id="import-cancel" class="text-button" type="button">Batal</button>
                   <button id="import-commit" class="primary-button" type="button">Impor Baris Dipilih <span aria-hidden="true">→</span></button>
                 </div>
+              </div>
+            </section>
+          </section>
+          <section id="admin-view-issues" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-issues" tabindex="0" data-admin-panel="issues" hidden>
+            <section class="admin-section issue-review-section" aria-labelledby="issues-title">
+              <h3 id="issues-title">Tinjauan Data</h3>
+              <p class="form-hint">Baris yang punya field bermasalah tetap tersimpan. Daftar ini menunjukkan file asal, nomor baris, dan nama warga supaya bisa diperbaiki kemudian.</p>
+              <div class="issue-toolbar">
+                <label class="issue-search">Cari<input id="issue-search" type="search" placeholder="Nama warga, file, isi field, atau keterangan" autocomplete="off"></label>
+                <label>Status<select id="issue-status">
+                  <option value="open">Belum diperbaiki</option>
+                  <option value="done">Sudah diperbaiki</option>
+                  <option value="all">Semua</option>
+                </select></label>
+                <label>Kolom<select id="issue-field">
+                  <option value="">Semua kolom</option>
+                  <option value="gender">Jenis Kelamin</option>
+                  <option value="rt">RT</option>
+                  <option value="rw">RW</option>
+                  <option value="birth_date">Tanggal Lahir</option>
+                  <option value="date_of_death">Tanggal Wafat</option>
+                  <option value="paid_at">Tanggal Pembayaran</option>
+                  <option value="payment_period">Bulan Iuran</option>
+                  <option value="amount">Nominal Setoran</option>
+                  <option value="family_card_number">Nomor KK</option>
+                  <option value="national_id_number">NIK</option>
+                </select></label>
+                <button id="issue-resolve-all" class="text-button" type="button">Tandai Semua Selesai</button>
+              </div>
+              <p class="form-hint" id="issue-summary" role="status" aria-live="polite"></p>
+              <p class="form-error" id="issue-error" role="alert"></p>
+              <div class="issue-table-scroll">
+                <table class="issue-table">
+                  <thead><tr><th>Nama</th><th>File</th><th>Baris</th><th>Kolom</th><th>Nilai di file</th><th>Keterangan</th><th>Status</th><th></th></tr></thead>
+                  <tbody id="issue-list"></tbody>
+                </table>
               </div>
             </section>
           </section>
@@ -950,6 +992,26 @@
     <p id="import-done-note" class="form-hint"></p>
     <div class="import-actions">
       <button id="import-done-confirm" class="primary-button" type="button">Selesai <span aria-hidden="true">→</span></button>
+    </div>
+  </dialog>
+  <dialog id="import-report-dialog" class="dialog import-report-dialog" aria-labelledby="import-report-title">
+    <div class="dialog-top">
+      <div>
+        <p class="eyebrow">Rincian Baris</p>
+        <h2 id="import-report-title">Rincian</h2>
+      </div>
+      <button id="import-report-close" class="icon-button" type="button" aria-label="Tutup rincian">&times;</button>
+    </div>
+    <p class="form-hint" id="import-report-note"></p>
+    <div class="import-report-scroll">
+      <table class="import-report-table">
+        <thead><tr><th>File</th><th>Baris</th><th>Nama</th><th>Keterangan</th></tr></thead>
+        <tbody id="import-report-body"></tbody>
+      </table>
+    </div>
+    <div class="import-actions">
+      <button id="import-report-download" class="text-button" type="button">Unduh CSV</button>
+      <button id="import-report-done" class="primary-button" type="button">Tutup</button>
     </div>
   </dialog>
   <dialog id="signature-pad-dialog" class="dialog" aria-labelledby="signature-pad-title">
