@@ -3,7 +3,6 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: kifayah:latest
     container_name: kifayah
     restart: unless-stopped
     environment:
@@ -13,8 +12,7 @@ services:
     ports:
       - "127.0.0.1:8081:8000"
     volumes:
-      # Data pengguna: database + foto/berita. Jangan dihapus.
-      - ./persist:/app/persist
+      # Sinkronisasi otomatis ke folder www Nginx CasaOS
       - "/DATA/AppData/nginx/config/www:/app/persist"
     healthcheck:
       test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/', timeout=5).status == 200 else 1)"]
