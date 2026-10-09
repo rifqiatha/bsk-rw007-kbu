@@ -54,6 +54,9 @@
   --section-nav-height: 0px;
 }
 
+/* Atribut hidden harus selalu menutupi display dari rule lain. */
+[hidden] { display: none !important; }
+
 .resident-dashboard { padding: clamp(1rem, 4vw, 2.5rem); max-width: 760px; margin: 0 auto; }
 .resident-dashboard h2 { margin: .35rem 0 1rem; }
 .resident-dashboard-card { margin: 1.5rem 0; padding: 1.25rem; border: 1px solid var(--line, #d0d0d0); border-radius: 1rem; background: var(--surface, #fff); }
@@ -125,7 +128,14 @@ body:not(.admin-page) .topbar:has(#mobile-nav-toggle[aria-expanded="true"]) { bo
 .password-field-control input { padding-right: 48px !important; }
 .password-visibility-toggle { position: absolute; right: 10px; display: grid; width: 32px; height: 32px; place-items: center; padding: 0; border: 0; color: var(--muted); background: transparent; }
 .password-visibility-toggle svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.auth-submit-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; }
+.auth-submit-row .text-button { min-width: 0; flex: 0 1 auto; white-space: nowrap; color: var(--green); }
+/* Tombol memakai width auto supaya tidak melebar penuh. Karena itu
+   justify-content: space-between tidak lagi memberi jarak, jadi panah
+   perlu gap eksplisit supaya tidak menempel pada teks "Masuk". */
+.auth-submit-row .primary-button { min-width: 0; flex: 0 1 auto; width: auto; gap: 12px; }
 .auth-secondary-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.auth-secondary-actions:has(> button[hidden]) { display: none; }
 .auth-secondary-actions .text-button { color: var(--green); }
 .icon-button.mobile-nav-toggle { display: none; }
 .section-navigation { display: flex; width: fit-content; max-width: 100%; min-width: 0; flex: 0 1 auto; align-items: center; justify-content: center; gap: 6px; margin-inline: auto; padding: 6px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); background: var(--surface-soft); }
@@ -189,22 +199,53 @@ main { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
 main > section { min-width: 0; scroll-margin-top: calc(var(--topbar-height) + 10px); }
 .intro, .news-section, .directory { min-height: calc(100svh - var(--topbar-height)); }
 .intro { position: relative; isolation: isolate; display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; min-width: 0; padding: 32px 0; }
-.intro:has(.hero-visual:not([hidden])) { flex-direction: row-reverse; }
-#intro-section[data-hero-position="left"]:has(.hero-visual:not([hidden])) { flex-direction: row; }
-#intro-section[data-hero-position="left"] .hero-visual { margin: 0 auto 0 0; }
-#intro-section[data-hero-position="center"]:has(.hero-visual:not([hidden])) { flex-direction: column; }
-#intro-section[data-hero-position="center"] .intro-copy { order: 1; flex: 0 1 auto; }
-#intro-section[data-hero-position="center"] .hero-visual { order: 2; width: min(42%, 560px); flex: 0 0 auto; align-self: center; margin-inline: auto; }
+/* Hero full-bleed: media menutupi seluruh .intro dan teks ada di atasnya.
+   Penting: saat media ada, .intro HARUS berhenti menjadi flex container.
+   Anak absolute milik flex container tidak diregangkan oleh top/bottom
+   (Chrome menurunkannya ke static position dengan tinggi isi), dan karena
+   img + .hero-slideshow juga absolute, tingginya jadi 0 sehingga video
+   terpotong habis oleh overflow:hidden. Dengan display:block, inset:0
+   benar-benar meregangkan media setinggi section. */
+.intro:has(.hero-visual:not([hidden])) { display: block; }
+.intro:has(.hero-visual:not([hidden])) .intro-copy { max-width: min(700px, 100%); }
+/* "Posisi Logo Intro" kini mengatur titik fokus media saat di-crop full-bleed. */
+#intro-section[data-hero-position="left"] { --hero-object-position: left center; }
+#intro-section[data-hero-position="center"] { --hero-object-position: center; }
+#intro-section[data-hero-position="right"] { --hero-object-position: right center; }
 .intro::before { content: ""; position: absolute; z-index: -2; inset-block: 0; left: 50%; width: 100vw; transform: translateX(-50%); background: var(--cover-band); }
 .intro-copy { position: relative; z-index: 1; min-width: 0; flex: 1 1 60%; max-width: 700px; animation: arrive calc(var(--tp-dur-slow)) var(--tp-ease) both; }
 .eyebrow { margin: 0 0 16px; color: var(--green); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 600; letter-spacing: .2em; text-transform: uppercase; }
 h1, h2, h3, p { margin-top: 0; }
 h1 { margin-bottom: 20px; font-family: var(--site-font-display); font-size: calc((clamp(40px, 7.6vw, var(--tp-hero))) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); line-height: .98; letter-spacing: var(--tp-track-display); text-transform: capitalize; }
 .intro-description { max-width: 480px; margin: 0; color: var(--muted); font-size: calc((16px) * var(--site-font-scale, 1)); line-height: 1.5; }
-.hero-visual { position: relative; z-index: 0; display: grid; width: 42%; min-width: 0; min-height: 260px; flex: 0 1 42%; aspect-ratio: 1; place-items: center; margin: 0 clamp(20px, 4vw, 48px) 0 auto; overflow: visible; border: 0; background: transparent; opacity: .72; pointer-events: none; }
-.hero-visual img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; transform-origin: center; filter: var(--tp-img-filter); transform: scale(var(--hero-background-scale, 1)); transition: transform var(--tp-dur) var(--tp-ease); }
+/* Lapisan media full-bleed di belakang teks intro. */
+.hero-visual { position: absolute; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%); z-index: 0; display: grid; min-width: 0; place-items: center; margin: 0; overflow: hidden; border: 0; background: #000; opacity: 1; pointer-events: none; }
+/* Scrim gelap supaya teks putih tetap terbaca di atas video/foto. Gradien
+   dipakai karena teks intro selalu rata kiri: sisi teks digelapkan lebih
+   dalam, sedangkan sisi video tetap terlihat jelas. */
+.hero-visual::before { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(100deg, rgba(0, 0, 0, .8) 0%, rgba(0, 0, 0, .66) 45%, rgba(0, 0, 0, .4) 100%); }
+.hero-visual img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; object-position: var(--hero-object-position, center); transform-origin: center; filter: var(--tp-img-filter); transform: scale(var(--hero-background-scale, 1)); transition: transform var(--tp-dur) var(--tp-ease); }
 .hero-slideshow { position: absolute; inset: 0; display: grid; place-items: center; }
-.hero-slideshow video { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; transform-origin: center; transform: scale(var(--hero-background-scale, 1)); transition: transform var(--tp-dur) var(--tp-ease); }
+.hero-slideshow video { display: block; width: 100%; height: 100%; object-fit: cover; object-position: var(--hero-object-position, center); transform-origin: center; transform: scale(var(--hero-background-scale, 1)); transition: transform var(--tp-dur) var(--tp-ease); }
+/* Media ada di belakang teks, jadi teks intro memakai warna putih. */
+.intro:has(.hero-visual:not([hidden])) .intro-copy { color: #fff; }
+.intro:has(.hero-visual:not([hidden])) .intro-copy h1 { color: #fff; }
+.intro:has(.hero-visual:not([hidden])) .intro-description { color: rgba(255, 255, 255, .82); }
+.intro:has(.hero-visual:not([hidden])) .eyebrow { color: rgba(255, 255, 255, .65); }
+.intro:has(.hero-visual:not([hidden])) .intro-note { color: rgba(255, 255, 255, .85); border-color: rgba(255, 255, 255, .25); background: rgba(255, 255, 255, .08); }
+/* HERANDAS DUA TOPBAR: media cover naik setinggi topbar sehingga video/foto
+   terlihat penuh sampai paling atas. Topbar sudah transparan selama belum
+   digulir (aturan .topbar:not([data-scrolled])), jadi yang perlu disamakan
+   hanya batas atas media dan warna teks header. Begitu digulir, topbar
+   kembali memakai latar --surface seperti biasa. */
+body:has(.hero-visual:not([hidden])) .hero-visual { top: calc(-1 * var(--topbar-height)); }
+/* Teks brand tidak dipaksa jadi putih. Media hero bisa berupa foto
+   terang, sehingga warna teks harus mengikuti mode tema: --ink (gelap)
+   saat mode terang, terang saat mode gelap. Scrim gelap pada
+   .hero-visual::before yang menjaga keterbacaan di atas media. */
+body:has(.hero-visual:not([hidden])) .topbar:not([data-scrolled]) .brand,
+body:has(.hero-visual:not([hidden])) .topbar:not([data-scrolled]) .brand-copy strong { color: var(--ink); }
+body:has(.hero-visual:not([hidden])) .topbar:not([data-scrolled]) .brand-copy small { color: var(--muted); }
 .hero-playlist-panel { margin-top: 24px; padding-top: 20px; border-top: var(--tp-bw) solid var(--line); }
 .hero-playlist-panel h4 { margin: 0 0 7px; font-family: var(--site-font-display); font-size: calc((24px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
 .hero-playlist-items { display: grid; gap: 8px; margin: 15px 0 0; padding: 0; list-style: none; }
@@ -336,6 +377,27 @@ kbd { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
 .news-article-headline { color: var(--muted); font-size: calc((14px) * var(--site-font-scale, 1)); line-height: 1.65; }
 .news-article-card time { display: block; margin-bottom: 1px; color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); line-height: 1.5; }
 .news-article-author { color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); line-height: 1.5; }
+.contacts-section { position: relative; isolation: isolate; display: grid; min-width: 0; align-content: start; max-width: 1180px; margin: 0 auto; padding: 32px 0; }
+.contacts-section::before { content: ""; position: absolute; z-index: -1; inset-block: 0; left: 50%; width: 100vw; transform: translateX(-50%); background: var(--news-band); }
+.contacts-hint { margin: 0 0 22px; color: var(--muted); font-size: calc((15px) * var(--site-font-scale, 1)); line-height: 1.65; }
+.contacts-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 18px; }
+.contact-card { display: grid; min-width: 0; align-content: start; gap: 12px; padding: 6px 20px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); background: color-mix(in srgb, var(--surface-soft) 42%, var(--surface)); box-shadow: var(--shadow-soft); transition: border-color var(--tp-dur) var(--tp-ease), transform var(--tp-dur) var(--tp-ease), box-shadow var(--tp-dur) var(--tp-ease); }
+.contact-card:hover { border-color: var(--green); box-shadow: var(--shadow-hover); transform: translateY(-3px); }
+.contact-card-toggle { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border: 0; color: var(--ink); background: transparent; text-align: left; cursor: pointer; }
+.contact-card-toggle:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; border-radius: var(--radius-control); }
+.contact-card-head { display: grid; min-width: 0; gap: 3px; }
+.contact-card-summary { color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); }
+.contact-card-chevron { color: var(--green); font-size: calc((20px) * var(--site-font-scale, 1)); line-height: 1; transition: transform var(--tp-dur) var(--tp-ease); }
+.contact-card-toggle[aria-expanded="true"] .contact-card-chevron { transform: rotate(90deg); }
+.contact-card-detail { display: grid; min-width: 0; gap: 10px; padding: 0 0 16px; border-top: var(--tp-bw) solid var(--line); }
+.contact-row { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px; padding-top: 10px; }
+.contact-row-copy { display: grid; min-width: 0; gap: 3px; }
+.contact-unit { margin: 0; color: var(--green); font-family: var(--site-font-display); font-size: calc((20px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
+.contact-name { margin: 0; color: var(--ink); font-size: calc((16px) * var(--site-font-scale, 1)); font-weight: 600; overflow-wrap: anywhere; }
+.contact-position { margin: 0; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); }
+.contact-phone { color: var(--ink); font-family: var(--site-font-mono); font-size: calc((14px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); text-decoration: none; overflow-wrap: anywhere; }
+.contact-phone:hover { color: var(--green); text-decoration: underline; text-underline-offset: 3px; }
+.contact-phone:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
 .dialog.news-detail-dialog { width: min(1100px, calc(100% - 64px)); }
 .news-detail-content { display: grid; gap: 14px; }
 .news-share-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 22px; padding: 12px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); background: color-mix(in srgb, var(--surface-soft) 62%, var(--surface)); }
@@ -468,7 +530,21 @@ kbd { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
 .admin-page #admin-dialog[open]::-webkit-scrollbar-track-piece:start { margin-top: 12px; }
 .admin-page #admin-dialog[open]::-webkit-scrollbar-track-piece:end { margin-bottom: 12px; }
 .admin-page #admin-dialog[open]::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--scrollbar-thumb-color, transparent); background-clip: padding-box; transition: background-color 160ms ease; }
-.admin-page:not(.admin-authenticated) #admin-dialog[open] { width: min(440px, calc(100% - 32px)); margin: auto; }
+.admin-page:not(.admin-authenticated) #admin-dialog[open] { width: min(400px, calc(100% - 32px)); margin: 20px auto 40px; padding: 24px; }
+/* FORMULIR MASUK: ukuran disamakan dengan halaman Masuk Warga (auth.css)
+   supaya keduanya tampil identik. Selector memakai :not(.admin-authenticated)
+   jadi hanya berlaku di layar login; form admin lain tidak ikut mengecil. */
+.admin-page:not(.admin-authenticated) #admin-dialog .form-stack { gap: 14px; }
+.admin-page:not(.admin-authenticated) #admin-dialog .form-stack label:not(.check-row) { gap: 7px; font-size: calc((13px) * var(--site-font-scale, 1)); }
+.admin-page:not(.admin-authenticated) #admin-dialog .form-stack input:not([type=checkbox]):not([type=radio]),
+.admin-page:not(.admin-authenticated) #admin-dialog .form-stack select { min-height: 48px; padding: 10px 14px; font-size: calc((14px) * var(--site-font-scale, 1)); }
+.admin-page:not(.admin-authenticated) #admin-dialog .primary-button { min-height: 48px; font-size: calc((14px) * var(--site-font-scale, 1)); }
+.admin-page:not(.admin-authenticated) #admin-dialog .dialog-top { margin-bottom: 14px; }
+.admin-page:not(.admin-authenticated) #admin-dialog .dialog-top h2 { font-size: calc((27px) * var(--site-font-scale, 1)); }
+.admin-page:not(.admin-authenticated) #admin-dialog .eyebrow { margin-bottom: 5px; font-size: 10px; }
+.admin-page:not(.admin-authenticated) #admin-dialog .auth-secondary-actions .text-button { font-size: calc((13px) * var(--site-font-scale, 1)); }
+.admin-page:not(.admin-authenticated) #admin-dialog .form-error,
+.admin-page:not(.admin-authenticated) #admin-dialog .form-hint { font-size: calc((12px) * var(--site-font-scale, 1)); }
 .dialog-top { display: flex; justify-content: space-between; align-items: start; margin-bottom: 18px; }
 .dialog-top .eyebrow { margin-bottom: 6px; }
 .news-detail-dialog .dialog-top { align-items: center; }
@@ -522,8 +598,13 @@ html[data-mode="dark"] #admin-profile-initials { display: none; }
 html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: block; }
 #brand-icon-secondary,
 #brand-icon.brand-icon-bsk { object-fit: contain; background: transparent; }
-.hero-visual.uses-theme-bsk-logo { aspect-ratio: 1; overflow: visible; border-radius: 0; background: transparent; opacity: 1; }
-.hero-visual.uses-theme-bsk-logo img { filter: none; transform: none; }
+/* Logo BSK tetap ditampilkan utuh (contain) di atas scrim, bukan di-crop
+   sampai memenuhi layar. */
+.hero-visual.uses-theme-bsk-logo { overflow: hidden; border: 0; border-radius: 0; background: #000; opacity: 1; }
+.hero-visual.uses-theme-bsk-logo img { object-fit: contain; filter: none; transform: none; }
+/* Video mengikuti ukuran layer full-bleed; tidak perlu aspect-ratio karena
+   tinggi layer sudah pasti dari top/bottom pada .intro yang display:block. */
+.hero-visual.is-video { overflow: hidden; background: #000; opacity: 1; }
 .admin-profile-copy { display: grid; min-width: 0; flex: 1; gap: 2px; }
 .admin-profile-copy strong,
 .admin-profile-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -591,13 +672,20 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 /* FORMULIR DAN AKSI ADMIN */
 .form-stack { display: grid; gap: 16px; }
 .form-stack label:not(.check-row) { display: grid; gap: 8px; color: var(--muted); font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 600; }
-.form-stack input:not([type=checkbox]):not([type=radio]), .form-stack textarea, .form-stack select, .settings-form input { width: 100%; min-height: 48px; padding: 11px 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); outline: none; color: var(--ink); background: var(--surface-soft); font-size: calc((15px) * var(--site-font-scale, 1)); font-weight: 400; transition: border-color var(--tp-dur) var(--tp-ease), box-shadow var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
-.form-stack input:focus, .form-stack textarea:focus, .form-stack select:focus, .settings-form input:focus { border-color: var(--green); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 16%, transparent); }
+.form-stack input:not([type=checkbox]):not([type=radio]), .form-stack textarea, .form-stack select, .settings-form input, .settings-form select { width: 100%; min-height: 48px; padding: 11px 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); outline: none; color: var(--ink); background: var(--surface-soft); font-size: calc((15px) * var(--site-font-scale, 1)); font-weight: 400; transition: border-color var(--tp-dur) var(--tp-ease), box-shadow var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
+.form-stack input:focus, .form-stack textarea:focus, .form-stack select:focus, .settings-form input:focus, .settings-form select:focus { border-color: var(--green); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 16%, transparent); }
 .form-stack textarea { resize: vertical; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .family-address-visibility { display: grid; align-content: center; gap: 12px; }
 .family-address-visibility .form-hint { margin: 0; }
 .settings-form { display: grid; gap: 14px; margin-top: 25px; padding: 19px 0 21px; border-top: var(--tp-bw) solid var(--line); border-bottom: var(--tp-bw) solid var(--line); }
+#typography-form .field-row { grid-template-columns: 1fr 1fr; align-items: start; }
+#typography-form label { gap: 4px; font-size: calc((13px) * var(--site-font-scale, 1)); }
+#typography-form select { min-height: 40px; padding: 7px 11px; font-size: calc((14px) * var(--site-font-scale, 1)); border-radius: 10px; }
+#typography-form input[type="range"] { min-height: 24px; padding: 4px 0; background: transparent; border: 0; box-shadow: none; }
+#typography-form .typography-preview { gap: 6px; padding: 12px 14px; }
+#typography-form .typography-preview-copy { font-size: calc((14px) * var(--site-font-scale, 1)); line-height: 1.5; }
+@media (max-width: 700px) { #typography-form .field-row { grid-template-columns: 1fr; } }
 .settings-title h3 { margin: 0; font-family: var(--site-font-display); font-size: calc((18px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
 .typography-preview { display: grid; gap: 10px; padding: 18px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); }
 .typography-preview h4 { margin: 0; color: var(--ink); font-family: var(--site-font-display); font-size: calc((20px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
@@ -650,7 +738,7 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .print-preview-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .print-preview-scroll::-webkit-scrollbar-track { margin: 2px 10px; border-radius: var(--radius-pill); background: transparent; }
 .print-preview-scroll::-webkit-scrollbar-thumb { border: 1px solid transparent; border-radius: var(--radius-pill); background: var(--scrollbar-thumb-color, transparent); background-clip: padding-box; transition: background-color 160ms ease; }
-.print-preview-banner { display: flex; align-items: center; justify-content: center; gap: 28px; margin-bottom: 20px; flex-wrap: nowrap; }
+.print-preview-banner { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 20px; flex-wrap: nowrap; }
 .import-row-source { color: var(--muted); font-size: calc((11px) * var(--site-font-scale, 1)); }
 .import-file-list { display: grid; gap: 4px; margin: 4px 0 0; padding: 10px 12px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); list-style: none; }
 .import-file-list[hidden] { display: none; }
@@ -670,7 +758,7 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .import-file-notes li::before { content: "*"; position: absolute; left: 4px; top: 0; color: var(--green); font-weight: 700; font-size: calc((13px) * var(--site-font-scale, 1)); line-height: 1.45; }
 .import-warnings li.is-ok { color: var(--ink); }
 .import-warnings li.is-error { color: #b3261e; }
-.print-banner-logo { width: 90px; height: 90px; object-fit: contain; flex: none; }
+.print-banner-logo { width: 116px; height: 116px; object-fit: contain; flex: none; }
 .print-banner-text { text-align: center; font-weight: 600; font-size: 14px; line-height: 1.4; }
 .print-banner-text h2 { margin: 0; font-size: 16px; }
 .print-banner-text p { margin: 0; font-size: 12px; color: var(--muted); }
@@ -849,9 +937,9 @@ dialog:not([open]) { display: none !important; }
 .contribution-dialog-actions .action-button, .contribution-dialog-actions .primary-button { min-width: 0; min-height: 46px; }
 .dialog.contribution-dialog .contribution-payment-resident { margin: 0; padding: 12px 22px; border-radius: 0; border-bottom: 1px solid var(--line); color: var(--ink); background: var(--surface); font-weight: 600; }
 @keyframes contribution-card-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.site-icon-form-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.site-icon-form-actions:has(#delete-site-icon-button[hidden]) { grid-template-columns: minmax(0, 1fr); }
-.site-icon-form-actions .text-button { display: flex; min-width: 0; min-height: 50px; align-items: center; justify-content: center; padding: 0 12px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); color: var(--ink); background: var(--surface-soft); font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 600; text-align: center; }
+.site-icon-form-actions { display: flex; gap: 12px; align-items: stretch; }
+.site-icon-form-actions .primary-button { flex: 1 1 0; width: auto; min-width: 0; height: 50px; }
+.site-icon-form-actions .text-button { flex: 1 1 0; display: flex; min-width: 0; height: 50px; align-items: center; justify-content: center; padding: 0 12px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); color: var(--ink); background: var(--surface-soft); font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 600; text-align: center; }
 .site-icon-form-actions .text-button:hover { border-color: var(--green); background: var(--surface); text-decoration: none; }
 .site-icon-form-actions .text-button[hidden] { display: none; }
 .site-icon-form-actions .text-button:not([hidden]) { grid-column: 1; }
@@ -889,6 +977,13 @@ dialog:not([open]) { display: none !important; }
 .admin-news-headline { -webkit-line-clamp: 1; }
 .admin-news-excerpt { -webkit-line-clamp: 2; }
 .admin-news-meta { color: var(--muted); font-family: var(--site-font-mono); font-size: calc((12px) * var(--site-font-scale, 1)); }
+.contact-range-warning { color: var(--rust); font-size: calc((12px) * var(--site-font-scale, 1)); }
+.position-list { display: grid; gap: 8px; margin: 18px 0 0; padding: 0; list-style: none; counter-reset: none; }
+.position-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: color-mix(in srgb, var(--surface-soft) 42%, var(--surface)); }
+.position-order { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; color: var(--green); background: var(--green-soft); font-family: var(--site-font-mono); font-size: calc((12px) * var(--site-font-scale, 1)); }
+.position-name { color: var(--ink); font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 600; overflow-wrap: anywhere; }
+.position-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; align-self: end; }
+@media (max-width: 700px) { .position-item { grid-template-columns: auto minmax(0, 1fr); } .position-item .admin-news-actions { grid-column: 1 / -1; justify-content: flex-start; } }
 .admin-news-image { display: block; width: 56px; height: 42px; border-radius: var(--radius-control); object-fit: cover; filter: var(--tp-img-filter); }
 .admin-news-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .import-section { margin-bottom: 8px; }
@@ -976,7 +1071,6 @@ dialog:not([open]) { display: none !important; }
   h2 { font-size: calc((clamp(26px, 5vw, 34px)) * var(--site-font-scale, 1)); }
   .intro { gap: 24px; padding: 32px 0; }
   .intro-copy { flex-basis: 60%; }
-  .hero-visual { width: 36%; min-height: 220px; flex-basis: 36%; }
   .news-section { padding: 32px 0; }
   .news-featured { min-height: 220px; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); }
   .news-featured-image { min-height: 220px; }
@@ -996,16 +1090,9 @@ dialog:not([open]) { display: none !important; }
   .admin-page .admin-sidebar { width: 100%; min-width: 0; }
   .admin-page .admin-views { width: 100%; min-width: 0; }
   .intro { align-items: stretch; flex-direction: column; gap: 24px; }
-  .intro:has(.hero-visual:not([hidden])) { flex-direction: column; }
-  #intro-section[data-hero-position]:has(.hero-visual:not([hidden])) { flex-direction: column; }
-  #intro-section[data-hero-position="left"] .hero-visual { align-self: flex-start; margin: 0 auto 0 0; }
-  #intro-section[data-hero-position="center"] .hero-visual { width: min(100%, 420px); flex-basis: auto; align-self: center; margin: 0 auto; }
-  .intro-copy { order: 0; }
-  .hero-visual { order: 1; }
-  .hero-visual.uses-theme-bsk-logo { width: min(100%, 360px); }
-  #intro-section[data-hero-position="right"] .hero-visual { align-self: flex-end; margin: 0 0 0 auto; }
-  .intro-copy { flex: 0 1 auto; max-width: 100%; }
-  .hero-visual { width: min(100%, 420px); max-width: 100%; min-height: 0; flex: 0 0 auto; aspect-ratio: 16 / 9; align-self: center; margin: 0; }
+  .intro-copy { order: 0; flex: 0 1 auto; max-width: 100%; }
+  /* Hero tetap full-bleed di mobile: aturan align-self, width, dan
+     aspect-ratio milik versi kotak sudah tidak berlaku lagi. */
   .news-featured { grid-template-columns: minmax(0, 1fr); }
   .news-featured-image { height: auto; min-height: 0; max-height: 58vh; aspect-ratio: 16 / 9; }
   .news-featured-copy { padding: clamp(20px, 5vw, 30px); }
@@ -1045,8 +1132,7 @@ dialog:not([open]) { display: none !important; }
   .live-indicator { max-width: none; flex: none; font-size: calc((12px) * var(--site-font-scale, 1)); white-space: nowrap; }
   main { padding: 0 19px; }
   .intro { align-items: flex-start; justify-content: flex-start; flex-direction: column; gap: 30px; padding: 12px 0 32px; }
-  .intro:has(.hero-visual:not([hidden])) { align-items: stretch; }
-  .hero-visual { width: min(100%, 360px); align-self: center; }
+  .intro:has(.hero-visual:not([hidden])) { display: block; }
   h1 { max-width: 100%; margin-bottom: 14px; font-size: calc((clamp(32px, 10vw, 40px)) * var(--site-font-scale, 1)); line-height: 1.02; }
   .intro-description { max-width: 400px; font-size: calc((15px) * var(--site-font-scale, 1)); }
   .intro-note { width: 100%; max-width: 100%; margin: 14px 0 0; padding: 12px 16px; border-radius: var(--radius-control); font-size: calc((13.5px) * var(--site-font-scale, 1)); }
@@ -1088,21 +1174,54 @@ dialog:not([open]) { display: none !important; }
   .dialog { padding: 22px 18px; border-radius: var(--radius-card); }
   .mobile-task-dialog[open] { padding: 18px; border-radius: var(--radius-card); }
   .admin-page .topbar { min-height: 68px; padding: 12px 18px; }
-  /* Pada mobile, panel admin dibuat edge-to-edge agar tidak meninggalkan strip latar di sisi kanan/kiri. */
+  /* Layar sempit: tombol Masuk kembali ke baris penuh dengan tautan
+     "Lupa password?" di bawahnya, supaya tidak meluber keluar dialog. */
+  .auth-submit-row { flex-wrap: wrap; gap: 10px; }
+  .auth-submit-row .text-button { order: 2; width: 100%; flex: 1 0 100%; white-space: normal; }
+  .auth-submit-row .primary-button { order: 1; width: 100%; gap: 0; justify-content: space-between; }
+  /* PANEL ADMIN DI LAYAR SEMPIT.
+     Perhatikan specificity: aturan desktop memakai
+     .admin-page #admin-dialog[open]:has(.admin-views.is-idle)
+     yang bernilai (1,2,1) karena :has() menambah specificity argumennya.
+     Aturan mobile WAJIB memakai :has() yang sama, kalau tidak ia kalah
+     dan lebar dialog tetap terkunci 500px hanya sampai 650px, lalu
+     melebar sudden ketika layar diperkecil. */
   .admin-page #admin-dialog[open],
+  .admin-page #admin-dialog[open]:has(.admin-views.is-idle),
   .admin-page:not(.admin-authenticated) #admin-dialog[open] {
-    width: 100%;
-    max-width: none;
-    margin-left: 0;
-    margin-right: 0;
-    border-left: 0;
-    border-right: 0;
-    border-radius: 0;
+    width: calc(100% - 24px);
+    max-width: 640px;
+    margin-inline: auto;
+    border-radius: var(--radius-large);
   }
-  .admin-page .admin-workspace { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .admin-page .admin-sidebar { position: static; width: 100%; min-width: 0; min-height: 0; max-height: none; padding: 10px; overflow: visible; }
-  .admin-page .admin-views { width: 100%; min-width: 0; }
-  .admin-page .admin-views { padding: 16px; }
+  /* Layar login tetap memakai padding ringkas ala halaman Masuk Warga.
+     Dialog tidak lagi edge-to-edge: sisakan margin kiri/kanan supaya
+     bentuk kartunya tetap terlihat di layar sempit. */
+  .admin-page:not(.admin-authenticated) #admin-dialog[open] {
+    width: calc(100% - 24px);
+    margin: 0 auto;
+    padding: 18px;
+    border: var(--tp-bw) solid var(--line);
+    border-radius: var(--radius-large);
+  }
+  /* margin:auto membuat dialog dipusatkan vertikal di dalam body setinggi
+     100vh, sehingga ada ruang kosong besar di atas dan bawah. Pada layar
+     login dialog cukup menempel di bawah topbar; tinggi tetap dibatasi
+     supaya form panjang (daftar, ganti sandi) bisa digulir. */
+  .admin-page:not(.admin-authenticated) #admin-dialog[open] {
+    margin: 20px auto 40px;
+    max-height: calc(100dvh - 140px);
+  }
+  /* Isi panel dipusatkan dan dibatasi lebarnya. max-width:none WAJIB di
+     sidebar karena aturan desktop memakai width:min(100%, 520px); kalau
+     hanya menulis width:100%, nilai min() itu tetap lebih kecil. */
+  .admin-page .admin-workspace,
+  .admin-page .admin-workspace:has(.admin-views.is-idle) { grid-template-columns: minmax(0, 1fr); gap: 18px; width: 100%; max-width: 640px; margin-inline: auto; }
+  .admin-page .admin-sidebar,
+  .admin-page .admin-workspace:has(.admin-views.is-idle) .admin-sidebar { position: static; width: 100%; max-width: none; min-width: 0; min-height: 0; max-height: none; padding: 10px; overflow: visible; justify-self: stretch; }
+  /* padding dipisah agar padding:18px di blok login tidak menimpa
+     nilai padding ini untuk panel yang sudah terautentikasi. */
+  .admin-page .admin-views { width: 100%; min-width: 0; padding: 16px; }
   .admin-news-item { grid-template-columns: minmax(0, 1fr); }
   .admin-news-item:has(.admin-news-image) { grid-template-columns: 44px minmax(0, 1fr); }
   .admin-news-image { width: 44px; height: 38px; }
@@ -1191,7 +1310,7 @@ dialog:not([open]) { display: none !important; }
   body #admin-view-records > form, body .edit-record-form, body .manage-heading, body .manage-toolbar,
   body #manage-list, body .manage-actions, body .export-warning, body .print-preview-header,
   body .admin-view:not(#admin-view-records) { display: none !important; }
-  body #contribution-print-dialog { position: static; inset: auto; margin: 0; width: 100%; max-width: none; max-height: none; overflow: visible; }
+  body #contribution-print-dialog, body #contact-print-dialog { position: static; inset: auto; margin: 0; width: 100%; max-width: none; max-height: none; overflow: visible; }
   body #admin-dialog[open] { position: static; inset: auto; width: 100%; max-width: none; max-height: none; margin: 0; padding: 0; overflow: visible; clip-path: none; border: 0; background: #fff; box-shadow: none; }
   body .admin-workspace, body .admin-views { display: block; }
   body #admin-view-records { display: block !important; }
@@ -1203,6 +1322,15 @@ dialog:not([open]) { display: none !important; }
   body #contribution-print-table th,
   body #contribution-print-table td { padding: 4px 5px; border: 1px solid #444; text-align: left; vertical-align: top; background: transparent; overflow-wrap: anywhere; word-break: break-word; }
   body #contribution-print-table th { color: #174D3C !important; background: #e2e2e2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body #contact-print-table { display: table !important; width: 100%; border-collapse: collapse; color: #171717; font-size: 9.5pt; background: #fff; table-layout: fixed; }
+body #contact-print-table th,
+body #contact-print-table td { padding: 4px 5px; border: 1px solid #444; text-align: left; vertical-align: top; background: transparent; overflow-wrap: anywhere; word-break: break-word; }
+body #contact-print-table th { color: #174D3C !important; background: #e2e2e2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body #contact-print-table tr.contact-print-unit[data-page-break="true"] { break-before: page; page-break-before: always; }
+body #contact-print-table tr.contact-print-unit th { color: #171717 !important; background: #fff !important; padding-top: 10px; text-align: left; font-size: 11pt; }
+body #contact-print-table tr.contact-print-unit:first-child th { padding-top: 4px; }
+body #contact-print-table { counter-reset: none; }
+body #contact-print-table thead { display: table-header-group; }
 }
 
 /* MODE MALAM: stoneware gelap */
@@ -1285,12 +1413,16 @@ dialog:not([open]) { display: none !important; }
 /* TINJAUAN DATA: penanda isu dan panel peninjauan */
 .issue-tab-badge { display: inline-block; min-width: 20px; padding: 1px 6px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--rust); color: var(--paper, #fff); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 700; line-height: 1.5; text-align: center; }
 .admin-task-nav .issue-tab-badge { margin-left: 0; }
-.issue-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 16px 0 10px; }
-.issue-toolbar label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 600; }
-.issue-search { flex: 1 1 260px; }
-.issue-search input, .issue-toolbar select { min-height: 40px; padding: 0 12px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); font: inherit; font-size: calc((13.5px) * var(--site-font-scale, 1)); }
-.issue-search input:focus, .issue-toolbar select:focus { border-color: var(--green); outline: none; }
-.issue-table-scroll { overflow-x: auto; border: var(--tp-bw) solid var(--line); border-radius: var(--radius); margin-top: 10px; }
+.issue-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 16px 0 10px; }
+.issue-toolbar .search-box { flex: 1 1 260px; }
+.issue-toolbar .text-button { margin-left: auto; }
+/* Aturan umum .admin-section memberi select/input sudut kecil. Di toolbar ini
+   semua kontrol harus sama-sama bulat, jadi ditimpanya di sini. */
+.admin-section .issue-toolbar .filter-select select,
+.admin-section .issue-toolbar select { width: auto; min-width: 150px; height: 50px; min-height: 50px; padding: 0 40px 0 18px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); background-color: var(--surface); color: var(--ink); font: inherit; font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 400; text-transform: none; outline: none; }
+.admin-section .issue-toolbar select:hover { border-color: var(--green); }
+.admin-section .issue-toolbar select:focus { border-color: var(--green); }
+.issue-table-scroll { overflow-x: auto; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); margin-top: 10px; }
 .issue-table { width: 100%; min-width: 860px; border-collapse: collapse; font-size: calc((13px) * var(--site-font-scale, 1)); }
 .issue-table th { padding: 10px 12px; border-bottom: var(--tp-bw) solid var(--line); background: var(--surface-soft); color: var(--muted); font-size: calc((11.5px) * var(--site-font-scale, 1)); font-weight: 700; letter-spacing: var(--tp-mono-track); text-align: left; text-transform: uppercase; white-space: nowrap; }
 .issue-table td { padding: 10px 12px; border-bottom: var(--tp-bw) solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
@@ -1300,9 +1432,67 @@ dialog:not([open]) { display: none !important; }
 .manage-item-issue { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--rust) 14%, transparent); color: var(--rust); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 700; line-height: 1.6; white-space: nowrap; }
 @media (max-width: 720px) {
   .issue-toolbar { gap: 8px; }
-  .issue-search { flex: 1 1 100%; }
-  .issue-toolbar select { min-width: 140px; }
+  .issue-toolbar .search-box { flex: 1 1 100%; }
+  .issue-toolbar .filter-select select { min-width: 140px; }
+  .issue-toolbar .text-button { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .issue-tab-badge, .manage-item-issue { animation: none; }
+}
+
+/* Pilihan gaya font dari panel Font Dan Tipografi */
+body.site-font-bold.target-all, body.site-font-bold.target-all * { font-weight: 700 !important; }
+body.site-font-italic.target-all, body.site-font-italic.target-all * { font-style: italic !important; }
+body.site-font-bold.target-headings h1, body.site-font-bold.target-headings h2, body.site-font-bold.target-headings h3, body.site-font-bold.target-headings h4, body.site-font-bold.target-headings .brand-copy strong { font-weight: 700 !important; }
+body.site-font-italic.target-headings h1, body.site-font-italic.target-headings h2, body.site-font-italic.target-headings h3, body.site-font-italic.target-headings h4, body.site-font-italic.target-headings .brand-copy strong { font-style: italic !important; }
+body.site-font-bold.target-highlight strong, body.site-font-bold.target-highlight b, body.site-font-bold.target-highlight mark, body.site-font-bold.target-highlight kbd { font-weight: 700 !important; }
+body.site-font-italic.target-highlight strong, body.site-font-italic.target-highlight b, body.site-font-italic.target-highlight mark, body.site-font-italic.target-highlight kbd { font-style: italic !important; }
+body.site-font-bold.target-body p, body.site-font-bold.target-body li, body.site-font-bold.target-body td, body.site-font-bold.target-body th, body.site-font-bold.target-body label, body.site-font-bold.target-body span, body.site-font-bold.target-body select, body.site-font-bold.target-body input, body.site-font-bold.target-body textarea { font-weight: 700 !important; }
+body.site-font-italic.target-body p, body.site-font-italic.target-body li, body.site-font-italic.target-body td, body.site-font-italic.target-body th, body.site-font-italic.target-body label, body.site-font-italic.target-body span, body.site-font-italic.target-body select, body.site-font-italic.target-body input, body.site-font-italic.target-body textarea { font-style: italic !important; }
+
+/* PENDAFTARAN BSK: formulir warga dan blok tanda tangan satu sesi. */
+.registration-step { display: grid; gap: 10px; margin: 0; padding: 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); }
+.registration-step legend { padding: 0 6px; color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.registration-member-rows { display: grid; gap: 10px; }
+.registration-member-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 10px; border: 1px dashed var(--line); border-radius: var(--radius-control); background: var(--surface-soft); }
+.registration-member-row label { display: grid; gap: 4px; color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 600; }
+.registration-member-kk input { border-style: dashed; background: var(--surface-soft); color: var(--muted); font-variant-numeric: tabular-nums; cursor: default; }
+.registration-member-kk input:empty { background: transparent; }
+.registration-member-row .registration-member-remove { align-self: end; }
+.registration-status-list { display: grid; gap: 10px; margin-top: 12px; }
+.registration-status-card { display: grid; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
+.registration-status-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.registration-status-card p { margin: 0; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); }
+.registration-badge { padding: 3px 9px; border-radius: 999px; font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 700; white-space: nowrap; }
+.registration-badge.is-wait { background: var(--surface-soft); color: var(--muted); }
+.registration-badge.is-ok { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.registration-badge.is-bad { background: color-mix(in srgb, var(--action) 16%, transparent); color: var(--action); }
+.registration-review-note { padding: 9px 11px; border-left: 3px solid var(--action); background: var(--surface-soft); color: var(--ink) !important; }
+.registration-form-wrap { margin-top: 14px; }
+.registration-form-wrap > summary { cursor: pointer; padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--radius-control); font-weight: 650; }
+.registration-form { margin-top: 12px; }
+.registration-agreement { margin: 0; padding-left: 20px; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); }
+.registration-dialog { width: min(980px, 94vw); max-height: 92vh; overflow: auto; }
+.registration-dialog-body { display: grid; gap: 14px; margin-bottom: 18px; }
+.registration-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; margin: 10px 0 0; }
+.registration-summary dt { color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); }
+.registration-summary dd { margin: 0 0 4px; color: var(--ink); overflow-wrap: anywhere; font-size: calc((13px) * var(--site-font-scale, 1)); }
+.registration-table-scroll { overflow-x: auto; }
+.registration-agreement-box { padding: 11px 13px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); white-space: pre-line; }
+.registration-signature-block, .registration-review-block { display: grid; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.registration-signature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.registration-signature-cell { display: grid; gap: 7px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); }
+.registration-signature-cell strong { font-size: calc((13px) * var(--site-font-scale, 1)); }
+.registration-signature-cell input { width: 100%; min-height: 50px; padding: 0 16px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); font: inherit; transition: border-color var(--tp-dur) var(--tp-ease); }
+.registration-signature-preview { display: grid; place-items: center; min-height: 76px; padding: 8px; border: var(--tp-bw) dashed var(--line); border-radius: var(--radius-control); background: #ffffff; }
+.registration-signature-preview img { max-width: 100%; max-height: 76px; object-fit: contain; }
+.registration-signature-preview span { color: var(--muted); font-size: calc((11px) * var(--site-font-scale, 1)); }
+.registration-signature-actions { display: flex; align-items: center; gap: 8px; }
+.registration-card-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .registration-member-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .registration-summary { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 460px) {
+  .registration-member-row { grid-template-columns: minmax(0, 1fr); }
 }

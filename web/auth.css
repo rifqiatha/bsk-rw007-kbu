@@ -24,6 +24,10 @@ h1 { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Sego
 .submit-button, .secondary-button { display: flex; min-height: 48px; align-items: center; justify-content: space-between; padding: 0 20px; border: 0; border-radius: 999px; color: #fff; background: #292929; font-size: 14px; font-weight: 700; }
 .submit-button::after { content: "→"; font-size: 16px; font-weight: 400; }
 .submit-button:hover, .secondary-button:hover { background: #111111; }
+.auth-submit-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
+.auth-submit-row .submit-button { min-width: 0; flex: 0 1 auto; }
+.auth-submit-row > button:not(.submit-button) { min-width: 0; flex: 0 1 auto; padding: 4px 0; border: 0; color: #555555; background: transparent; font-size: 13px; font-weight: 600; white-space: nowrap; text-align: left; }
+.auth-submit-row > button:not(.submit-button):hover { color: #171717; text-decoration: underline; text-underline-offset: 3px; }
 .auth-links { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 1px; }
 .auth-links button { padding: 4px 0; border: 0; color: #555555; background: transparent; font-size: 13px; font-weight: 600; text-align: left; }
 .auth-links button:hover { color: #171717; text-decoration: underline; text-underline-offset: 3px; }
@@ -69,7 +73,7 @@ h1 { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Sego
 .payment-review-note { padding-top: 5px; border-top: 1px solid #e5e5e5; }
 .secondary-button { width: 100%; justify-content: center; color: #292929; border: 1px solid #d0d0d0; background: transparent; }
 .secondary-button:hover { background: #e5e5e5; }
-@media (max-width: 560px) { .auth-shell { padding: 12px; } .auth-card, .auth-card:has(.resident-dashboard:not([hidden])) { padding: 18px; border-radius: 22px; } .auth-links button { font-size: 11px; } .payment-form { grid-template-columns: minmax(0, 1fr); } .payment-proof-field, .payment-form .error-message, .payment-form .submit-button { grid-column: auto; } .resident-view-heading { display: block; } .resident-view-heading > p { margin-top: 4px; } }
+@media (max-width: 560px) { .auth-shell { padding: 12px; } .auth-card, .auth-card:has(.resident-dashboard:not([hidden])) { padding: 18px; border-radius: 22px; } .auth-links button { font-size: 11px; } /* Layar sempit: tombol Masuk baris penuh, tautan lupa password di bawahnya. */ .auth-submit-row { flex-wrap: wrap; gap: 8px; } .auth-submit-row .submit-button { order: 1; width: 100%; } .auth-submit-row > button:not(.submit-button) { order: 2; width: 100%; flex: 1 0 100%; white-space: normal; } .payment-form { grid-template-columns: minmax(0, 1fr); } .payment-proof-field, .payment-form .error-message, .payment-form .submit-button { grid-column: auto; } .resident-view-heading { display: block; } .resident-view-heading > p { margin-top: 4px; } }
 
 .auth-shell:has(.resident-dashboard:not([hidden])) { display: block; min-height: 100vh; padding: 0; }
 .auth-shell:has(.resident-dashboard:not([hidden])) #auth-panel { width: 100%; min-height: 100vh; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
@@ -316,6 +320,7 @@ html[data-mode="dark"] .secondary-button { color: #111; background: #dedede; }
 html[data-mode="dark"] .submit-button:hover,
 html[data-mode="dark"] .secondary-button:hover { background: #fff; }
 html[data-mode="dark"] .auth-links button,
+html[data-mode="dark"] .auth-submit-row > button:not(.submit-button),
 html[data-mode="dark"] .resident-account-menu-copy strong,
 html[data-mode="dark"] .resident-account-details strong,
 html[data-mode="dark"] .resident-content-heading strong,

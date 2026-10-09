@@ -12,6 +12,7 @@ Yang sudah disiapkan di repo:
 | `deploy/entrypoint.sh` | Menautkan `kifayah.sqlite3` dan `uploads/` ke folder persisten |
 | `deploy/docker-compose.yml` | Menjalankan layanan di port 8000, hanya localhost |
 | `deploy/auto-update.sh` | Tarik perubahan dari repo, backup DB, bangun ulang container |
+| `deploy/nginx-kifayah.conf` | Contoh config reverse proxy + batas ukuran unggah |
 | `deploy/kifayah-auto-update.service`/`.timer` | Menjalankan auto-update tiap 60 detik |
 | `.dockerignore` | Mengecilkan konteks build |
 
@@ -94,7 +95,7 @@ docker compose logs -f --tail=50
 Log yang bersih (tanpa traceback) berarti aplikasi siap. Cek dari komputer/server:
 
 ```bash
-curl -I http://127.0.0.1:8000
+curl -I http://127.0.0.1:8081
 ```
 
 Login pertama memakai username `admin`, kata sandi `admin`, lalu segera ganti.
@@ -120,11 +121,12 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo 
 sudo apt update && sudo apt install -y caddy
 ```
 
-Buat `/etc/caddy/Caddyfile`:
+Buat `/etc/caddy/Caddyfile`. Port **8081** adalah port host dari
+`deploy/docker-compose.yml` (port 8000 hanya di dalam container):
 
 ```
 kifayah.domain.id {
-    reverse_proxy 127.0.0.1:8000
+    reverse_proxy 127.0.0.1:8081
 }
 ```
 
@@ -137,7 +139,32 @@ sudo ufw enable
 ```
 
 Alternatif tanpa domain: pasang **Nginx Proxy Manager** dari App Store CasaOS
-dan buat Proxy Host baru yang meneruskan ke `127.0.0.1:8000`.
+dan buat Proxy Host baru yang meneruskan ke `127.0.0.1:8081`.
+
+### 5a. Wajib: naikkan batas ukuran unggah
+
+Reverse proxy memblokir unggah besar **sebelum** aplikasi sempat memprosesnya.
+Nginx memakai batas bawaan **1 MB**, sedangkan impor 12 file XLSX sudah
+melebihi 2 MB setelah dikodekan sebagai base64. Gejalanya halaman putih
+bertuliskan `413 Request Entity Too Large`.
+
+Untuk Nginx, salin `deploy/nginx-kifayah.conf` ke blok `server` domain Kifayah:
+
+```bash
+sudo cp /opt/kifayah/deploy/nginx-kifayah.conf /etc/nginx/sites-available/kifayah
+sudo ln -s /etc/nginx/sites-available/kifayah /etc/nginx/sites-enabled/kifayah
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Untuk Nginx Proxy Manager, buka Proxy Host → **Advanced** lalu isi:
+
+| Field | Value |
+| --- | --- |
+| Custom Nginx Configuration | `client_max_body_size 32m;` |
+
+Untuk Caddy, tidak perlu disetel karena Caddy tidak membatasi ukuran badan.
+
+Setelah selesai, uji dengan mengimpor beberapa file sekaligus.
 
 ## 6. Aktifkan auto-update dari push
 

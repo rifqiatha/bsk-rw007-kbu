@@ -2,6 +2,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import io
 import json
 import os
 import re
@@ -27,9 +28,15 @@ BASE_DIR = Path(__file__).resolve().parent
 WEB_DIR = BASE_DIR / "web"
 DATABASE = BASE_DIR / "kifayah.sqlite3"
 UPLOAD_DIR = BASE_DIR / "uploads"
-MAX_BODY = 16 * 1024 * 1024
+# Batas badan permintaan JSON. Seluruh unggahan dikirim sebagai base64 di dalam
+# JSON, jadi ukurannya sekitar 4/3 dari file asli. Dua logo 5 MB saja sudah
+# mencapai sekitar 13 MB, sehingga batas lama 16 MB mudah tersentuh.
+# Nilai ini harus DILEBIHKAN atau sama dengan client_max_body_size pada reverse
+# proxy (lihat deploy/nginx-kifayah.conf), kalau tidak proxy membalas 413 lebih
+# dulu dan aplikasi tidak pernah menerima datanya.
+MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 32 * 1024 * 1024))
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
-MAX_HERO_VIDEO_SIZE = 50 * 1024 * 1024
+
 IMAGE_TYPES = {
 	"image/png": (".png", b"\x89PNG\r\n\x1a\n"),
 	"image/jpeg": (".jpg", b"\xff\xd8\xff"),
@@ -53,14 +60,28 @@ PERMISSION_LABELS = {
 	"payments": "Iuran Warga",
 	"program": "Informasi Program",
 	"finance": "Data Keuangan",
+	"contacts": "Kontak RT/RW",
+	"registration": "Pendaftaran BSK",
 }
 ROLE_PERMISSIONS = {
     "Warga": set(),
 	"Staff": {"records"},
-	"Admin": {"records", "import", "news", "family", "maintenance", "typography", "payments", "program", "finance"},
+	"Admin": {"records", "import", "news", "family", "maintenance", "typography", "payments", "program", "finance", "contacts", "registration"},
 	"Super Admin": set(PERMISSION_LABELS),
 }
 PASSWORD_ITERATIONS = 310_000
+# STRUKTUR JABATAN: urutan paling awal adalah peringkat tertinggi.
+# RW menentukan arah contas, sehingga Ketua RW berada di urutan pertama.
+DEFAULT_POSITION_TITLES = (
+	("Ketua RW", 1),
+	("Ketua RT", 2),
+	("Wakil Ketua", 3),
+	("Sekretaris", 4),
+	("Administrator", 5),
+	("Bendahara", 6),
+	("Sieba", 7),
+)
+OTHER_POSITION_VALUE = "Jabatan Lainnya"
 
 
 def hash_password(password, salt=None):
@@ -78,6 +99,15 @@ def verify_password(password, salt_hex, digest_hex):
 	return hmac.compare_digest(actual, digest_hex)
 SCHEMA_LOCK = threading.Lock()
 SCHEMA_DATABASE = None
+
+
+class PayloadTooLargeError(ValueError):
+	"""Badan permintaan melebihi batas server.
+
+	Turutan ValueError supaya seluruh penangan rute yang sudah menangkap
+	ValueError ikut menampilkannya sebagai pesan yang bisa dibaca pengguna,
+	daripada menjadi error 500 tanpa keterangan.
+	"""
 
 
 def connect_database():
@@ -240,6 +270,36 @@ def _initialize_database(connection):
 		"SELECT id, display_name FROM admin_users WHERE role = 'Warga'"
 	)
 	connection.execute(
+		"""CREATE TABLE IF NOT EXISTS area_contacts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			unit_type TEXT NOT NULL,
+			unit_number INTEGER NOT NULL,
+			contact_name TEXT NOT NULL,
+			position_name TEXT NOT NULL DEFAULT '',
+			phone TEXT NOT NULL,
+			active INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)"""
+	)
+	connection.execute(
+		"CREATE INDEX IF NOT EXISTS idx_area_contacts_unit ON area_contacts(unit_type, unit_number)"
+	)
+	# STRUKTUR JABATAN: urutan field menentukan peringkat, dari Ketua RW ke Sieba.
+	connection.execute(
+		"""CREATE TABLE IF NOT EXISTS position_titles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			title TEXT NOT NULL UNIQUE COLLATE NOCASE,
+			rank_order INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)"""
+	)
+	if connection.execute("SELECT COUNT(*) FROM position_titles").fetchone()[0] == 0:
+		connection.executemany(
+			"INSERT INTO position_titles (title, rank_order) VALUES (?, ?)",
+			DEFAULT_POSITION_TITLES,
+		)
+	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS finance_entries (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			entry_date TEXT NOT NULL,
@@ -290,6 +350,74 @@ def _initialize_database(connection):
 	news_columns = {row["name"] for row in connection.execute("PRAGMA table_info(news_articles)")}
 	if "image_file" not in news_columns:
 		connection.execute("ALTER TABLE news_articles ADD COLUMN image_file TEXT NOT NULL DEFAULT ''")
+	# PENDAFTARAN BSK: satu baris = satu formulir. Anggota keluarga dan
+	# tanda tangan menempel pada baris ini, bukan pada data warga, supaya
+	# satu keluarga tetap utuh dan tidak tersebar ke beberapa menu.
+	connection.execute(
+		"""CREATE TABLE IF NOT EXISTS bsk_registrations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			status TEXT NOT NULL DEFAULT 'Menunggu Verifikasi',
+			head_name TEXT NOT NULL,
+			gender TEXT NOT NULL DEFAULT '',
+			family_card_number TEXT NOT NULL DEFAULT '',
+			national_id_number TEXT NOT NULL DEFAULT '',
+			birthplace TEXT NOT NULL DEFAULT '',
+			birth_date TEXT NOT NULL DEFAULT '',
+			religion TEXT NOT NULL DEFAULT '',
+			residence_status TEXT NOT NULL DEFAULT '',
+			rt TEXT NOT NULL DEFAULT '',
+			rw TEXT NOT NULL DEFAULT '',
+			address TEXT NOT NULL DEFAULT '',
+			job TEXT NOT NULL DEFAULT '',
+			phone TEXT NOT NULL DEFAULT '',
+			agreement_note TEXT NOT NULL DEFAULT '',
+			submitted_by INTEGER,
+			submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			reviewed_by INTEGER,
+			reviewed_at TEXT NOT NULL DEFAULT '',
+			review_note TEXT NOT NULL DEFAULT '',
+			resident_id INTEGER,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(submitted_by) REFERENCES admin_users(id) ON DELETE SET NULL,
+			FOREIGN KEY(reviewed_by) REFERENCES admin_users(id) ON DELETE SET NULL,
+			FOREIGN KEY(resident_id) REFERENCES contribution_residents(id) ON DELETE SET NULL
+		)"""
+	)
+	connection.execute(
+		"""CREATE TABLE IF NOT EXISTS bsk_registration_members (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			registration_id INTEGER NOT NULL,
+			full_name TEXT NOT NULL,
+			national_id_number TEXT NOT NULL DEFAULT '',
+			birthplace TEXT NOT NULL DEFAULT '',
+			birth_date TEXT NOT NULL DEFAULT '',
+			gender TEXT NOT NULL DEFAULT '',
+			relationship TEXT NOT NULL DEFAULT '',
+			remark TEXT NOT NULL DEFAULT '',
+			FOREIGN KEY(registration_id) REFERENCES bsk_registrations(id) ON DELETE CASCADE
+		)"""
+	)
+	connection.execute(
+		"""CREATE TABLE IF NOT EXISTS bsk_registration_signatures (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			registration_id INTEGER NOT NULL,
+			role TEXT NOT NULL,
+			name TEXT NOT NULL DEFAULT '',
+			image_file TEXT NOT NULL DEFAULT '',
+			signed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(registration_id, role),
+			FOREIGN KEY(registration_id) REFERENCES bsk_registrations(id) ON DELETE CASCADE
+		)"""
+	)
+	connection.execute(
+		"CREATE INDEX IF NOT EXISTS idx_bsk_registrations_status ON bsk_registrations(status, submitted_at)"
+	)
+	connection.execute(
+		"CREATE INDEX IF NOT EXISTS idx_bsk_registrations_submitter ON bsk_registrations(submitted_by)"
+	)
+	connection.execute(
+		"CREATE INDEX IF NOT EXISTS idx_bsk_members_registration ON bsk_registration_members(registration_id)"
+	)
 	connection.executemany(
 		"INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
 		(
@@ -303,6 +431,8 @@ def _initialize_database(connection):
 			("hero_image_position", "right"),
 			("site_font_preset", "kifayah"), ("site_font_scale", 100), ("site_text_alignment", "left"),
 			("intro_text_alignment", "left"), ("news_text_alignment", "left"), ("directory_text_alignment", "left"),
+			("site_font_style", "normal"),
+			("site_font_style_target", "all"),
 			("maintenance_enabled", "0"), ("maintenance_starts_at", ""), ("maintenance_ends_at", ""),
 			("maintenance_message", "Kami sedang melakukan perbaikan agar layanan lebih baik."),
 			("export_logo_1", ""), ("export_logo_2", ""),
@@ -313,6 +443,15 @@ def _initialize_database(connection):
 			("signature_lmk_name", ""), ("signature_rw_name", ""), ("signature_bsk_name", ""),
 			("signature_maker", ""), ("signature_rt", ""), ("signature_lmk", ""),
 			("signature_rw", ""), ("signature_bsk", ""),
+			("signature_note", "Mengetahui,"),
+			("signature_label_maker", "YANG MEMBUAT"),
+			("signature_label_rt", "KETUA RT"),
+			("signature_label_lmk", "LMK RW.07 KBU"),
+			("signature_label_rw", "KETUA RW.07 KBU"),
+			("signature_label_bsk", "KETUA BSK RW.07 KBU"),
+			("signature_place", "JAKARTA"),
+			("signature_show_bsk", "1"), ("signature_show_rw", "1"), ("signature_show_lmk", "1"),
+			("signature_show_rt", "1"), ("signature_show_maker", "1"),
 			("footer_brand", "Data Kifayah"),
 			("footer_area", "Kota Bambu Utara"),
 			("footer_location", "RT. 001 RW 007 Kelurahan Kota Bambu Utara"),
@@ -347,6 +486,30 @@ def _initialize_database(connection):
 		"UPDATE app_settings SET value = ? WHERE key = 'footer_location' AND value = ?",
 		("RT. 001 RW 007 Kelurahan Kota Bambu Utara", "RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA"),
 	)
+	# Izin baru ikut ditambahkan ke akun yang sudah menyimpan daftar izinnya
+	# sendiri, agar menu baru langsung muncul tanpa setting ulang. Tanpa ini,
+	# akun Super Admin yang izinnya disimpan manual akan kehilangan menu.
+	permission_rows = connection.execute("SELECT id, role, permissions FROM admin_users").fetchall()
+	for row in permission_rows:
+		role_permissions = ROLE_PERMISSIONS.get(row["role"])
+		if not role_permissions:
+			continue
+		try:
+			configured = set(json.loads(row["permissions"] or "[]"))
+		except (TypeError, ValueError):
+			configured = set()
+		if not configured:
+			# Akun tanpa daftar izin sendiri mengikuti default role, jadi
+			# tidak perlu disentuh.
+			continue
+		missing = {name for name in role_permissions if name not in configured}
+		if not missing:
+			continue
+		configured |= missing
+		connection.execute(
+			"UPDATE admin_users SET permissions = ? WHERE id = ?",
+			(json.dumps(sorted(configured)), row["id"]),
+		)
 	connection.commit()
 
 
@@ -367,6 +530,8 @@ def get_settings(connection):
 	settings.setdefault("intro_text_alignment", "left")
 	settings.setdefault("news_text_alignment", "left")
 	settings.setdefault("directory_text_alignment", "left")
+	settings.setdefault("site_font_style", "normal")
+	settings.setdefault("site_font_style_target", "all")
 	settings.setdefault("maintenance_enabled", "0")
 	settings.setdefault("maintenance_starts_at", "")
 	settings.setdefault("maintenance_ends_at", "")
@@ -448,8 +613,10 @@ def delete_upload_if_unreferenced(connection, filename):
 		"SELECT 1 FROM app_settings WHERE key IN ('site_icon', 'site_icon_2', 'theme_logo_logo1_light', 'theme_logo_logo1_dark', 'theme_logo_logo2_light', 'theme_logo_logo2_dark', 'theme_logo_hero_light', 'theme_logo_hero_dark', 'theme_logo_slideshow_light', 'theme_logo_slideshow_dark', 'hero_image', 'export_logo_1', 'export_logo_2') AND value = ? "
 		"UNION ALL SELECT 1 FROM records WHERE portrait_file = ? "
 		"UNION ALL SELECT 1 FROM news_articles WHERE image_file = ? "
-		"UNION ALL SELECT 1 FROM admin_users WHERE photo_file = ? LIMIT 1",
-		(filename, filename, filename, filename),
+		"UNION ALL SELECT 1 FROM admin_users WHERE photo_file = ? "
+		"UNION ALL SELECT 1 FROM contribution_residents WHERE photo_file = ? "
+		"UNION ALL SELECT 1 FROM bsk_registration_signatures WHERE image_file = ? LIMIT 1",
+		(filename, filename, filename, filename, filename),
 	).fetchone()
 	if reference or any(item["file"] == filename for item in hero_playlist_items(get_settings(connection))):
 		return
@@ -821,6 +988,214 @@ RESIDENCE_STATUS_ALIASES = {
 	"KOS": "KOS", "KOST": "KOS", "MENGUNI": "KOS", "BOARDS": "KOS", "SEWAKOS": "KOS",
 }
 
+# PENDAFTARAN BSK: status formulir dan urutan penandatangan. Tanda tangan
+# diambil dalam satu sesi di tempat, jadi tidak ada tahap Approval bertahap.
+REGISTRATION_STATUSES = ("Menunggu Verifikasi", "Disetujui", "Ditolak")
+REGISTRATION_SIGNATURE_ROLES = ("maker", "rt", "lmk", "rw", "bsk")
+REGISTRATION_ROLE_LABELS = {
+	"maker": "Yang Mengisi Data",
+	"rt": "Ketua RT",
+	"lmk": "LMK RW",
+	"rw": "Ketua RW",
+	"bsk": "Ketua BSK",
+}
+REGISTRATION_AGREEMENT_NOTES = (
+	"1. Mendaftarkan diri dan keluarga ke dalam program BSK;",
+	"2. Membayar iuran wajib bulanan sesuai aturan yang berlaku;",
+	"3. Melaporkan jika ada perubahan dalam kartu keluarga;",
+	"4. Mematuhi perubahan yang telah ditetapkan oleh pengurus.",
+)
+MAX_REGISTRATION_MEMBERS = 20
+
+
+def registration_signature_payload(connection, registration_id):
+	"""Susun blok tanda tangan satu formulir untuk dikirim ke antrean admin."""
+	rows = connection.execute(
+		"SELECT role, name, image_file, signed_at FROM bsk_registration_signatures "
+		"WHERE registration_id = ? ORDER BY id",
+		(registration_id,),
+	).fetchall()
+	signatures = {row["role"]: dict(row) for row in rows}
+	for role in REGISTRATION_SIGNATURE_ROLES:
+		signatures.setdefault(role, {"role": role, "name": "", "image_file": "", "signed_at": ""})
+	for item in signatures.values():
+		item["label"] = REGISTRATION_ROLE_LABELS.get(item["role"], item["role"])
+		item["has_image"] = bool(item["image_file"])
+		item["image_url"] = f"/media/registration-signature/{registration_id}/{item['role']}" if item["image_file"] else ""
+		item.pop("image_file", None)
+	return [signatures[role] for role in REGISTRATION_SIGNATURE_ROLES]
+
+
+def registration_payload_for(connection, registration_id):
+	"""Susun satu formulir lengkap: kepala keluarga, anggota, dan tanda tangan."""
+	registration = connection.execute(
+		"SELECT id, status, head_name, gender, family_card_number, national_id_number, birthplace, "
+		"birth_date, religion, residence_status, rt, rw, address, job, phone, agreement_note, "
+		"submitted_at, reviewed_at, review_note, resident_id, updated_at "
+		"FROM bsk_registrations WHERE id = ?",
+		(registration_id,),
+	).fetchone()
+	if not registration:
+		raise ValueError("Pendaftaran tidak ditemukan.")
+	payload = dict(registration)
+	payload["members"] = registration_member_payload(connection, registration_id)
+	payload["signatures"] = registration_signature_payload(connection, registration_id)
+	payload["signed_count"] = sum(1 for item in payload["signatures"] if item["has_image"])
+	payload["required_signature_count"] = len(REGISTRATION_SIGNATURE_ROLES)
+	return payload
+
+
+def registration_member_payload(connection, registration_id):
+	rows = connection.execute(
+		"SELECT id, full_name, national_id_number, birthplace, birth_date, gender, relationship, remark "
+		"FROM bsk_registration_members WHERE registration_id = ? ORDER BY id",
+		(registration_id,),
+	).fetchall()
+	return [dict(row) for row in rows]
+
+
+def reject_duplicate_member_nik(header, members):
+	"""Satu NIK hanya boleh mewakili satu orang dalam satu formulir.
+
+	Kepala keluarga dan anggota keluarga tidak boleh memakai NIK yang sama,
+	karena keduanya akan tersimpan sebagai dua warga berbeda.
+	"""
+	seen = {}
+	if header.get("national_id_number"):
+		seen[header["national_id_number"]] = "kepala keluarga"
+	for member in members:
+		nik = member.get("national_id_number")
+		if not nik:
+			continue
+		if nik in seen:
+			raise ValueError(
+				f"NIK {nik} dipakai dua kali di formulir ini ({seen[nik]} dan {member['full_name']})."
+			)
+		seen[nik] = member["full_name"]
+
+
+def validate_registration_member(raw, index):
+	"""Bersihkan satu baris anggota keluarga dari formulir pendaftaran."""
+	if not isinstance(raw, dict):
+		raise ValueError(f"Anggota keluarga baris {index + 1} tidak valid.")
+	fields = {}
+	for field in ("full_name", "national_id_number", "birthplace", "birth_date", "gender", "relationship", "remark"):
+		value = raw.get(field, "")
+		if value is None:
+			value = ""
+		if not isinstance(value, str):
+			raise ValueError(f"Anggota keluarga baris {index + 1} memiliki kolom yang tidak valid.")
+		fields[field] = value.strip()
+	fields["full_name"] = " ".join(fields["full_name"].split())
+	if not fields["full_name"]:
+		raise ValueError(f"Nama anggota keluarga baris {index + 1} wajib diisi.")
+	fields["national_id_number"] = clean_number_text(fields["national_id_number"], 32)
+	if fields["national_id_number"] and not re.fullmatch(r"\d{16}", fields["national_id_number"]):
+		raise ValueError(
+			f"NIK {fields['national_id_number']} pada baris \"{fields['full_name']}\" harus 16 digit angka."
+		)
+	fields["birth_date"] = normalize_import_date(fields["birth_date"])
+	fields["gender"] = normalize_import_gender(fields["gender"]) or fields["gender"]
+	fields["birthplace"] = fields["birthplace"][:100]
+	fields["relationship"] = fields["relationship"][:80]
+	fields["remark"] = fields["remark"][:120]
+	if len(fields["full_name"]) > 120:
+		raise ValueError(f"Nama anggota keluarga baris {index + 1} maksimal 120 karakter.")
+	parse_iso_date(fields["birth_date"], f"Tanggal lahir anggota keluarga baris {index + 1}")
+	return fields
+
+
+def validate_registration_header(payload, settings):
+	"""Periksa data kepala keluarga dengan aturan yang sama seperti impor warga."""
+	head_name = payload.get("head_name", "")
+	if not isinstance(head_name, str) or not 2 <= len(" ".join(head_name.split())) <= 120:
+		raise ValueError("Nama kepala keluarga wajib diisi dan maksimal 120 karakter.")
+	header = {"head_name": " ".join(head_name.split())}
+	for field, limit in (
+		("family_card_number", 32), ("national_id_number", 32), ("birthplace", 100),
+		("religion", 50), ("residence_status", 20), ("address", 300), ("job", 120),
+		("phone", 32), ("gender", 2),
+	):
+		value = payload.get(field, "")
+		if value is None:
+			value = ""
+		if not isinstance(value, str):
+			raise ValueError("Kolom profil pendaftaran harus berupa teks.")
+		value = value.strip()
+		if field in ("family_card_number", "national_id_number"):
+			value = clean_number_text(value, limit)
+		if len(value) > limit:
+			raise ValueError(f"Nilai {field} melebihi batas karakter.")
+		header[field] = value
+	header["residence_status"] = normalize_residence_status(header["residence_status"])
+	header["gender"] = normalize_import_gender(header["gender"]) or header["gender"]
+	header["birth_date"] = normalize_import_date(payload.get("birth_date", ""))
+	if not isinstance(header["birth_date"], str):
+		raise ValueError("Tanggal lahir harus berupa teks.")
+	parse_iso_date(header["birth_date"], "Tanggal lahir")
+	header["birthplace"] = header["birthplace"][:100]
+	for key in ("rt", "rw"):
+		value = payload.get(key, "")
+		if value is None:
+			value = ""
+		if type(value) is int:
+			value = str(value)
+		if not isinstance(value, str) or (value.strip() and not value.strip().isdigit()):
+			raise ValueError("RT dan RW harus berupa angka.")
+		maximum = settings["rt_count"] if key == "rt" else settings["rw_count"]
+		number = optional_import_area_number(value, key.upper(), max(1, maximum))
+		header[key] = f"{number:03d}" if number else ""
+	return header
+
+
+def promote_registration_to_residents(connection, registration_id, reviewer_label):
+	"""Pindahkan satu formulir yang disetujui ke data warga iuran.
+
+	Kepala keluarga menjadi warga utama. Setiap anggota keluarga lain
+	mendapat baris sendiri dengan nomor kartu keluarga yang sama, sehingga
+	formulir ini utuh di satu tempat tanpa menggandakan kepala keluarga.
+	"""
+	registration = connection.execute(
+		"SELECT * FROM bsk_registrations WHERE id = ?", (registration_id,)
+	).fetchone()
+	if not registration:
+		raise ValueError("Pendaftaran tidak ditemukan.")
+	members = registration_member_payload(connection, registration_id)
+	cursor = connection.execute(
+		"INSERT INTO contribution_residents (full_name, rt, rw, birth_date, address, family_card_number, "
+		"national_id_number, birthplace, religion, gender, relationship, phone, residence_status) "
+		"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		(
+			registration["head_name"], registration["rt"], registration["rw"], registration["birth_date"],
+			registration["address"], registration["family_card_number"], registration["national_id_number"],
+			registration["birthplace"], registration["religion"], registration["gender"],
+			"KEPALA KELUARGA", registration["phone"], registration["residence_status"],
+		),
+	)
+	resident_id = cursor.lastrowid
+	for member in members:
+		# Kepala keluarga boleh ikut tertulis di tabel anggota sesuai formulir,
+		# tapi tidak boleh menduplikasi baris warga yang baru dibuat.
+		if member["national_id_number"] and member["national_id_number"] == registration["national_id_number"]:
+			continue
+		connection.execute(
+			"INSERT INTO contribution_residents (full_name, rt, rw, birth_date, address, family_card_number, "
+			"national_id_number, birthplace, religion, gender, relationship, phone, residence_status) "
+			"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			(
+				member["full_name"], registration["rt"], registration["rw"], member["birth_date"],
+				registration["address"], registration["family_card_number"], member["national_id_number"],
+				member["birthplace"], registration["religion"], member["gender"],
+				member["relationship"] or "ANGGOTA KELUARGA", "", registration["residence_status"],
+			),
+		)
+	connection.execute(
+		"UPDATE bsk_registrations SET status = 'Disetujui', reviewed_by = NULL, reviewed_at = CURRENT_TIMESTAMP, "
+		"review_note = ?, resident_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		(reviewer_label, resident_id, registration_id),
+	)
+	return resident_id
+
 
 def normalize_residence_status(value):
 	"""Status domisili tidak lagi memakai pilihan tertutup.
@@ -1075,6 +1450,9 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		}
 		font_body, font_display = font_presets.get(settings.get("site_font_preset"), font_presets["kifayah"])
 		font_scale = max(0, min(300, settings.get("site_font_scale", 100))) / 100
+		font_style = settings.get("site_font_style", "normal")
+		if font_style not in ("normal", "bold", "italic", "bolditalic"):
+			font_style = "normal"
 		text_alignment = settings.get("site_text_alignment", "left")
 		if text_alignment not in TEXT_ALIGNMENTS:
 			text_alignment = "left"
@@ -1085,6 +1463,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			"{{FONT_BODY}}": font_body,
 			"{{FONT_DISPLAY}}": font_display,
 			"{{FONT_SCALE}}": str(font_scale),
+			"{{FONT_WEIGHT}}": "700" if font_style in ("bold", "bolditalic") else "400",
+			"{{FONT_STYLE}}": "italic" if font_style in ("italic", "bolditalic") else "normal",
 			"{{TEXT_ALIGNMENT}}": text_alignment,
 		}.items():
 			body = body.replace(placeholder, value)
@@ -1112,16 +1492,73 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		if not content_type:
 			self.send_error(404)
 			return
-		content_length = image_path.stat().st_size
-		self.send_response(200)
+		file_stat = image_path.stat()
+		total_length = file_stat.st_size
+		is_video = image_path.suffix in (".mp4", ".webm")
+		# File media bisa diganti pengelola, jadi browser harus memvalidasinya lagi.
+		last_modified = self.date_time_string(int(file_stat.st_mtime))
+		if not self.headers.get("Range") and self.headers.get("If-Modified-Since") == last_modified:
+			self.send_response(304)
+			self.send_header("Last-Modified", last_modified)
+			self.end_headers()
+			return
+		# Browser memutar video memakai permintaan Range. Tanpa dukungan ini
+		# seluruh file diunduh ulang tiap kali elemen dibuat, sehingga video
+		# tidak pernah selesai tampil sebelum diganti.
+		start_offset, end_offset = 0, total_length - 1
+		status = 200
+		range_header = self.headers.get("Range", "").strip()
+		range_match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header) if range_header else None
+		if range_match:
+			raw_start, raw_end = range_match.group(1), range_match.group(2)
+			if not raw_start and not raw_end:
+				self.send_response(416)
+				self.send_header("Content-Range", f"bytes */{total_length}")
+				self.send_header("Content-Length", "0")
+				self.end_headers()
+				return
+			if raw_start:
+				start_offset = int(raw_start)
+				if start_offset >= total_length:
+					self.send_response(416)
+					self.send_header("Content-Range", f"bytes */{total_length}")
+					self.send_header("Content-Length", "0")
+					self.end_headers()
+					return
+			if raw_end:
+				end_offset = min(int(raw_end), total_length - 1)
+			if end_offset < start_offset:
+				self.send_response(416)
+				self.send_header("Content-Range", f"bytes */{total_length}")
+				self.send_header("Content-Length", "0")
+				self.end_headers()
+				return
+			status = 206
+		content_length = end_offset - start_offset + 1 if total_length else 0
+		self.send_response(status)
 		self.send_header("Content-Type", content_type)
 		self.send_header("Content-Length", str(content_length))
-		self.send_header("Cache-Control", "no-store")
+		if status == 206:
+			self.send_header("Content-Range", f"bytes {start_offset}-{end_offset}/{total_length}")
+		self.send_header("Accept-Ranges", "bytes")
+		# Video boleh disimpan browser agar tidak diunduh ulang tiap pergantian slide.
+		self.send_header("Last-Modified", last_modified)
+		self.send_header("Cache-Control", "public, max-age=0, must-revalidate" if is_video else "no-store")
 		self.send_header("X-Content-Type-Options", "nosniff")
 		self.end_headers()
-		with image_path.open("rb") as image_file:
-			while chunk := image_file.read(1024 * 1024):
-				self.wfile.write(chunk)
+		remaining = content_length
+		try:
+			with image_path.open("rb") as media_file:
+				media_file.seek(start_offset)
+				while remaining > 0:
+					chunk = media_file.read(min(256 * 1024, remaining))
+					if not chunk:
+						break
+					self.wfile.write(chunk)
+					remaining -= len(chunk)
+		except (BrokenPipeError, ConnectionResetError):
+			# Client berhenti menggulir video; ini normal, bukan error server.
+			pass
 
 	def send_stored_image(self, filename):
 		return self.send_stored_media(filename)
@@ -1199,6 +1636,9 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			signature_role = payload.get("role")
 			if kind == "signature" and signature_role not in ("maker", "rt", "lmk", "rw", "bsk"):
 				raise ValueError("Pilih penandatangan yang benar.")
+			signature_unit = payload.get("unit_number")
+			if kind == "signature" and signature_unit is not None and (type(signature_unit) is not int or not 1 <= signature_unit <= 999):
+				raise ValueError("Nomor RT tidak valid.")
 			if kind in ("site_icon", "theme_logo", "export_logo") and (type(site_icon_slot) is not int or site_icon_slot not in (1, 2)):
 				raise ValueError("Pilih posisi logo pertama atau kedua.")
 			if kind == "theme_logo" and theme_logo_target not in ("logo1", "logo2", "hero", "slideshow"):
@@ -1246,7 +1686,12 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					delete_upload_if_unreferenced(connection, previous_photo)
 				url = f"/media/contribution-resident/{contribution_resident_id}"
 			elif kind == "signature":
-				setting_key = f"signature_{signature_role}"
+				# Tanda tangan Ketua RT disimpan per wilayah supaya tiap RT punya
+				# sendiri. Jabatan lain tetap memakai satu kunci bersama.
+				if signature_role == "rt" and signature_unit:
+					setting_key = f"signature_rt_{signature_unit:03d}"
+				else:
+					setting_key = f"signature_{signature_role}"
 				row = connection.execute("SELECT value FROM app_settings WHERE key = ?", (setting_key,)).fetchone()
 				previous_signature = row["value"] if row and row["value"] else ""
 				connection.execute("UPDATE app_settings SET value = ? WHERE key = ?", (filename, setting_key))
@@ -1269,6 +1714,276 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					url = "/media/hero"
 				connection.execute("UPDATE app_settings SET value = ? WHERE key = ?", (filename, setting_key))
 		self.send_json(201, {"url": url})
+
+	def handle_resident_registration_submit(self):
+		"""Warga mengirim satu formulir pendaftaran lengkap dengan anggotanya.
+
+		Formulir yang sudah ditolak boleh dikirim ulang. Formulir yang sudah
+		disetujui tidak dapat diubah lagi dari sisi warga supaya data warga
+		tidak bercabang dua dengan data yang sudah disahkan pengurus.
+		"""
+		if not self.require_resident():
+			return
+		try:
+			payload = self.read_json()
+			members = payload.get("members", [])
+			if not isinstance(members, list) or len(members) > MAX_REGISTRATION_MEMBERS:
+				raise ValueError("Daftar anggota keluarga tidak valid.")
+			with connect_database() as connection:
+				settings = get_settings(connection)
+				header = validate_registration_header(payload, settings)
+				validated_members = [
+					validate_registration_member(member, index) for index, member in enumerate(members)
+					if isinstance(member, dict) and str(member.get("full_name", "")).strip()
+				]
+				reject_duplicate_member_nik(header, validated_members)
+				duplicate_nik = header["national_id_number"] and connection.execute(
+					"SELECT 1 FROM bsk_registrations WHERE national_id_number = ? AND status != 'Ditolak'", (header["national_id_number"],)
+				).fetchone()
+				if duplicate_nik:
+					raise ValueError("Pendaftaran dengan NIK kepala keluarga ini sudah pernah dikirim.")
+				existing = connection.execute(
+					"SELECT id FROM bsk_registrations WHERE submitted_by = ? AND status = 'Ditolak' "
+					"ORDER BY id DESC LIMIT 1",
+					(self.current_resident["id"],),
+				).fetchone()
+				agreement_note = "\n".join(REGISTRATION_AGREEMENT_NOTES)
+				values = (
+					header["head_name"], header["gender"], header["family_card_number"], header["national_id_number"],
+					header["birthplace"], header["birth_date"], header["religion"], header["residence_status"],
+					header["rt"], header["rw"], header["address"], header["job"], header["phone"], agreement_note,
+				)
+				if existing:
+					registration_id = existing["id"]
+					connection.execute(
+						"UPDATE bsk_registrations SET status = 'Menunggu Verifikasi', head_name = ?, gender = ?, "
+						"family_card_number = ?, national_id_number = ?, birthplace = ?, birth_date = ?, religion = ?, "
+						"residence_status = ?, rt = ?, rw = ?, address = ?, job = ?, phone = ?, agreement_note = ?, "
+						"review_note = '', reviewed_at = '', submitted_at = CURRENT_TIMESTAMP, "
+						"updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+						(*values, registration_id),
+					)
+					connection.execute("DELETE FROM bsk_registration_members WHERE registration_id = ?", (registration_id,))
+					status_code = 200
+				else:
+					cursor = connection.execute(
+						"INSERT INTO bsk_registrations (status, head_name, gender, family_card_number, national_id_number, "
+						"birthplace, birth_date, religion, residence_status, rt, rw, address, job, phone, agreement_note, "
+						"submitted_by) VALUES ('Menunggu Verifikasi', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+						(*values, self.current_resident["id"]),
+					)
+					registration_id = cursor.lastrowid
+					status_code = 201
+				connection.executemany(
+					"INSERT INTO bsk_registration_members (registration_id, full_name, national_id_number, birthplace, "
+					"birth_date, gender, relationship, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+					[
+						(
+							registration_id, member["full_name"], member["national_id_number"], member["birthplace"],
+							member["birth_date"], member["gender"], member["relationship"], member["remark"],
+						)
+						for member in validated_members
+					],
+				)
+				registration = registration_payload_for(connection, registration_id)
+		except (ValueError, TypeError, sqlite3.Error) as error:
+			self.send_json(400, {"error": str(error) or "Pendaftaran tidak dapat dikirim."})
+			return
+		self.send_json(status_code, {"registration": registration, "saved": True})
+
+	def handle_registration_create(self):
+		"""Admin mencatat formulir untuk warga yang mengisi di tempat."""
+		if not self.require_admin("Admin"):
+			return
+		try:
+			payload = self.read_json()
+			members = payload.get("members", [])
+			if not isinstance(members, list) or len(members) > MAX_REGISTRATION_MEMBERS:
+				raise ValueError("Daftar anggota keluarga tidak valid.")
+			with connect_database() as connection:
+				settings = get_settings(connection)
+				header = validate_registration_header(payload, settings)
+				validated_members = [
+					validate_registration_member(member, index) for index, member in enumerate(members)
+					if isinstance(member, dict) and str(member.get("full_name", "")).strip()
+				]
+				reject_duplicate_member_nik(header, validated_members)
+				cursor = connection.execute(
+					"INSERT INTO bsk_registrations (status, head_name, gender, family_card_number, national_id_number, "
+					"birthplace, birth_date, religion, residence_status, rt, rw, address, job, phone, agreement_note, "
+					"submitted_by) VALUES ('Menunggu Verifikasi', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					(
+						header["head_name"], header["gender"], header["family_card_number"], header["national_id_number"],
+						header["birthplace"], header["birth_date"], header["religion"], header["residence_status"],
+						header["rt"], header["rw"], header["address"], header["job"], header["phone"],
+						"\n".join(REGISTRATION_AGREEMENT_NOTES), self.current_admin["id"],
+					),
+				)
+				registration_id = cursor.lastrowid
+				connection.executemany(
+					"INSERT INTO bsk_registration_members (registration_id, full_name, national_id_number, birthplace, "
+					"birth_date, gender, relationship, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+					[
+						(
+							registration_id, member["full_name"], member["national_id_number"], member["birthplace"],
+							member["birth_date"], member["gender"], member["relationship"], member["remark"],
+						)
+						for member in validated_members
+					],
+				)
+				registration = registration_payload_for(connection, registration_id)
+		except (ValueError, TypeError, sqlite3.Error) as error:
+			self.send_json(400, {"error": str(error) or "Pendaftaran tidak dapat disimpan."})
+			return
+		self.send_json(201, {"registration": registration, "saved": True})
+
+	def handle_registration_signature(self):
+		"""Simpan satu tanda tangan formulir. Semua jabatan bisa ditandatangani
+		dalam satu sesi di tempat, jadi tidak ada urutan antar jabatan."""
+		if not self.require_admin("Admin"):
+			return
+		try:
+			payload = self.read_json()
+			registration_id = payload.get("registration_id")
+			role = payload.get("role")
+			name = payload.get("name", "")
+			content_type = payload.get("content_type")
+			encoded = payload.get("content_base64", "")
+			if type(registration_id) is not int:
+				raise ValueError("Pilih formulir dengan benar.")
+			if role not in REGISTRATION_SIGNATURE_ROLES:
+				raise ValueError("Pilih jabatan penandatangan yang benar.")
+			if payload.get("clear") is True:
+				# Menghapus tanda tangan hanya untuk membetulkan satu jabatan,
+				# bukan untuk membatalkan persetujuan formulir.
+				with connect_database() as connection:
+					existing = connection.execute(
+						"SELECT id, name, image_file FROM bsk_registration_signatures "
+						"WHERE registration_id = ? AND role = ?",
+						(registration_id, role),
+					).fetchone()
+					if not existing:
+						self.send_json(404, {"error": "Tanda tangan ini belum tersimpan."})
+						return
+					if not existing["name"].strip():
+						raise ValueError("Isi nama penandatangan lebih dulu.")
+					connection.execute(
+						"UPDATE bsk_registration_signatures SET image_file = '', signed_at = CURRENT_TIMESTAMP "
+						"WHERE id = ?",
+						(existing["id"],),
+					)
+					connection.execute(
+						"UPDATE bsk_registrations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+						(registration_id,),
+					)
+					if existing["image_file"]:
+						(UPLOAD_DIR / existing["image_file"]).unlink(missing_ok=True)
+					registration = registration_payload_for(connection, registration_id)
+				self.send_json(200, {"registration": registration, "saved": True})
+				return
+			if not isinstance(name, str) or not 2 <= len(" ".join(name.split())) <= 120:
+				raise ValueError("Nama penandatangan wajib diisi dan maksimal 120 karakter.")
+			expected_image = IMAGE_TYPES.get(content_type) if isinstance(content_type, str) else None
+			if not expected_image:
+				raise ValueError("Tanda tangan harus berupa PNG, JPEG, atau WebP.")
+			try:
+				content = base64.b64decode(encoded, validate=True)
+			except (binascii.Error, ValueError, TypeError):
+				raise ValueError("Isi tanda tangan tidak valid.") from None
+			if len(content) > 2 * 1024 * 1024 or image_extension(content) != expected_image[0]:
+				raise ValueError("Gambar tanda tangan tidak valid atau melebihi 2 MB.")
+			UPLOAD_DIR.mkdir(exist_ok=True)
+			filename = f"{secrets.token_hex(16)}{expected_image[0]}"
+			(UPLOAD_DIR / filename).write_bytes(content)
+			with connect_database() as connection:
+				registration = connection.execute(
+					"SELECT id, status FROM bsk_registrations WHERE id = ?", (registration_id,)
+				).fetchone()
+				if not registration:
+					(UPLOAD_DIR / filename).unlink(missing_ok=True)
+					self.send_json(404, {"error": "Pendaftaran tidak ditemukan."})
+					return
+				previous = connection.execute(
+					"SELECT image_file FROM bsk_registration_signatures WHERE registration_id = ? AND role = ?",
+					(registration_id, role),
+				).fetchone()
+				connection.execute(
+					"INSERT INTO bsk_registration_signatures (registration_id, role, name, image_file) VALUES (?, ?, ?, ?) "
+					"ON CONFLICT(registration_id, role) DO UPDATE SET name = excluded.name, "
+					"image_file = excluded.image_file, signed_at = CURRENT_TIMESTAMP",
+					(registration_id, role, " ".join(name.split()), filename),
+				)
+				connection.execute(
+					"UPDATE bsk_registrations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (registration_id,)
+				)
+				if previous and previous["image_file"]:
+					(UPLOAD_DIR / previous["image_file"]).unlink(missing_ok=True)
+				registration = registration_payload_for(connection, registration_id)
+		except (ValueError, TypeError, sqlite3.Error, OSError) as error:
+			self.send_json(400, {"error": str(error) or "Tanda tangan tidak dapat disimpan."})
+			return
+		self.send_json(200, {"registration": registration, "saved": True})
+
+	def handle_registration_review(self):
+		"""Setujui atau tolak satu formulir.
+
+		Persetujuan baru memindahkan data ke daftar warga bila semua
+		penandatangan sudah ada. Tanpa tanda tangan lengkap, formulir tetap
+		antre supayaecutor tidak sempat menyalin data setengah jadi.
+		"""
+		if not self.require_admin("Admin"):
+			return
+		try:
+			payload = self.read_json()
+			registration_id = payload.get("registration_id")
+			decision = payload.get("decision")
+			note = payload.get("note", "")
+			if type(registration_id) is not int:
+				raise ValueError("Pilih formulir dengan benar.")
+			if decision not in ("approve", "reject"):
+				raise ValueError("Pilihan tindakan tidak valid.")
+			if not isinstance(note, str) or len(note) > 500:
+				raise ValueError("Catatan peninjauan maksimal 500 karakter.")
+			with connect_database() as connection:
+				registration = connection.execute(
+					"SELECT id, status FROM bsk_registrations WHERE id = ?", (registration_id,)
+				).fetchone()
+				if not registration:
+					self.send_json(404, {"error": "Pendaftaran tidak ditemukan."})
+					return
+				if registration["status"] == "Disetujui" and decision == "approve":
+					raise ValueError("Pendaftaran ini sudah disetujui sebelumnya.")
+				reviewer = self.editor_label()
+				if decision == "approve":
+					signed_count = connection.execute(
+						"SELECT COUNT(*) FROM bsk_registration_signatures WHERE registration_id = ? AND image_file != ''",
+						(registration_id,),
+					).fetchone()[0]
+					if signed_count < len(REGISTRATION_SIGNATURE_ROLES):
+						missing = [
+							REGISTRATION_ROLE_LABELS[role]
+							for role in REGISTRATION_SIGNATURE_ROLES
+							if not connection.execute(
+								"SELECT 1 FROM bsk_registration_signatures WHERE registration_id = ? AND role = ? AND image_file != ''",
+								(registration_id, role),
+							).fetchone()
+						]
+						raise ValueError(f"Lengkapi tanda tangan terlebih dahulu: {', '.join(missing)}.")
+					promote_registration_to_residents(connection, registration_id, reviewer)
+				else:
+					if not note.strip():
+						raise ValueError("Tuliskan alasan penolakan agar warga dapat memperbaiki data.")
+					connection.execute(
+						"UPDATE bsk_registrations SET status = 'Ditolak', reviewed_at = CURRENT_TIMESTAMP, "
+						"review_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+						(note.strip(), registration_id),
+					)
+				registration = registration_payload_for(connection, registration_id)
+		except (ValueError, TypeError, sqlite3.Error) as error:
+			self.send_json(400, {"error": str(error) or "Pendaftaran tidak dapat ditinjau."})
+			return
+		self.send_json(200, {"registration": registration, "saved": True})
+
 	def handle_media_delete(self):
 		try:
 			payload = self.read_json()
@@ -1318,9 +2033,16 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				sig_role = payload.get("role")
 				if sig_role not in ("maker", "rt", "lmk", "rw", "bsk"):
 					raise ValueError("Pilih penandatangan yang benar.")
-				row = connection.execute("SELECT value FROM app_settings WHERE key = ?", (f"signature_{sig_role}",)).fetchone()
+				sig_unit = payload.get("unit_number")
+				if sig_role == "rt" and sig_unit:
+					if type(sig_unit) is not int or not 1 <= sig_unit <= 999:
+						raise ValueError("Nomor RT tidak valid.")
+					sig_key = f"signature_rt_{sig_unit:03d}"
+				else:
+					sig_key = f"signature_{sig_role}"
+				row = connection.execute("SELECT value FROM app_settings WHERE key = ?", (sig_key,)).fetchone()
 				filename = row["value"] if row else ""
-				connection.execute("UPDATE app_settings SET value = '' WHERE key = ?", (f"signature_{sig_role}",))
+				connection.execute("UPDATE app_settings SET value = '' WHERE key = ?", (sig_key,))
 			elif kind == "portrait":
 				row = connection.execute("SELECT portrait_file FROM records WHERE id = ?", (identifier,)).fetchone()
 				if not row:
@@ -1353,40 +2075,70 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		self.send_json(200, {"deleted": bool(filename), "kind": kind})
 
 	def handle_hero_playlist_upload(self):
+		"""Unggah media slideshow tanpa batas ukuran, ditulis streaming ke disk."""
 		try:
 			content_length = int(self.headers.get("Content-Length", "0"))
 			content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
-			if content_length < 1 or content_length > MAX_HERO_VIDEO_SIZE:
-				raise ValueError("Ukuran media slideshow maksimal 50 MB per file.")
-			content = self.rfile.read(content_length)
-			if len(content) != content_length:
-				raise ValueError("Unggahan media terputus sebelum selesai.")
+			if content_length < 1:
+				raise ValueError("Berkas media kosong.")
 			if content_type in IMAGE_TYPES:
-				extension = image_extension(content)
-				if extension != IMAGE_TYPES[content_type][0]:
-					raise ValueError("Isi foto tidak sesuai dengan format file.")
-				if content_length > 5 * 1024 * 1024:
-					raise ValueError("Ukuran foto slideshow maksimal 5 MB.")
-				media_type = "image"
+				expected_extension = IMAGE_TYPES[content_type][0]
+				expected_type = "image"
 			elif content_type in VIDEO_TYPES:
-				extension = VIDEO_TYPES[content_type]
-				valid_signature = content[4:8] == b"ftyp" if content_type == "video/mp4" else content.startswith(b"\x1a\x45\xdf\xa3")
-				if not valid_signature:
-					raise ValueError("Isi video tidak sesuai dengan format MP4/WebM.")
-				media_type = "video"
+				expected_extension = VIDEO_TYPES[content_type]
+				expected_type = "video"
 			else:
-				raise ValueError("Gunakan foto PNG/JPEG/WebP atau video MP4/WebM.")
+				expected_extension = None
+				expected_type = None
 			raw_name = unquote(self.headers.get("X-Media-Name", "")).replace("\\", "/")
 			media_name = "".join(char for char in Path(raw_name).name if char.isprintable())[:120]
 		except (ValueError, TypeError) as error:
 			self.send_json(400, {"error": str(error) or "Media slideshow tidak valid."})
 			return
-		media_id = secrets.token_hex(16)
-		filename = f"{media_id}{extension}"
 		UPLOAD_DIR.mkdir(exist_ok=True)
-		media_path = UPLOAD_DIR / filename
-		media_path.write_bytes(content)
+		media_id = secrets.token_hex(16)
+		temporary_path = UPLOAD_DIR / f".hero-{media_id}.upload"
+		signature = b""
 		try:
+			remaining = content_length
+			with temporary_path.open("wb") as media_file:
+				while remaining > 0:
+					chunk = self.rfile.read(min(1024 * 1024, remaining))
+					if not chunk:
+						raise ValueError("Unggahan media terputus sebelum selesai.")
+					if len(signature) < 16:
+						signature += chunk[:16 - len(signature)]
+					media_file.write(chunk)
+					remaining -= len(chunk)
+			detected_extension = image_extension(signature)
+			if expected_extension:
+				if expected_type == "image":
+					valid_signature = detected_extension == expected_extension
+				else:
+					valid_signature = signature[4:8] == b"ftyp" if expected_extension == ".mp4" else signature.startswith(b"\x1a\x45\xdf\xa3")
+				if not valid_signature:
+					raise ValueError("Isi berkas tidak sesuai dengan format file.")
+				extension = expected_extension
+				media_type = expected_type
+			elif signature[4:8] == b"ftyp":
+				extension = ".mp4"
+				media_type = "video"
+			elif signature.startswith(b"\x1a\x45\xdf\xa3"):
+				extension = ".webm"
+				media_type = "video"
+			elif detected_extension:
+				extension = detected_extension
+				media_type = "image"
+			else:
+				raise ValueError("Gunakan foto PNG/JPEG/WebP atau video MP4/WebM.")
+		except (ValueError, OSError) as error:
+			temporary_path.unlink(missing_ok=True)
+			self.send_json(400, {"error": str(error) or "Media slideshow tidak valid."})
+			return
+		filename = f"{media_id}{extension}"
+		media_path = UPLOAD_DIR / filename
+		try:
+			os.replace(temporary_path, media_path)
 			with connect_database() as connection:
 				items = hero_playlist_items(get_settings(connection))
 				items.append({
@@ -1456,7 +2208,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			length = int(self.headers.get("Content-Length", "0"))
 		except ValueError:
 			raise ValueError("Ukuran data tidak valid.")
-		if length < 1 or length > MAX_BODY:
+		if length > MAX_BODY:
+			raise PayloadTooLargeError(
+				f"Ukuran data {length / 1024 / 1024:.1f} MB melebihi batas {MAX_BODY / 1024 / 1024:.0f} MB."
+			)
+		if length < 1:
 			raise ValueError("Ukuran data tidak valid.")
 		try:
 			payload = json.loads(self.rfile.read(length))
@@ -1535,10 +2291,14 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			return "import"
 		if path.startswith("/api/admin/news"):
 			return "news"
+		if path.startswith("/api/admin/contacts") or path.startswith("/api/admin/position-titles"):
+			return "contacts"
 		if path.startswith("/api/admin/payments"):
 			return "payments"
 		if path.startswith("/api/admin/contribution-residents") or path.startswith("/api/admin/contribution-payments"):
 			return "payments"
+		if path.startswith("/api/admin/registrations") or path.startswith("/api/resident/registrations"):
+			return "registration"
 		if path.startswith("/api/admin/program-info"):
 			return "program"
 		if path.startswith("/api/admin/finance"):
@@ -1619,6 +2379,27 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					record.pop("publish_address", None)
 				records.append(record)
 			self.send_json(200, {"records": records, "admin": False})
+			return
+		if path == "/api/contacts":
+			with connect_database() as connection:
+				rows = connection.execute(
+					"SELECT c.id, c.unit_type, c.unit_number, c.contact_name, c.position_name, c.phone, "
+					"COALESCE(t.rank_order, 99) AS rank_order "
+					"FROM area_contacts c "
+					"LEFT JOIN position_titles t ON t.title = c.position_name COLLATE NOCASE "
+					"WHERE c.active = 1 "
+					"ORDER BY c.unit_type DESC, c.unit_number, rank_order, c.contact_name COLLATE NOCASE"
+				).fetchall()
+			self.send_json(200, {"contacts": [dict(row) for row in rows]})
+			return
+		if path == "/api/position-titles":
+			with connect_database() as connection:
+				rows = connection.execute(
+					"SELECT id, title, rank_order FROM position_titles ORDER BY rank_order, id"
+				).fetchall()
+			titles = [dict(row) for row in rows]
+			titles.append({"id": 0, "title": OTHER_POSITION_VALUE, "rank_order": len(titles) + 1})
+			self.send_json(200, {"titles": titles})
 			return
 		if path == "/api/news":
 			with connect_database() as connection:
@@ -1743,6 +2524,33 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				})
 			self.send_json(200, {"residents": result})
 			return
+		if path == "/api/admin/contacts":
+			if not self.require_admin("Admin"):
+				return
+			with connect_database() as connection:
+				rows = connection.execute(
+					"SELECT c.id, c.unit_type, c.unit_number, c.contact_name, c.position_name, c.phone, c.active, c.updated_at, "
+					"COALESCE(t.rank_order, 99) AS rank_order "
+					"FROM area_contacts c "
+					"LEFT JOIN position_titles t ON t.title = c.position_name COLLATE NOCASE "
+					"ORDER BY c.unit_type DESC, c.unit_number, rank_order, c.contact_name COLLATE NOCASE"
+				).fetchall()
+			contacts = []
+			for row in rows:
+				contact = dict(row)
+				contact["active"] = bool(contact["active"])
+				contacts.append(contact)
+			self.send_json(200, {"contacts": contacts})
+			return
+		if path == "/api/admin/position-titles":
+			if not self.require_admin("Admin"):
+				return
+			with connect_database() as connection:
+				rows = connection.execute(
+					"SELECT id, title, rank_order FROM position_titles ORDER BY rank_order, id"
+				).fetchall()
+			self.send_json(200, {"titles": [dict(row) for row in rows]})
+			return
 		if path == "/api/admin/news":
 			if not self.require_admin("Admin"):
 				return
@@ -1757,6 +2565,53 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				article["image_url"] = f"/media/news/{article['id']}" if article.pop("image_file") else ""
 				result.append(article)
 			self.send_json(200, {"articles": result})
+			return
+		if path.startswith("/api/admin/registrations"):
+			if not self.require_admin("Admin"):
+				return
+			status_filter = self.query_param("status", "all")
+			with connect_database() as connection:
+				condition = ""
+				parameters = []
+				if status_filter in REGISTRATION_STATUSES:
+					condition = "WHERE r.status = ?"
+					parameters.append(status_filter)
+				rows = connection.execute(
+					"SELECT r.id, r.status, r.head_name, r.family_card_number, r.rt, r.rw, r.submitted_at, "
+					"r.reviewed_at, r.review_note, r.resident_id, u.display_name AS submitter_name, "
+					"(SELECT COUNT(*) FROM bsk_registration_members m WHERE m.registration_id = r.id) AS member_count, "
+					"(SELECT COUNT(*) FROM bsk_registration_signatures s WHERE s.registration_id = r.id AND s.image_file != '') AS signed_count "
+					"FROM bsk_registrations r LEFT JOIN admin_users u ON u.id = r.submitted_by "
+					f"{condition} ORDER BY CASE r.status WHEN 'Menunggu Verifikasi' THEN 0 ELSE 1 END, "
+					"r.submitted_at DESC, r.id DESC",
+					parameters,
+				).fetchall()
+			registrations = [dict(row) for row in rows]
+			pending_total = sum(1 for item in registrations if item["status"] == "Menunggu Verifikasi")
+			self.send_json(200, {"registrations": registrations, "pending_total": pending_total, "total": len(registrations)})
+			return
+		if path.startswith("/api/admin/registrations/"):
+			if not self.require_admin("Admin"):
+				return
+			try:
+				registration_id = int(path.rsplit("/", 1)[1])
+			except ValueError:
+				self.send_json(400, {"error": "ID pendaftaran tidak valid."})
+				return
+			with connect_database() as connection:
+				registration = registration_payload_for(connection, registration_id)
+			self.send_json(200, {"registration": registration})
+			return
+		if path == "/api/resident/registrations":
+			if not self.require_resident():
+				return
+			with connect_database() as connection:
+				rows = connection.execute(
+					"SELECT id FROM bsk_registrations WHERE submitted_by = ? ORDER BY submitted_at DESC, id DESC",
+					(self.current_resident["id"],),
+				).fetchall()
+				registrations = [registration_payload_for(connection, row["id"]) for row in rows]
+			self.send_json(200, {"registrations": registrations, "agreement_notes": list(REGISTRATION_AGREEMENT_NOTES)})
 			return
 		if path == "/api/admin/data-issues":
 			if not self.require_admin("Staff"):
@@ -1899,6 +2754,42 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			parsed = urlparse(self.path)
 			query = parse_qs(parsed.query)
 			export_type = query.get("type", ["contributions"])[0]
+			if export_type == "contacts":
+				from openpyxl import Workbook
+				from openpyxl.styles import Font, PatternFill
+				workbook = Workbook()
+				sheet = workbook.active
+				sheet.title = "Kontak Pengurus"
+				sheet.append(["NO", "Wilayah", "Jabatan", "Nama", "No. Kontak", "Status"])
+				with connect_database() as connection:
+					rows = connection.execute(
+						"SELECT c.unit_type, c.unit_number, c.contact_name, c.position_name, c.phone, c.active, "
+						"COALESCE(t.rank_order, 99) AS rank_order "
+						"FROM area_contacts c "
+						"LEFT JOIN position_titles t ON t.title = c.position_name COLLATE NOCASE "
+						"ORDER BY c.unit_type DESC, c.unit_number, rank_order, c.contact_name COLLATE NOCASE"
+					).fetchall()
+				for idx, row in enumerate(rows, start=1):
+					sheet.append([
+						idx, f"{row['unit_type']} {int(row['unit_number']):03d}", row["position_name"] or "-",
+						row["contact_name"] or "-", row["phone"] or "-", "Tampil" if row["active"] else "Disembunyikan",
+					])
+				for cell in sheet[1]:
+					cell.font = Font(bold=True, color="FFFFFF")
+					cell.fill = PatternFill("solid", fgColor="174D3C")
+				for column, width in {"A": 6, "B": 12, "C": 22, "D": 30, "E": 18, "F": 16}.items():
+					sheet.column_dimensions[column].width = width
+				stream = io.BytesIO()
+				workbook.save(stream)
+				body = stream.getvalue()
+				self.send_response(200)
+				self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				self.send_header("Content-Disposition", 'attachment; filename="kontak-pengurus.xlsx"')
+				self.send_header("Content-Length", str(len(body)))
+				self.send_header("Cache-Control", "no-store")
+				self.end_headers()
+				self.wfile.write(body)
+				return
 			if export_type == "records":
 				from openpyxl import Workbook
 				from openpyxl.styles import Font, PatternFill
@@ -1928,7 +2819,6 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			from openpyxl.drawing.image import Image as SpreadsheetImage
 			from openpyxl.styles import Alignment, Font, PatternFill
 			from PIL import Image as PILImage
-			import io
 			workbook = Workbook()
 			residents = workbook.active
 			residents.title = "Data BSK"
@@ -2063,6 +2953,470 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			self.end_headers()
 			self.wfile.write(body)
 			return
+		if path == "/api/admin/export/pdf":
+			if not self.require_admin("Admin"):
+				return
+			try:
+				import pymupdf
+			except ImportError:
+				self.send_json(500, {"error": "PyMuPDF belum terpasang di server."})
+				return
+			parsed = urlparse(self.path)
+			params = parse_qs(parsed.query)
+			export_type = params.get("type", ["records"])[0]
+			search = params.get("q", [""])[0].strip().lower()
+			sort_mode = params.get("sort", ["newest"])[0]
+			status = params.get("status", ["all"])[0]
+			family_kk = params.get("family", [""])[0]
+			def area_label(value):
+				match = re.search(r"RT\s*0*(\d+).*?RW\s*0*(\d+)", str(value or ""), re.IGNORECASE)
+				return f"RT {int(match.group(1)):03d} / RW {int(match.group(2)):03d}" if match else str(value or "-")
+			def rt_rw_variants(value):
+				match = re.search(r"RT\s*0*(\d+).*?RW\s*0*(\d+)", str(value or ""), re.IGNORECASE)
+				if not match:
+					return []
+				rt, rw = match.group(1), match.group(2)
+				return [f"rt {rt}", f"rt {int(rt):03d}", f"rt{rt}", f"rt{int(rt):03d}",
+				        f"rw {rw}", f"rw {int(rw):03d}", f"rw{rw}", f"rw{int(rw):03d}"]
+			def rt_variants(value):
+				text = str(value or "").strip()
+				if not text.isdigit():
+					return []
+				return [f"rt {text}", f"rt {int(text)}", f"rt {int(text):03d}", f"rt{text}", f"rt{int(text)}", f"rt{int(text):03d}"]
+			def rw_variants(value):
+				text = str(value or "").strip()
+				if not text.isdigit():
+					return []
+				return [f"rw {text}", f"rw {int(text)}", f"rw {int(text):03d}", f"rw{text}", f"rw{int(text)}", f"rw{int(text):03d}"]
+			def gender_label(value):
+				text = str(value or "").strip().upper()
+				if text in ("P", "PEREMPUAN", "WANITA"):
+					return "Perempuan"
+				if text in ("L", "PRIA") or text.startswith("LAKI"):
+					return "Laki-Laki"
+				return str(value or "-")
+			def date_label(value):
+				try:
+					return datetime.strptime(str(value), "%Y-%m-%d").strftime("%d/%m/%Y")
+				except (ValueError, TypeError):
+					return str(value or "-")
+			with connect_database() as connection:
+				site = get_settings(connection)
+				if export_type == "contacts":
+					db_rows = connection.execute(
+						"SELECT c.id, c.unit_type, c.unit_number, c.contact_name, c.position_name, c.phone, c.active, "
+						"COALESCE(t.rank_order, 99) AS rank_order "
+						"FROM area_contacts c "
+						"LEFT JOIN position_titles t ON t.title = c.position_name COLLATE NOCASE "
+						"ORDER BY c.unit_type DESC, c.unit_number, rank_order, c.contact_name COLLATE NOCASE"
+					).fetchall()
+				elif export_type == "records":
+					db_rows = connection.execute(
+						"SELECT full_name, gender, area, date_of_death, address, created_at FROM records ORDER BY created_at DESC"
+					).fetchall()
+				else:
+					db_rows = connection.execute(
+						"SELECT * FROM contribution_residents WHERE active = 1 ORDER BY full_name COLLATE NOCASE"
+					).fetchall()
+					current_period = date.today().strftime("%Y-%m")
+					paid_rows = connection.execute(
+						"SELECT resident_id FROM contribution_payments WHERE period = ? "
+						"UNION "
+						"SELECT r.id FROM contribution_residents r "
+						"JOIN resident_payments p ON p.user_id = r.account_id "
+						"WHERE p.period = ? AND p.status = 'Terverifikasi'",
+						(current_period, current_period),
+					).fetchall()
+					paid_ids = {row["resident_id"] for row in paid_rows}
+			headers = []
+			data_rows = []
+			note = ""
+			if export_type == "records":
+				headers = ["No.", "Nama", "Jenis Kelamin", "RT/RW", "Tanggal Wafat", "Alamat"]
+				col_widths = [34, 170, 95, 120, 100, 251]
+				kept = []
+				for row in db_rows:
+					try:
+						parsed_date = datetime.strptime(str(row["date_of_death"]), "%Y-%m-%d")
+						numeric_date = parsed_date.strftime("%d/%m/%Y")
+						pretty_date = parsed_date.strftime("%d %b %Y")
+					except (ValueError, TypeError):
+						numeric_date = ""; pretty_date = ""
+					searchable = " ".join(filter(None, [row["full_name"], row["area"], row["date_of_death"], pretty_date, numeric_date, *rt_rw_variants(row["area"])])).lower()
+					if search and search not in searchable:
+						continue
+					kept.append(row)
+				def area_sort_key(value):
+					"""Kunci urut RT lalu RW dari teks area seperti 'RT 001 / RW 007'."""
+					match = re.search(r"RT\s*0*(\d+).*?RW\s*0*(\d+)", str(value or ""), re.IGNORECASE)
+					if not match:
+						return (9999, 9999)
+					return (int(match.group(1)), int(match.group(2)))
+				if sort_mode == "name":
+					kept.sort(key=lambda row: (area_sort_key(row["area"]), str(row["full_name"] or "").lower()))
+				elif sort_mode == "oldest":
+					kept.sort(key=lambda row: (area_sort_key(row["area"]), str(row["date_of_death"] or "9999-12-31")))
+				else:
+					# Urutan wilayah tetap jadi kunci utama agar RT 001 berada di
+					# paling atas; tanggal hanya menentukan urutan di dalam wilayah.
+					kept.sort(key=lambda row: (area_sort_key(row["area"]), [-int(part) for part in str(row["date_of_death"] or "0000-00-00").split("-")]))
+				# Dikelompokkan per wilayah; tiap wilayah dimulai di halaman baru
+				# dengan penomoran yang kembali dari 1.
+				record_groups = []
+				for row in kept:
+					label = area_label(row["area"])
+					if not record_groups or record_groups[-1][0] != label:
+						record_groups.append((label, []))
+					record_groups[-1][1].append([
+						row["full_name"] or "-", gender_label(row["gender"]), label,
+						date_label(row["date_of_death"]), row["address"] or "-",
+					])
+				note = f"Filter pencarian: {search}" if search else "Semua data warga wafat"
+			elif export_type == "contacts":
+				headers = ["No.", "Jabatan", "Nama", "No. Kontak", "Status"]
+				col_widths = [34, 130, 190, 130, 70]
+				kept = []
+				for row in db_rows:
+					unit = f"{row['unit_type']} {int(row['unit_number']):03d}"
+					searchable = " ".join(filter(None, [row["contact_name"], row["position_name"], row["phone"], unit, unit.lower()])).lower()
+					if search and search not in searchable:
+						continue
+					kept.append(row)
+				# Dikelompokkan per wilayah. Setiap wilayah memulai halaman baru
+				# dan nomor urut dimulai lagi dari 1.
+				contact_groups = []
+				for row in kept:
+					unit = f"{row['unit_type']} {int(row['unit_number']):03d}"
+					if not contact_groups or contact_groups[-1][0] != unit:
+						contact_groups.append((unit, []))
+					contact_groups[-1][1].append([
+						row["position_name"] or "-", row["contact_name"] or "-",
+						row["phone"] or "-", "Tampil" if row["active"] else "Disembunyikan",
+					])
+				note = f"Filter pencarian: {search}" if search else "Semua kontak pengurus"
+			else:
+				headers = ["No", "Nama", "No. KK", "NIK", "RT", "RW", "Jenis Kelamin", "Tempat Lahir", "Tanggal Lahir", "Agama", "Hubungan", "No HP", "Status"]
+				col_widths = [25, 132, 79, 79, 38, 38, 54, 70, 50, 41, 56, 76, 32]
+				kept = []
+				for row in db_rows:
+					if family_kk and str(row["family_card_number"] or "") != family_kk:
+						continue
+					pay_this_month = row["id"] in paid_ids
+					gender = str(row["gender"] or "").strip().upper()
+					relationship = str(row["relationship"] if "relationship" in row.keys() else "").strip().upper()
+					if status == "paid" and not pay_this_month:
+						continue
+					if status == "unpaid" and pay_this_month:
+						continue
+					if status == "female" and not (gender == "P" or gender.startswith("PEREMPUAN") or gender == "WANITA"):
+						continue
+					if status == "male" and not (gender == "L" or gender.startswith("LAKI") or gender == "PRIA"):
+						continue
+					if status == "head" and "KEPALA" not in relationship:
+						continue
+					searchable = " ".join(filter(None, [row["full_name"], row["national_id_number"], row["address"], str(row["rt"]), str(row["rw"]), *rt_variants(row["rt"]), *rw_variants(row["rw"])])).lower()
+					if search and search not in searchable:
+						continue
+					kept.append(row)
+				# Urutan mengikuti wilayah: RT terkecil lebih dulu, lalu RW,
+				# baru nama warga sebagai pengurutan terakhir.
+				kept.sort(key=lambda row: (
+					int(str(row["rt"]).strip()) if str(row["rt"] or "").strip().isdigit() else 9999,
+					int(str(row["rw"]).strip()) if str(row["rw"] or "").strip().isdigit() else 9999,
+					str(row["full_name"] or "").lower(),
+				))
+				# Dikelompokkan per wilayah; tiap wilayah dimulai di halaman baru
+				# dengan penomoran yang kembali dari 1.
+				contribution_groups = []
+				for row in kept:
+					rt = str(row["rt"] or "").strip()
+					rw = str(row["rw"] or "").strip()
+					label = (
+						f"RT {int(rt):03d} / RW {int(rw):03d}" if rt.isdigit() and rw.isdigit()
+						else f"RT {int(rt):03d}" if rt.isdigit()
+						else f"RW {int(rw):03d}" if rw.isdigit()
+						else "Tanpa RT/RW"
+					)
+					if not contribution_groups or contribution_groups[-1][0] != label:
+						contribution_groups.append((label, []))
+					contribution_groups[-1][1].append([
+						row["full_name"] or "-", row["family_card_number"] or "-", row["national_id_number"] or "-",
+						f"RT {int(rt):03d}" if rt.isdigit() else "-", f"RW {int(rw):03d}" if rw.isdigit() else "-",
+						gender_label(row["gender"]), row["birthplace"] or "-", date_label(row["birth_date"]), row["religion"] or "-",
+						row["relationship"] if "relationship" in row.keys() and row["relationship"] else "-",
+						row["phone"] if "phone" in row.keys() and row["phone"] else "-",
+						row["residence_status"] if "residence_status" in row.keys() and row["residence_status"] else "-",
+					])
+				note = f"Filter pencarian: {search}" if search else "Semua warga iuran"
+			# Semua jenis ekspor dikelompokkan per wilayah. Nomor kolom pertama
+			# dihitung ulang per kelompok, jadi selalu mulai dari 1.
+			if export_type == "contacts":
+				row_groups = contact_groups
+			elif export_type == "records":
+				row_groups = record_groups
+			else:
+				row_groups = contribution_groups
+			doc = pymupdf.open()
+			helv_font = pymupdf.Font("helv")
+			bold_font = pymupdf.Font("hebo")
+			page_width, page_height = 842, 595
+			margin = 36
+			def new_page(document):
+				page = document.new_page(width=page_width, height=page_height)
+				page.draw_rect(pymupdf.Rect(0, 0, page_width, page_height), color=None, fill=(1, 1, 1))
+				return page
+			def truncate(text, width, fontsize):
+				text = str(text or "-")
+				if helv_font.text_length(text, fontsize=fontsize) <= width:
+					return text
+				while text and helv_font.text_length(text + "…", fontsize=fontsize) > width:
+					text = text[:-1]
+				return text + "…"
+			banner_top = 28
+			title_lines = [site.get("export_header_title", ""), site.get("export_header_line_2", ""), site.get("export_header_line_3", "")]
+			title_font_sizes = [13 if index == 0 else 10 for index in range(len(title_lines))]
+			line_gap = 15
+			# Lebar blok judul dihitung lebih dulu supaya kedua logo bisa
+			# diletakkan rapat di sisi kiri dan kanan teks, bukan di tepi halaman.
+			title_widths = [bold_font.text_length(line, fontsize=title_font_sizes[index]) for index, line in enumerate(title_lines)]
+			block_width = max(title_widths) if title_widths else 0
+			block_left = (page_width - block_width) / 2
+			block_right = block_left + block_width
+			block_top = banner_top - 11
+			block_height = line_gap * len(title_lines)
+			logo_gap = 18
+			logo_box_height = 46
+			logo_center_y = block_top + block_height / 2
+			# Data logo dibaca sekali, lalu dipakai ulang di setiap halaman.
+			letterhead_logos = []
+			for logo_index, logo_key in enumerate(("export_logo_1", "export_logo_2")):
+				logo_name = str(site.get(logo_key, "") or "").strip()
+				if not logo_name or Path(logo_name).name != logo_name:
+					continue
+				logo_path = UPLOAD_DIR / logo_name
+				if not logo_path.is_file():
+					continue
+				try:
+					logo_stream = None
+					try:
+						logo_pixmap = pymupdf.Pixmap(str(logo_path))
+						logo_width, logo_height = logo_pixmap.width, logo_pixmap.height
+					except Exception:
+						from PIL import Image as pil_image_class
+						with pil_image_class.open(str(logo_path)) as pil_image:
+							logo_buffer = io.BytesIO()
+							pil_image.save(logo_buffer, format="PNG")
+						logo_stream = logo_buffer.getvalue()
+						with pil_image_class.open(io.BytesIO(logo_stream)) as sized_image:
+							logo_width, logo_height = sized_image.size
+					if logo_width and logo_height:
+						scaled_height = logo_box_height
+						scaled_width = logo_width * (scaled_height / max(logo_height, 1))
+						if scaled_width > logo_box_height:
+							scaled_width = logo_box_height
+							scaled_height = logo_height * (scaled_width / max(logo_width, 1))
+						logo_x = block_left - logo_gap - scaled_width if logo_index == 0 else block_right + logo_gap
+						logo_rect = pymupdf.Rect(logo_x, logo_center_y - scaled_height / 2, logo_x + scaled_width, logo_center_y + scaled_height / 2)
+						letterhead_logos.append((logo_path, logo_stream, logo_rect))
+				except Exception:
+					pass
+			stamp = "  \u00b7  Dicetak " + datetime.now().strftime("%d/%m/%Y %H:%M")
+			def draw_letterhead(page_obj, shape_obj, with_note):
+				"""Kop BSK digambar di setiap halaman, bukan hanya halaman pertama."""
+				for logo_path, logo_stream, logo_rect in letterhead_logos:
+					if logo_stream is not None:
+						page_obj.insert_image(logo_rect, stream=logo_stream, keep_proportion=True)
+					else:
+						page_obj.insert_image(logo_rect, filename=str(logo_path), keep_proportion=True)
+				for index, line in enumerate(title_lines):
+					shape_obj.insert_text(((page_width - title_widths[index]) / 2, banner_top + index * line_gap), line, fontsize=title_font_sizes[index], fontname="hebo", color=(0.07, 0.07, 0.07))
+				if with_note:
+					shape_obj.insert_text((margin, banner_top + 52), note + stamp, fontsize=8, color=(0.4, 0.4, 0.4))
+			def draw_page_footer(page_obj, page_number):
+				label = f"Halaman {page_number}"
+				text_width = helv_font.text_length(label, fontsize=8)
+				page_obj.insert_text(((page_width - text_width) / 2, page_height - 16), label, fontsize=8, color=(0.45, 0.45, 0.45))
+			def draw_header(shape_obj, top):
+				x = margin
+				for cell_width, header in zip(col_widths, headers):
+					shape_obj.draw_rect(pymupdf.Rect(x, top, x + cell_width, top + 16))
+					shape_obj.finish(color=(0.65, 0.65, 0.65), fill=(0.89, 0.89, 0.89), width=0.4)
+					shape_obj.insert_text((x + 4, top + 11), header, fontsize=6.5, fontname="hebo", color=(0.07, 0.07, 0.07))
+					x += cell_width
+				return top + 16
+			def start_page(with_note, unit_label=""):
+				"""Menutup halaman berjalan lalu membuka halaman baru."""
+				nonlocal page, shape, page_number, y
+				draw_page_footer(page, page_number)
+				shape.commit()
+				page = new_page(doc)
+				page_number += 1
+				shape = page.new_shape()
+				draw_letterhead(page, shape, with_note)
+				# Baris judul dan logo berakhir sekitar y = 62, jadi tabel
+				# pada halaman lanjutan dimulai di bawahnya.
+				top = banner_top + (66 if with_note else 46)
+				if unit_label:
+					shape.insert_text((margin, top - 6), unit_label, fontsize=10, fontname="hebo", color=(0.07, 0.07, 0.07))
+					top += 6
+				y = draw_header(shape, top)
+			contact_officials = {}
+			with connect_database() as connection:
+				for row in connection.execute(
+					"SELECT c.unit_number, c.position_name, c.contact_name FROM area_contacts c "
+					"LEFT JOIN position_titles t ON t.title = c.position_name COLLATE NOCASE "
+					"WHERE c.unit_type = 'RT' AND c.active = 1 ORDER BY c.unit_number, rank_order"
+				):
+					officials = contact_officials.setdefault(int(row["unit_number"]), {})
+					position = str(row["position_name"] or "").strip().lower()
+					if position == "ketua rt" and "ketua_rt" not in officials:
+						officials["ketua_rt"] = str(row["contact_name"] or "").strip()
+			def unit_number_of(label):
+				"""Ambil nomor wilayah dari label grup seperti 'RT 002 / RW 007'."""
+				match = re.search(r"\bRT\s*0*(\d+)", str(label or ""), re.IGNORECASE)
+				return int(match.group(1)) if match else 0
+			def draw_signature_block(group_label=""):
+				"""Blok tanda tangan di akhir tiap wilayah, bukan sekali di akhir file.
+
+				Ketua RT diambil per wilayah: nama khusus RT tersebut lebih dulu,
+				 lalu data kontak RT/RW sebagai cadangan, lalu nama umum.
+				"""
+				all_order = ["bsk", "rw", "lmk", "rt", "maker"]
+				# Jabatan yang disembunyikan di panel admin tidak ikut dicetak.
+				order = [role for role in all_order if str(site.get(f"signature_show_{role}", "1")) != "0"] or all_order
+				unit_number = unit_number_of(group_label)
+				names = {}
+				images = {}
+				for role in order:
+					names[role] = str(site.get(f"signature_{role}_name", "") or "").strip()
+					images[role] = str(site.get(f"signature_{role}", "") or "").strip()
+				if unit_number:
+					unit_suffix = f"{unit_number:03d}"
+					rt_name = str(site.get(f"signature_rt_name_{unit_suffix}", "") or "").strip()
+					rt_image = str(site.get(f"signature_rt_{unit_suffix}", "") or "").strip()
+					if not rt_name:
+						rt_name = contact_officials.get(unit_number, {}).get("ketua_rt", "")
+					if rt_name:
+						names["rt"] = rt_name
+					if rt_image:
+						images["rt"] = rt_image
+				if not any(names[role] for role in order):
+					return
+				column_width = (page_width - margin * 2) / len(order)
+				block_height = 118
+				if y + block_height > page_height - 34:
+					start_page(False)
+				top = max(y + 26, banner_top + 40)
+				stamp = str(site.get("signature_date", "") or "").strip()
+				place = str(site.get("signature_place", "") or "").strip()
+				if stamp and place:
+					stamp = f"{place}, {stamp}"
+				elif not stamp:
+					stamp = place
+				if stamp:
+					stamp_width = helv_font.text_length(stamp, fontsize=8)
+					shape.insert_text((page_width - margin - stamp_width, top), stamp, fontsize=8, color=(0.2, 0.2, 0.2))
+					top += 18
+				else:
+					top += 4
+				note = str(site.get("signature_note", "") or "").strip()
+				if note and "rw" in order:
+					rw_index = order.index("rw")
+					center = margin + column_width * (rw_index + 0.5)
+					note_width = helv_font.text_length(note, fontsize=8)
+					shape.insert_text((center - note_width / 2, top), note, fontsize=8, color=(0.2, 0.2, 0.2))
+				label_top = top + 16
+				name_top = top + 74
+				for role_index, role in enumerate(order):
+					center = margin + column_width * (role_index + 0.5)
+					label = str(site.get(f"signature_label_{role}", "") or "").strip()
+					# {unit} diganti nomor wilayah, mis. "KETUA RT {unit}" -> "KETUA RT 002".
+					# Pada kelompok tanpa nomor wilayah, placeholder dibuang agar tidak
+					# tercetak apa adanya.
+					if unit_number:
+						label = label.replace("{unit}", f"{unit_number:03d}").replace("{unit_number}", str(unit_number))
+					else:
+						label = label.replace("{unit}", "-").replace("{unit_number}", "-")
+					if label:
+						label_width = bold_font.text_length(label, fontsize=7.5)
+						shape.insert_text((center - label_width / 2, label_top), label, fontsize=7.5, fontname="hebo", color=(0.1, 0.1, 0.1))
+					image_name = images[role]
+					if image_name and Path(image_name).name == image_name:
+						image_path = UPLOAD_DIR / image_name
+						if image_path.is_file():
+							try:
+								from PIL import Image as pil_image_module
+								with pil_image_module.open(str(image_path)) as source:
+									box_width, box_height = source.size
+								display_height = 26
+								display_width = box_width * (display_height / max(box_height, 1))
+								if display_width > column_width - 24:
+									display_width = column_width - 24
+									display_height = box_height * (display_width / max(box_width, 1))
+								image_rect = pymupdf.Rect(
+									center - display_width / 2, name_top - display_height - 2,
+									center + display_width / 2, name_top - 2,
+								)
+								page.insert_image(image_rect, filename=str(image_path), keep_proportion=True)
+							except Exception:
+								pass
+					name = names[role]
+					if name:
+						name_width = bold_font.text_length(name, fontsize=8.5)
+						name_x = center - name_width / 2
+						shape.insert_text((name_x, name_top), name, fontsize=8.5, fontname="hebo", color=(0.05, 0.05, 0.05))
+						shape.draw_line((name_x - 4, name_top + 2.5), (name_x + name_width + 4, name_top + 2.5))
+						shape.finish(color=(0.15, 0.15, 0.15), width=0.6)
+						shape.commit()
+			page = new_page(doc)
+			shape = page.new_shape()
+			page_number = 1
+			draw_letterhead(page, shape, True)
+			top = banner_top + 66
+			first_group_label = row_groups[0][0] if row_groups else ""
+			if first_group_label:
+				shape.insert_text((margin, top - 6), first_group_label, fontsize=10, fontname="hebo", color=(0.07, 0.07, 0.07))
+				top += 6
+			y = draw_header(shape, top)
+			printed_rows = 0
+			for group_label, group_rows in row_groups:
+				# Setiap wilayah dimulai di halaman baru, tanpa memakai sisa
+				# ruang halaman sebelumnya, dan nomor urut kembali dari 1.
+				if printed_rows:
+					start_page(False, group_label)
+				elif group_label and group_label != first_group_label:
+					start_page(False, group_label)
+				for local_index, cells in enumerate(group_rows, start=1):
+					row = [str(local_index)] + list(cells)
+					if y + 15 > page_height - 30:
+						start_page(False, group_label)
+					x = margin
+					for cell_width, cell in zip(col_widths, row):
+						shape.draw_rect(pymupdf.Rect(x, y, x + cell_width, y + 15))
+						shape.finish(color=(0.7, 0.7, 0.7), width=0.2)
+						shape.insert_text((x + 4, y + 10.5), truncate(cell, cell_width - 8, 7.5), fontsize=7.5, fontname="helv", color=(0.1, 0.1, 0.1))
+						x += cell_width
+					y += 15
+					printed_rows += 1
+				# Tanda tangan menutupi blok wilayah ini, jadi setiap RT punya
+				# bloknya sendiri di halaman terakhir wilayah tersebut.
+				draw_signature_block(group_label)
+			if not printed_rows:
+				shape.insert_text((margin, y + 20), "Tidak ada data untuk dicetak.", fontsize=9, color=(0.4, 0.4, 0.4))
+			draw_page_footer(page, page_number)
+			shape.commit()
+			pdf_bytes = doc.tobytes(garbage=4, deflate=True)
+			doc.close()
+			filename = {"records": "data-wafat.pdf", "contacts": "kontak-pengurus.pdf"}.get(export_type, "daftar-warga-iuran.pdf")
+			self.send_response(200)
+			self.send_header("Content-Type", "application/pdf")
+			self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+			self.send_header("Content-Length", str(len(pdf_bytes)))
+			self.send_header("Cache-Control", "no-store")
+			self.end_headers()
+			self.wfile.write(pdf_bytes)
+			return
+
 		if path == "/api/settings":
 			with connect_database() as connection:
 				settings = get_settings(connection)
@@ -2092,6 +3446,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				"intro_text_alignment": settings.get("intro_text_alignment", "left"),
 				"news_text_alignment": settings.get("news_text_alignment", "left"),
 				"directory_text_alignment": settings.get("directory_text_alignment", "left"),
+			"site_font_style": settings.get("site_font_style", "normal"),
+			"site_font_style_target": settings.get("site_font_style_target", "all"),
 				"export_logo_1_ready": bool(settings.get("export_logo_1")),
 				"export_logo_2_ready": bool(settings.get("export_logo_2")),
 				"export_header_title": settings.get("export_header_title", ""),
@@ -2108,6 +3464,27 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			"signature_lmk_ready": bool(settings.get("signature_lmk")),
 			"signature_rw_ready": bool(settings.get("signature_rw")),
 			"signature_bsk_ready": bool(settings.get("signature_bsk")),
+			"signature_place": settings.get("signature_place", ""),
+			"signature_note": settings.get("signature_note", ""),
+			"signature_label_maker": settings.get("signature_label_maker", ""),
+			"signature_label_rt": settings.get("signature_label_rt", ""),
+			"signature_label_lmk": settings.get("signature_label_lmk", ""),
+			"signature_label_rw": settings.get("signature_label_rw", ""),
+			"signature_label_bsk": settings.get("signature_label_bsk", ""),
+			"signature_show": {
+				role: settings.get(f"signature_show_{role}", "1") != "0"
+				for role in ("bsk", "rw", "lmk", "rt", "maker")
+			},
+			"signature_rt_names": {
+				key[len("signature_rt_name_"):]: value
+				for key, value in settings.items()
+				if key.startswith("signature_rt_name_") and value
+			},
+			"signature_rt_images": {
+				key[len("signature_rt_"):]: value
+				for key, value in settings.items()
+				if key.startswith("signature_rt_") and key != "signature_rt_name" and value
+			},
 				"footer_brand": settings.get("footer_brand", ""),
 				"footer_area": settings.get("footer_area", ""),
 				"footer_location": settings.get("footer_location", ""),
@@ -2165,6 +3542,31 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			with connect_database() as connection:
 				filename = get_settings(connection).get(f"signature_{role}", "")
 			return self.send_stored_image(filename)
+		if path.startswith("/media/registration-signature/"):
+			parts = [part for part in path.split("/") if part]
+			if len(parts) != 4:
+				self.send_error(404)
+				return
+			if not self.require_admin("Admin"):
+				return
+			try:
+				registration_id = int(parts[2])
+			except ValueError:
+				self.send_error(404)
+				return
+			role = parts[3]
+			if role not in REGISTRATION_SIGNATURE_ROLES:
+				self.send_error(404)
+				return
+			with connect_database() as connection:
+				row = connection.execute(
+					"SELECT image_file FROM bsk_registration_signatures WHERE registration_id = ? AND role = ?",
+					(registration_id, role),
+				).fetchone()
+			if not row or not row["image_file"]:
+				self.send_error(404)
+				return
+			return self.send_stored_image(row["image_file"])
 		if path.startswith("/media/portrait/"):
 			try:
 				record_id = int(path.rsplit("/", 1)[1])
@@ -2267,7 +3669,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			return
 		if path in ("/masuk", "/dashboard-warga"):
 			path = "/login.html"
-		if path in ("/", "/admin", "/home", "/berita", "/daftar-warga") or re.fullmatch(r"/berita/[^/]+/?", path):
+		if path in ("/", "/admin", "/home", "/berita", "/kontak", "/daftar-warga") or re.fullmatch(r"/berita/[^/]+/?", path):
 			path = "/index.html"
 		relative = unquote(path).lstrip("/")
 		target = (WEB_DIR / relative).resolve()
@@ -2642,6 +4044,14 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				{"Set-Cookie": f"kifayah_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200"},
 			)
 			return
+		if path == "/api/resident/registrations":
+			return self.handle_resident_registration_submit()
+		if path == "/api/admin/registrations":
+			return self.handle_registration_create()
+		if path == "/api/admin/registration-signature":
+			return self.handle_registration_signature()
+		if path == "/api/admin/registrations/review":
+			return self.handle_registration_review()
 		if path == "/api/admin/data-issues/resolve":
 			if not self.require_admin("Admin"):
 				return
@@ -2834,6 +4244,73 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				return
 			self.send_json(200, {"saved": True})
 			return
+		if path in ("/api/admin/position-titles", "/api/admin/position-titles/update"):
+			if not self.require_admin("Admin"):
+				return
+			try:
+				payload = self.read_json()
+				title = payload.get("title", "")
+				if not isinstance(title, str) or not 2 <= len(title.strip()) <= 100:
+					raise ValueError("Nama jabatan wajib diisi, maksimal 100 karakter.")
+				title = title.strip()
+				if title.casefold() == OTHER_POSITION_VALUE.casefold():
+					raise ValueError(f"{OTHER_POSITION_VALUE} sudah tersedia sebagai pilihan bawaan.")
+				with connect_database() as connection:
+					if path.endswith("/update"):
+						title_id = payload.get("title_id")
+						if type(title_id) is not int:
+							raise ValueError("ID jabatan tidak valid.")
+						if connection.execute(
+							"SELECT 1 FROM position_titles WHERE title = ? COLLATE NOCASE AND id != ?", (title, title_id)
+						).fetchone():
+							raise ValueError("Jabatan tersebut sudah ada.")
+						cursor = connection.execute(
+							"UPDATE position_titles SET title = ? WHERE id = ?", (title, title_id)
+						)
+						if cursor.rowcount == 0:
+							self.send_json(404, {"error": "Jabatan tidak ditemukan."})
+							return
+					else:
+						if connection.execute(
+							"SELECT 1 FROM position_titles WHERE title = ? COLLATE NOCASE", (title,)
+						).fetchone():
+							raise ValueError("Jabatan tersebut sudah ada.")
+						next_rank = connection.execute(
+							"SELECT COALESCE(MAX(rank_order), 0) + 1 FROM position_titles"
+						).fetchone()[0]
+						cursor = connection.execute(
+							"INSERT INTO position_titles (title, rank_order) VALUES (?, ?)", (title, next_rank)
+						)
+					rows = connection.execute(
+						"SELECT id, title, rank_order FROM position_titles ORDER BY rank_order, id"
+					).fetchall()
+					self.send_json(200, {"saved": True, "titles": [dict(row) for row in rows]})
+			except (ValueError, TypeError, sqlite3.Error) as error:
+				self.send_json(400, {"error": str(error) or "Jabatan tidak dapat disimpan."})
+			return
+		if path == "/api/admin/position-titles/reorder":
+			if not self.require_admin("Admin"):
+				return
+			try:
+				payload = self.read_json()
+				ordered_ids = payload.get("title_ids")
+				if not isinstance(ordered_ids, list) or not ordered_ids or not all(type(value) is int for value in ordered_ids):
+					raise ValueError("Urutan jabatan tidak valid.")
+				with connect_database() as connection:
+					existing = [row["id"] for row in connection.execute("SELECT id FROM position_titles")]
+					if sorted(ordered_ids) != sorted(existing):
+						raise ValueError("Urutan jabatan harus memuat seluruh jabatan yang tersimpan.")
+					connection.executemany(
+						"UPDATE position_titles SET rank_order = ? WHERE id = ?",
+						[(rank, title_id) for rank, title_id in enumerate(ordered_ids, start=1)],
+					)
+					rows = connection.execute(
+						"SELECT id, title, rank_order FROM position_titles ORDER BY rank_order, id"
+					).fetchall()
+					self.send_json(200, {"saved": True, "titles": [dict(row) for row in rows]})
+			except (ValueError, TypeError, sqlite3.Error) as error:
+				self.send_json(400, {"error": str(error) or "Urutan jabatan tidak dapat disimpan."})
+			return
 		if path == "/api/admin/users/reset-password":
 			if not self.require_super_admin():
 				return
@@ -2911,12 +4388,81 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			except (ValueError, TypeError) as error:
 				self.send_json(400, {"error": str(error) or "Format tanggal dan jam berita tidak valid."})
 			return
+		if path in ("/api/admin/contacts", "/api/admin/contacts/update"):
+			if not self.require_admin("Admin"):
+				return
+			try:
+				payload = self.read_json()
+				unit_type = payload.get("unit_type", "")
+				unit_number = payload.get("unit_number")
+				contact_name = payload.get("contact_name", "")
+				position_name = payload.get("position_name", "")
+				phone = payload.get("phone", "")
+				active = payload.get("active", True)
+				if unit_type not in ("RT", "RW"):
+					raise ValueError("Pilih jenis wilayah RT atau RW.")
+				if type(unit_number) is not int or not 1 <= unit_number <= 999:
+					raise ValueError("Nomor wilayah harus antara 1 dan 999.")
+				if not isinstance(contact_name, str) or not 2 <= len(contact_name.strip()) <= 100:
+					raise ValueError("Nama pengurus wajib diisi, maksimal 100 karakter.")
+				if not isinstance(position_name, str) or len(position_name.strip()) > 100:
+					raise ValueError("Jabatan maksimal 100 karakter.")
+				position_name = position_name.strip()
+				if not position_name:
+					raise ValueError("Pilih atau tulis jabatan pengurus.")
+				phone = phone.strip() if isinstance(phone, str) else ""
+				digits = re.sub(r"[^0-9+]", "", phone)
+				if not 7 <= len(digits) <= 20:
+					raise ValueError("Nomor kontak harus 7-20 digit, boleh diawali 62 atau +62.")
+				if active not in (True, False, 1, 0, "true", "false", "1", "0"):
+					raise ValueError("Status kontak tidak valid.")
+				is_active = 1 if active in (True, 1, "true", "1") else 0
+				contact_name = contact_name.strip()
+				position_name = position_name.strip()
+				with connect_database() as connection:
+					if path.endswith("/update"):
+						contact_id = payload.get("contact_id")
+						if type(contact_id) is not int:
+							raise ValueError("ID kontak tidak valid.")
+						duplicate = connection.execute(
+							"SELECT id FROM area_contacts WHERE unit_type = ? AND unit_number = ? AND contact_name = ? AND id != ?",
+							(unit_type, unit_number, contact_name, contact_id),
+						).fetchone()
+						if duplicate:
+							raise ValueError("Kontak tersebut sudah ada di wilayah yang sama.")
+						cursor = connection.execute(
+							"UPDATE area_contacts SET unit_type = ?, unit_number = ?, contact_name = ?, "
+							"position_name = ?, phone = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+							(unit_type, unit_number, contact_name, position_name, phone, is_active, contact_id),
+						)
+						if cursor.rowcount == 0:
+							self.send_json(404, {"error": "Kontak tidak ditemukan."})
+							return
+						self.send_json(200, {"saved": True})
+					else:
+						duplicate = connection.execute(
+							"SELECT id FROM area_contacts WHERE unit_type = ? AND unit_number = ? AND contact_name = ?",
+							(unit_type, unit_number, contact_name),
+						).fetchone()
+						if duplicate:
+							raise ValueError("Kontak tersebut sudah ada di wilayah yang sama.")
+						cursor = connection.execute(
+							"INSERT INTO area_contacts (unit_type, unit_number, contact_name, position_name, phone, active) "
+							"VALUES (?, ?, ?, ?, ?, ?)",
+							(unit_type, unit_number, contact_name, position_name, phone, is_active),
+						)
+						self.send_json(201, {"id": cursor.lastrowid})
+			except (ValueError, TypeError, sqlite3.Error) as error:
+				self.send_json(400, {"error": str(error) or "Kontak tidak dapat disimpan."})
+			return
 		if path == "/api/admin/typography":
 			if not self.require_admin("Admin"):
 				return
 			try:
 				payload = self.read_json()
 				font_preset = payload.get("font_preset")
+				font_style = payload.get("font_style", "normal")
+				font_style_target = payload.get("font_style_target", "all")
 				font_scale = payload.get("font_scale")
 				intro_alignment = payload.get("intro_text_alignment", payload.get("text_alignment", "left"))
 				news_alignment = payload.get("news_text_alignment", payload.get("text_alignment", "left"))
@@ -2925,6 +4471,10 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Pilih preset font yang tersedia.")
 				if type(font_scale) is not int or not 0 <= font_scale <= 300:
 					raise ValueError("Skala font harus antara 0% dan 300%.")
+				if not isinstance(font_style, str) or font_style not in ("normal", "bold", "italic", "bolditalic"):
+					raise ValueError("Pilih gaya font yang tersedia.")
+				if not isinstance(font_style_target, str) or font_style_target not in ("all", "headings", "highlight", "body"):
+					raise ValueError("Pilih target gaya font yang tersedia.")
 				alignments = (intro_alignment, news_alignment, directory_alignment)
 				if not all(isinstance(value, str) and value in TEXT_ALIGNMENTS for value in alignments):
 					raise ValueError("Pilih perataan teks yang tersedia.")
@@ -2935,11 +4485,13 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				connection.executemany(
 					"UPDATE app_settings SET value = ? WHERE key = ?",
 					((font_preset, "site_font_preset"), (font_scale, "site_font_scale"),
+				 (font_style, "site_font_style"),
+				 (font_style_target, "site_font_style_target"),
 					 (intro_alignment, "intro_text_alignment"), (news_alignment, "news_text_alignment"),
 					 (directory_alignment, "directory_text_alignment"), (intro_alignment, "site_text_alignment")),
 				)
 			self.send_json(200, {
-				"saved": True, "font_preset": font_preset, "font_scale": font_scale,
+				"saved": True, "font_preset": font_preset, "font_scale": font_scale, "font_style": font_style, "font_style_target": font_style_target,
 				"intro_text_alignment": intro_alignment, "news_text_alignment": news_alignment,
 				"directory_text_alignment": directory_alignment,
 			})
@@ -3000,12 +4552,34 @@ class KifayahHandler(BaseHTTPRequestHandler):
 							raise ValueError("Teks kop ekspor maksimal 160 karakter per baris.")
 						export_header_values[key] = value.strip()
 				signature_values = {}
-				for key in ("signature_date", "signature_maker_name", "signature_rt_name", "signature_lmk_name", "signature_rw_name", "signature_bsk_name"):
+				for key in (
+					"signature_date", "signature_maker_name", "signature_rt_name",
+					"signature_lmk_name", "signature_rw_name", "signature_bsk_name",
+					"signature_note", "signature_place",
+					"signature_label_maker", "signature_label_rt", "signature_label_lmk",
+					"signature_label_rw", "signature_label_bsk",
+					"signature_show_bsk", "signature_show_rw", "signature_show_lmk",
+					"signature_show_rt", "signature_show_maker",
+				):
 					value = payload.get(key)
-					if value is not None:
-						if not isinstance(value, str) or len(value) > 120:
+					if value is None:
+						continue
+					# Kotak centang dikirim sebagai boolean, bukan teks.
+					if isinstance(value, bool):
+						signature_values[key] = "1" if value else "0"
+						continue
+					if not isinstance(value, str) or len(value) > 120:
+						raise ValueError("Teks tanda tangan maksimal 120 karakter per baris.")
+					signature_values[key] = value.strip()
+				# Nama Ketua RT boleh disimpan per wilayah lewat kunci
+				# signature_rt_name_001, signature_rt_name_002, dan seterusnya.
+				for unit_index in range(1, 1000):
+					unit_key = f"signature_rt_name_{unit_index:03d}"
+					unit_value = payload.get(unit_key)
+					if unit_value is not None:
+						if not isinstance(unit_value, str) or len(unit_value) > 120:
 							raise ValueError("Teks tanda tangan maksimal 120 karakter per baris.")
-						signature_values[key] = value.strip()
+						signature_values[unit_key] = unit_value.strip()
 				footer_values = {}
 				for key in ("footer_brand", "footer_area", "footer_location", "footer_map_query"):
 					value = payload.get(key)
@@ -3051,7 +4625,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				for key, value in export_header_values.items():
 					connection.execute("UPDATE app_settings SET value = ? WHERE key = ?", (value, key))
 				for key, value in signature_values.items():
-					connection.execute("UPDATE app_settings SET value = ? WHERE key = ?", (value, key))
+					connection.execute(
+						"INSERT INTO app_settings (key, value) VALUES (?, ?) "
+						"ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+						(key, value),
+					)
 				for key, value in footer_values.items():
 					connection.execute("UPDATE app_settings SET value = ? WHERE key = ?", (value, key))
 				for key, value in donation_values.items():
@@ -3667,6 +5245,43 @@ class KifayahHandler(BaseHTTPRequestHandler):
 	# DELETE ROUTES: account removal is separate from resident/family deletion.
 	def do_DELETE(self):
 		path = urlparse(self.path).path
+		if path.startswith("/api/admin/position-titles/"):
+			if not self.require_admin("Admin"):
+				return
+			try:
+				title_id = int(path.rsplit("/", 1)[1])
+			except ValueError:
+				self.send_json(400, {"error": "ID jabatan tidak valid."})
+				return
+			with connect_database() as connection:
+				in_use = connection.execute(
+					"SELECT 1 FROM area_contacts WHERE position_name = (SELECT title FROM position_titles WHERE id = ?) LIMIT 1",
+					(title_id,),
+				).fetchone()
+				if in_use:
+					self.send_json(400, {"error": "Jabatan masih dipakai kontak. Pindahkan kontak tersebut lebih dahulu."})
+					return
+				cursor = connection.execute("DELETE FROM position_titles WHERE id = ?", (title_id,))
+			if cursor.rowcount == 0:
+				self.send_json(404, {"error": "Jabatan tidak ditemukan."})
+				return
+			self.send_json(200, {"deleted": True})
+			return
+		if path.startswith("/api/admin/contacts/"):
+			if not self.require_admin("Admin"):
+				return
+			try:
+				contact_id = int(path.rsplit("/", 1)[1])
+			except ValueError:
+				self.send_json(400, {"error": "ID kontak tidak valid."})
+				return
+			with connect_database() as connection:
+				cursor = connection.execute("DELETE FROM area_contacts WHERE id = ?", (contact_id,))
+			if cursor.rowcount == 0:
+				self.send_json(404, {"error": "Kontak tidak ditemukan."})
+				return
+			self.send_json(200, {"deleted": True})
+			return
 		if path.startswith("/api/admin/contribution-payments/"):
 			if not self.require_admin("Admin"):
 				return
@@ -3696,6 +5311,35 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			if cursor.rowcount == 0:
 				self.send_json(404, {"error": "Data warga tidak ditemukan."})
 				return
+			self.send_json(200, {"deleted": True})
+			return
+		if path.startswith("/api/admin/registrations/"):
+			if not self.require_admin("Admin"):
+				return
+			try:
+				registration_id = int(path.rsplit("/", 1)[1])
+			except ValueError:
+				self.send_json(400, {"error": "ID pendaftaran tidak valid."})
+				return
+			with connect_database() as connection:
+				registration = connection.execute(
+					"SELECT id, status FROM bsk_registrations WHERE id = ?", (registration_id,)
+				).fetchone()
+				if not registration:
+					self.send_json(404, {"error": "Pendaftaran tidak ditemukan."})
+					return
+				if registration["status"] == "Disetujui":
+					self.send_json(400, {"error": "Pendaftaran yang sudah disetujui tidak dapat dihapus."})
+					return
+				signature_files = [
+					row["image_file"] for row in connection.execute(
+						"SELECT image_file FROM bsk_registration_signatures WHERE registration_id = ? AND image_file != ''",
+						(registration_id,),
+					)
+				]
+				connection.execute("DELETE FROM bsk_registrations WHERE id = ?", (registration_id,))
+			for filename in signature_files:
+				(UPLOAD_DIR / filename).unlink(missing_ok=True)
 			self.send_json(200, {"deleted": True})
 			return
 		if path.startswith("/api/admin/finance/"):

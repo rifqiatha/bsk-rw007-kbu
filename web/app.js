@@ -19,7 +19,7 @@ const settingsForm = document.querySelector("#settings-form");
 const records = [];
 let hasRenderedRecords = false;
 let settingsPayloadSignature = null;
-const settings = { rt_count: 1, rw_count: 7, icon_zoom_1: 100, icon_zoom_2: 100, hero_background_scale: 100, hero_image_position: "right", site_font_preset: "kifayah", site_font_scale: 100, intro_text_alignment: "left", news_text_alignment: "left", directory_text_alignment: "left" };
+const settings = { rt_count: 1, rw_count: 7, icon_zoom_1: 100, icon_zoom_2: 100, hero_background_scale: 100, hero_image_position: "right", site_font_preset: "kifayah", site_font_scale: 100, site_font_style: "normal", site_font_style_target: "all", intro_text_alignment: "left", news_text_alignment: "left", directory_text_alignment: "left" };
 let familyFilterKK = null;
 const siteIconAvailability = { 1: false, 2: false };
 const themeLogoAvailability = {
@@ -36,6 +36,8 @@ let heroPlaylistItemsSignature = null;
 let heroSlideTimer = null;
 let heroVideo = null;
 let heroHasFallbackImage = false;
+// Media yang gagal ditampilkan dicatat agar tidak dicoba berulang tanpa henti.
+const heroFailedMedia = new Set();
 let contributionResidents = [];
 let originalContributionResidents = [];
 let contributionResidentsSignature = "";
@@ -57,8 +59,8 @@ let currentUser = null;
 let adminUsers = [];
 const rolePermissionDefaults = {
   Staff: ["records"],
-  Admin: ["records", "import", "news", "family", "maintenance", "typography", "payments", "program", "finance"],
-  "Super Admin": ["records", "import", "news", "area", "family", "media", "maintenance", "typography", "users", "export", "payments", "program", "finance"],
+  Admin: ["records", "import", "news", "family", "maintenance", "typography", "payments", "program", "finance", "contacts", "registration"],
+  "Super Admin": ["records", "import", "news", "area", "family", "media", "maintenance", "typography", "users", "export", "payments", "program", "finance", "contacts", "registration"],
   Warga: [],
 };
 let selectedGenderFilter = "";
@@ -84,6 +86,7 @@ clearAdminTaskFragment();
 const publicSectionPaths = {
   "intro-section": "/home",
   "news-section": "/berita",
+  "contacts-section": "/kontak",
 };
 let hasRestoredPublicRoute = false;
 let pendingPublicSection = "";
@@ -104,6 +107,7 @@ function restorePublicRoute() {
   const legacySection = {
     "intro-section": "intro-section",
     "news-section": "news-section",
+    "contacts-section": "contacts-section",
   }[decodeURIComponent(window.location.hash.slice(1)).toLowerCase()];
   const pathToSection = Object.fromEntries(Object.entries(publicSectionPaths).map(([id, path]) => [path, id]));
   const requestedSection = pathToSection[window.location.pathname] || legacySection || "intro-section";
@@ -312,13 +316,19 @@ function applyIconZoom(slot, value) {
   document.documentElement.style.setProperty(`--brand-logo-zoom-${slot}`, String(value / 100));
 }
 
-function applySiteTypography({ font_preset, font_scale, intro_text_alignment, news_text_alignment, directory_text_alignment }) {
+function applySiteTypography({ font_preset, font_scale, font_style, font_style_target, intro_text_alignment, news_text_alignment, directory_text_alignment }) {
   const root = document.documentElement;
   root.dataset.fontPreset = font_preset;
   root.style.setProperty("--site-font-scale", String(font_scale / 100));
   root.style.setProperty("--intro-text-align", intro_text_alignment);
   root.style.setProperty("--news-text-align", news_text_alignment);
   root.style.setProperty("--directory-text-align", directory_text_alignment);
+  const style = ["normal", "bold", "italic", "bolditalic"].includes(font_style) ? font_style : "normal";
+  document.body.classList.toggle("site-font-bold", style === "bold" || style === "bolditalic");
+  document.body.classList.toggle("site-font-italic", style === "italic" || style === "bolditalic");
+  const target = ["all", "headings", "highlight", "body"].includes(font_style_target) ? font_style_target : "all";
+  document.body.classList.remove("target-all", "target-headings", "target-highlight", "target-body");
+  document.body.classList.add(`target-${target}`);
 }
 
 function applyHeroBackgroundScale(value) {
@@ -615,6 +625,32 @@ function formatAreaLabel(value) {
   return match ? `RT ${match[1].padStart(3, "0")} / RW ${match[2].padStart(3, "0")}` : value;
 }
 
+function rtRwSearchVariants(value) {
+  const match = String(value || "").match(/RT\s*0*(\d+).*?RW\s*0*(\d+)/i);
+  if (!match) return [];
+  const rt = match[1];
+  const rw = match[2];
+  return [
+    `rt ${rt}`, `rt ${rt.padStart(3, "0")}`, `rt${rt}`, `rt${rt.padStart(3, "0")}`,
+    `rw ${rw}`, `rw ${rw.padStart(3, "0")}`, `rw${rw}`, `rw${rw.padStart(3, "0")}`,
+  ];
+}
+
+function residentRtRwVariants(rt, rw) {
+  const parts = [];
+  if (rt !== null && rt !== undefined && String(rt).trim() !== "") {
+    const raw = String(rt).trim();
+    const num = raw.replace(/^0+/, "") || "0";
+    parts.push(`rt ${raw}`, `rt ${num}`, `rt ${num.padStart(3, "0")}`, `rt${raw}`, `rt${num}`, `rt${num.padStart(3, "0")}`);
+  }
+  if (rw !== null && rw !== undefined && String(rw).trim() !== "") {
+    const raw = String(rw).trim();
+    const num = raw.replace(/^0+/, "") || "0";
+    parts.push(`rw ${raw}`, `rw ${num}`, `rw ${num.padStart(3, "0")}`, `rw${raw}`, `rw${num}`, `rw${num.padStart(3, "0")}`);
+  }
+  return parts;
+}
+
 function mapLink(label, address, service) {
   const url = service === "apple"
     ? `https://maps.apple.com/?q=${encodeURIComponent(address)}`
@@ -631,7 +667,7 @@ function mapLink(label, address, service) {
 
 function visibleRecords() {
   const query = searchInput.value.trim().toLocaleLowerCase("id-ID");
-  const filtered = records.filter((record) => `${record.full_name} ${record.area}`.toLocaleLowerCase("id-ID").includes(query)
+  const filtered = records.filter((record) => `${record.full_name} ${record.area} ${rtRwSearchVariants(record.area).join(" ")}`.toLocaleLowerCase("id-ID").includes(query)
     && (!selectedGenderFilter || record.gender === selectedGenderFilter));
   const sortKey = tableSortKey || (sortSelect.value === "name" ? "name" : "date");
   const direction = tableSortKey ? tableSortDirection : sortSelect.value === "oldest" ? "asc" : "desc";
@@ -1217,31 +1253,181 @@ async function loadNews() {
   }
 }
 
-if ("IntersectionObserver" in window) {
+/* KONTAK RT/RW: nomor pengurus wilayah dari panel admin. */
+let areaContacts = [];
+let areaContactsSignature = "";
+// Modul pendaftaran memakai ini untuk mengisi nama Ketua RT, LMK, dan
+// Ketua RW secara otomatis dari data kontak yang sudah ada.
+window.kifayahAreaContacts = areaContacts;
+
+function contactUnitLabel(contact) {
+  return `${contact.unit_type} ${String(contact.unit_number).padStart(3, "0")}`;
+}
+
+function whatsappContactUrl(phone) {
+  const digits = String(phone || "").replace(/[^0-9]/g, "");
+  const normalized = digits.startsWith("62") ? digits : `62${digits.replace(/^0+/, "")}`;
+  return `https://wa.me/${normalized}`;
+}
+
+function renderAreaContacts(contacts) {
+  const signature = JSON.stringify(contacts);
+  if (signature === areaContactsSignature) return false;
+  areaContactsSignature = signature;
+  areaContacts = contacts;
+  window.kifayahAreaContacts = contacts;
+  const section = document.querySelector("#contacts-section");
+  const list = document.querySelector("#contacts-list");
+  if (!section || !list) return false;
+  const navigationLinks = document.querySelectorAll('[data-section-link="contacts-section"]');
+  section.hidden = contacts.length === 0;
+  navigationLinks.forEach((link) => { link.hidden = contacts.length === 0; });
+  list.replaceChildren();
+  // Satu kartu per wilayah. Kartu wilayah baru dibuka saat diklik agar
+  // halaman tetap ringkas ketika jumlah wilayah RT/RW banyak.
+  const groups = new Map();
+  contacts.forEach((contact) => {
+    const key = `${contact.unit_type}-${contact.unit_number}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(contact);
+  });
+  groups.forEach((members, key) => {
+    const first = members[0];
+    const card = document.createElement("article");
+    card.className = "contact-card";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "contact-card-toggle";
+    toggle.setAttribute("aria-expanded", "false");
+    const heading = document.createElement("h3");
+    heading.className = "contact-unit";
+    heading.textContent = contactUnitLabel(first);
+    const summary = document.createElement("span");
+    summary.className = "contact-card-summary";
+    summary.textContent = `${members.length} pengurus`;
+    const chevron = document.createElement("span");
+    chevron.className = "contact-card-chevron";
+    chevron.setAttribute("aria-hidden", "true");
+    chevron.textContent = "›";
+    const head = document.createElement("span");
+    head.className = "contact-card-head";
+    head.append(heading, summary);
+    toggle.append(head, chevron);
+    const detail = document.createElement("div");
+    detail.className = "contact-card-detail";
+    detail.id = `contact-detail-${key}`;
+    detail.hidden = true;
+    // Contacts of the same unit are listed from the highest to the lowest position.
+    members.forEach((contact) => {
+      const item = document.createElement("div");
+      item.className = "contact-row";
+      const copy = document.createElement("div");
+      copy.className = "contact-row-copy";
+      const position = document.createElement("p");
+      position.className = "contact-position";
+      position.textContent = contact.position_name || "Pengurus";
+      const name = document.createElement("p");
+      name.className = "contact-name";
+      name.textContent = contact.contact_name;
+      copy.append(position, name);
+      const link = document.createElement("a");
+      link.className = "contact-phone";
+      link.href = whatsappContactUrl(contact.phone);
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = contact.phone;
+      item.append(copy, link);
+      detail.append(item);
+    });
+    toggle.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!expanded));
+      detail.hidden = expanded;
+    });
+    card.append(toggle, detail);
+    list.append(card);
+  });
+  return true;
+}
+
+async function loadContacts() {
+  try {
+    const payload = await request("/api/contacts");
+    const changed = renderAreaContacts(payload.contacts || []);
+    restorePublicRoute();
+    return changed;
+  } catch {
+    document.querySelector("#contacts-section").hidden = true;
+    document.querySelectorAll('[data-section-link="contacts-section"]').forEach((link) => { link.hidden = true; });
+    restorePublicRoute();
+    return false;
+  }
+}
+
+/* SCROLL-SPY: menentukan section yang sedang dibaca lalu menyelaraskan
+   tautan navigasi dan URL. Section aktif dibaca dari posisi semua section
+   saat ini, bukan dari entries satu callback IntersectionObserver, karena
+   entries hanya berisi section yang kebetulan melewati ambang. */
+if (!isAdminPage) {
   const sectionLinks = [...document.querySelectorAll("[data-section-link]")];
-  const sectionObserver = new IntersectionObserver((entries) => {
-    const visibleSections = entries.filter((entry) => entry.isIntersecting);
-    if (!visibleSections.length) return;
-    const activeId = visibleSections.sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0].target.id;
+  const watchedSections = sectionLinks
+    .map((link) => ({ link, section: document.getElementById(link.dataset.sectionLink) }))
+    .filter((item) => item.section);
+  let spyFrame = 0;
+  let spyActiveId = "";
+
+  const setActivePublicSection = (activeId) => {
+    if (!activeId || activeId === spyActiveId) return;
+    spyActiveId = activeId;
     sectionLinks.forEach((link) => {
       if (link.hidden) return;
       if (link.dataset.sectionLink === activeId) link.setAttribute("aria-current", "location");
       else link.removeAttribute("aria-current");
     });
-    if (hasRestoredPublicRoute) {
-      if (pendingPublicSection && activeId === pendingPublicSection) {
+    if (!hasRestoredPublicRoute) return;
+    if (pendingPublicSection) {
+      if (activeId === pendingPublicSection) {
         pendingPublicSection = "";
         window.clearTimeout(pendingPublicSectionTimer);
-      } else if (!pendingPublicSection) {
-        updatePublicSectionPath(activeId);
       }
+      return;
     }
-  }, { rootMargin: "-25% 0px -55% 0px", threshold: [0, 0.15, 0.4, 0.7] });
-  sectionLinks.forEach((link) => {
-    const section = document.getElementById(link.dataset.sectionLink);
-    if (section) sectionObserver.observe(section);
-  });
+    updatePublicSectionPath(activeId);
+  };
 
+  /* Garis pemantau berada 40% tinggi viewport. Section aktif adalah
+     section terakhir yang bagian atasnya sudah melewati garis itu dan
+     yang masih membentang hingga bawah garis. Section yang sudah
+     sepenuhnya terlewat tidak ikut dipilih. */
+  const activePublicSectionId = () => {
+    const probeLine = window.innerHeight * 0.4;
+    let crossedId = "";
+    let spanningId = "";
+    for (const { link, section } of watchedSections) {
+      if (section.hidden || link.hidden) continue;
+      const rect = section.getBoundingClientRect();
+      if (rect.top <= probeLine) crossedId = section.id;
+      if (rect.top <= probeLine && rect.bottom > probeLine) spanningId = section.id;
+    }
+    return spanningId || crossedId || watchedSections[0]?.section.id || "";
+  };
+
+  const refreshPublicSectionSpy = () => {
+    spyFrame = 0;
+    setActivePublicSection(activePublicSectionId());
+  };
+
+  const schedulePublicSectionSpy = () => {
+    if (spyFrame) return;
+    spyFrame = window.requestAnimationFrame(refreshPublicSectionSpy);
+  };
+
+  if (watchedSections.length) {
+    refreshPublicSectionSpy();
+    window.addEventListener("scroll", schedulePublicSectionSpy, { passive: true });
+    window.addEventListener("resize", schedulePublicSectionSpy, { passive: true });
+    window.addEventListener("load", schedulePublicSectionSpy, { once: true });
+  }
 }
 
 document.querySelectorAll("[data-section-link]").forEach((link) => {
@@ -1399,16 +1585,45 @@ async function withProcessing(operation, message) {
   }
 }
 
+// Reverse proxy (nginx/Caddy) dapat menjawab dengan halaman HTML, bukan JSON.
+// Contohnya 413 Request Entity Too Large saat unggah melebihi client_max_body_size.
+// response.json() akan melempar SyntaxError dan menutupi penyebab aslinya, jadi
+// badan respons dibaca sebagai teks lebih dulu dan diterjemahkan ke pesan yang jelas.
+async function readApiResponse(response, fallbackMessage) {
+  const text = await response.text();
+  let payload = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = null;
+    }
+  }
+  if (payload !== null) {
+    if (response.status === 503 && payload.maintenance) window.location.replace("/");
+    if (!response.ok) throw new Error(payload.error || fallbackMessage);
+    return payload;
+  }
+  // Bukan JSON: kemungkinan halaman error proxy, Cloudflare, atau outage.
+  if (response.status === 413) {
+    throw new Error("Ukuran data terlalu besar untuk server. Kurangi jumlah atau ukuran file, atau minta admin menaikkan batas unggah reverse proxy (client_max_body_size).");
+  }
+  if (response.status === 502 || response.status === 503 || response.status === 504) {
+    throw new Error("Server tidak dapat dihubungi saat ini. Coba beberapa saat lagi.");
+  }
+  if (response.status === 401) {
+    throw new Error("Sesi berakhir. Muat ulang halaman lalu masuk kembali.");
+  }
+  throw new Error(`${fallbackMessage} (HTTP ${response.status})`);
+}
+
 async function request(url, options = {}) {
   const sendRequest = async () => {
     const response = await fetch(url, {
       ...options,
       headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
     });
-    const payload = await response.json();
-    if (response.status === 503 && payload.maintenance) window.location.replace("/");
-    if (!response.ok) throw new Error(payload.error || "Permintaan tidak dapat diproses.");
-    return payload;
+    return readApiResponse(response, "Permintaan tidak dapat diproses.");
   };
   const processingMessages = {
     "/api/admin/media": "Mengunggah media...",
@@ -1435,6 +1650,17 @@ function fillLocationSelect(select, prefix, count) {
   }
   if (selected > 0 && selected <= count) select.value = String(selected);
 }
+
+// Kolom nomor wilayah pada form kontak mengikuti jumlah RT/RW yang di pengaturan.
+const contactUnitSelect = document.querySelector("#contact-form select[name='unit_number']");
+function fillContactUnitSelect() {
+  if (!contactUnitSelect) return;
+  const unitType = document.querySelector("#contact-form select[name='unit_type']")?.value || "RT";
+  const previous = contactUnitSelect.value;
+  fillLocationSelect(contactUnitSelect, unitType, unitType === "RW" ? settings.rw_count : settings.rt_count);
+  if (previous && contactUnitSelect.value !== previous) contactUnitSelect.value = previous;
+}
+document.querySelector("#contact-form select[name='unit_type']")?.addEventListener("change", fillContactUnitSelect);
 
 function fillContributionLocationSelect(select, prefix, count) {
   const selected = select.value;
@@ -1585,6 +1811,8 @@ async function loadSettings() {
   settings.hero_image_position = payload.hero_image_position || "right";
   settings.site_font_preset = payload.site_font_preset || "kifayah";
   settings.site_font_scale = payload.site_font_scale || 100;
+  settings.site_font_style = payload.site_font_style || "normal";
+  settings.site_font_style_target = payload.site_font_style_target || "all";
   settings.intro_text_alignment = payload.intro_text_alignment || "left";
   settings.news_text_alignment = payload.news_text_alignment || "left";
   settings.directory_text_alignment = payload.directory_text_alignment || "left";
@@ -1592,6 +1820,8 @@ async function loadSettings() {
   if (typographyForm && typographyForm.dataset.dirty !== "true") {
     typographyForm.elements.font_preset.value = settings.site_font_preset;
     typographyForm.elements.font_scale.value = settings.site_font_scale;
+    typographyForm.elements.font_style.value = settings.site_font_style;
+    typographyForm.elements.font_style_target.value = settings.site_font_style_target;
     typographyForm.elements.intro_text_alignment.value = settings.intro_text_alignment;
     typographyForm.elements.news_text_alignment.value = settings.news_text_alignment;
     typographyForm.elements.directory_text_alignment.value = settings.directory_text_alignment;
@@ -1600,12 +1830,16 @@ async function loadSettings() {
   const typographyPreview = typographyForm?.dataset.dirty === "true" ? {
     font_preset: typographyForm.elements.font_preset.value,
     font_scale: Number(typographyForm.elements.font_scale.value),
+    font_style: typographyForm.elements.font_style.value,
+    font_style_target: typographyForm.elements.font_style_target.value,
     intro_text_alignment: typographyForm.elements.intro_text_alignment.value,
     news_text_alignment: typographyForm.elements.news_text_alignment.value,
     directory_text_alignment: typographyForm.elements.directory_text_alignment.value,
   } : {
     font_preset: settings.site_font_preset,
     font_scale: settings.site_font_scale,
+    font_style: settings.site_font_style,
+    font_style_target: settings.site_font_style_target,
     intro_text_alignment: settings.intro_text_alignment,
     news_text_alignment: settings.news_text_alignment,
     directory_text_alignment: settings.directory_text_alignment,
@@ -1655,12 +1889,24 @@ async function loadSettings() {
     if (status) status.textContent = payload[`export_logo_${slot}_ready`] ? "Logo kop tersimpan." : "Belum ada logo kop.";
   }
   const signatureForm = document.querySelector("#signature-settings-form");
+  if (signatureForm) {
+    signatureRtCommonName = payload.signature_rt_name || "";
+    signatureRtCommonImage = Boolean(payload.signature_rt_ready);
+    signatureRtNames = payload.signature_rt_names || {};
+    signatureRtImages = payload.signature_rt_images || {};
+  }
   if (signatureForm && signatureForm.dataset.dirty !== "true") {
-    for (const field of ["signature_date", "signature_maker_name", "signature_rt_name", "signature_lmk_name", "signature_rw_name", "signature_bsk_name"]) {
+    for (const field of ["signature_date", "signature_maker_name", "signature_lmk_name", "signature_rw_name", "signature_bsk_name", "signature_place", "signature_note", "signature_label_maker", "signature_label_rt", "signature_label_lmk", "signature_label_rw", "signature_label_bsk"]) {
       signatureForm.elements[field].value = payload[field] || "";
     }
+    for (const role of ["bsk", "rw", "lmk", "rt", "maker"]) {
+      const checkbox = signatureForm.elements[`signature_show_${role}`];
+      if (checkbox) checkbox.checked = payload.signature_show?.[role] !== false;
+    }
+    fillSignatureRtUnits();
+    loadSignatureRtUnit();
   }
-  for (const role of ["maker", "rt", "lmk", "rw", "bsk"]) {
+  for (const role of ["maker", "lmk", "rw", "bsk"]) {
     const status = document.querySelector(`#signature-${role}-status`);
     if (status) status.textContent = payload[`signature_${role}_ready`] ? "Gambar tanda tangan tersimpan." : "Belum ada gambar tanda tangan.";
   }
@@ -1681,6 +1927,7 @@ async function loadSettings() {
   fillLocationSelect(document.querySelector("#edit-rw-select"), "RW", settings.rw_count);
   fillContributionLocationSelect(document.querySelector("#contribution-rt"), "RT", settings.rt_count);
   fillContributionLocationSelect(document.querySelector("#contribution-rw"), "RW", settings.rw_count);
+  fillContactUnitSelect();
   if (document.activeElement !== settingsForm.elements.rt_count) settingsForm.elements.rt_count.value = settings.rt_count;
   if (document.activeElement !== settingsForm.elements.rw_count) settingsForm.elements.rw_count.value = settings.rw_count;
   const favicon = document.querySelector("#dynamic-favicon");
@@ -1757,6 +2004,7 @@ function updateHeroPlaylist(items, hasFallbackImage) {
   if (signature === heroPlaylistSignature) return;
   heroPlaylistSignature = signature;
   heroPlaylist = displayItems;
+  heroFailedMedia.clear();
   window.clearTimeout(heroSlideTimer);
   heroSlideTimer = null;
   if (heroVideo) heroVideo.pause();
@@ -1777,12 +2025,23 @@ function updateHeroPlaylist(items, hasFallbackImage) {
 
 function showHeroSlide(index) {
   if (!heroPlaylist.length) return;
-  const item = heroPlaylist[index % heroPlaylist.length];
   const image = document.querySelector("#hero-image");
   const slideshow = document.querySelector("#hero-slideshow");
   const visual = document.querySelector("#hero-visual");
+  // Lewati media yang sudah gagal agar tidak berputar tanpa henti.
+  const usable = heroPlaylist.filter((entry) => !heroFailedMedia.has(entry.id));
+  if (!usable.length) {
+    heroFailedMedia.clear();
+    showHeroFallback();
+    return;
+  }
+  const item = usable[index % usable.length];
   window.clearTimeout(heroSlideTimer);
-  if (heroVideo) heroVideo.pause();
+  if (heroVideo) {
+    heroVideo.pause();
+    heroVideo.removeAttribute("src");
+    heroVideo.load();
+  }
   heroVideo = null;
   slideshow.replaceChildren();
   slideshow.hidden = true;
@@ -1793,29 +2052,66 @@ function showHeroSlide(index) {
     image.hidden = true;
     image.onerror = null;
     visual.classList.add("is-video");
+    // Video full-bleed tidak boleh memakai gaya logo persegi milik tema.
+    visual.classList.remove("uses-theme-bsk-logo");
     slideshow.hidden = false;
     const video = document.createElement("video");
     video.src = item.url;
     video.muted = true;
     video.autoplay = true;
     video.playsInline = true;
-    video.preload = "metadata";
+    video.preload = "auto";
     video.setAttribute("aria-label", item.name || "Video dokumentasi");
     heroVideo = video;
     slideshow.append(video);
-    let advanced = false;
-    const advance = () => {
-      if (advanced) return;
-      advanced = true;
+    const singleItem = usable.length < 2;
+    if (singleItem) video.loop = true;
+    let settled = false;
+    const settle = (broken) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(heroSlideTimer);
+      if (broken) heroFailedMedia.add(item.id);
       showHeroSlide(index + 1);
     };
-    video.addEventListener("ended", advance, { once: true });
-    video.addEventListener("error", advance, { once: true });
-    video.play().catch(advance);
+    // MP4 fragmented tanpa metadata durasi dibaca browser sebagai 0 detik.
+    // Video seperti itu langsung "selesai" dan memutar ulang tanpa henti,
+    // jadi harus ditandai rusak sebelum sempat mengulang.
+    video.addEventListener("loadedmetadata", () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) {
+        settle(true);
+        return;
+      }
+      video.play().catch(() => settle(true));
+    }, { once: true });
+    if (!singleItem) {
+      video.addEventListener("ended", () => {
+        if (!Number.isFinite(video.duration) || video.duration <= 0) {
+          settle(true);
+          return;
+        }
+        settle(false);
+      }, { once: true });
+    }
+    video.addEventListener("error", () => settle(true), { once: true });
     return;
   }
   setHeroImageSource(image, item.url);
   heroSlideTimer = window.setTimeout(() => showHeroSlide(index + 1), 6000);
+}
+// Tampilkan gambar utama sebagai cadangan saat semua media slideshow gagal.
+function showHeroFallback() {
+  const image = document.querySelector("#hero-image");
+  const visual = document.querySelector("#hero-visual");
+  window.clearTimeout(heroSlideTimer);
+  heroSlideTimer = null;
+  document.querySelector("#hero-slideshow").replaceChildren();
+  document.querySelector("#hero-slideshow").hidden = true;
+  visual.classList.remove("is-video");
+  visual.hidden = !heroHasFallbackImage;
+  image.hidden = false;
+  image.onerror = null;
+  setHeroImageSource(image, heroHasFallbackImage ? "/media/hero" : "");
 }
 
 async function refreshRecords(forceRender = false) {
@@ -1828,6 +2124,7 @@ async function refreshRecords(forceRender = false) {
       render();
     }
     await loadNews();
+    await loadContacts();
     const contributionView = document.querySelector("#admin-view-contributions");
     if (isAdmin && contributionView && !contributionView.hidden) await loadContributionResidents();
     if (isAdmin && recordsChanged) renderManageList();
@@ -1843,7 +2140,7 @@ function renderManageList() {
   const filteredRecords = records.filter((record) => {
     const dateValue = record.date_of_death ? new Date(`${record.date_of_death}T00:00:00`) : null;
     const numericDate = dateValue ? new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }).format(dateValue) : "";
-    const searchable = [record.full_name, record.area, record.date_of_death, record.date_of_death ? formatDate(record.date_of_death) : "", numericDate]
+    const searchable = [record.full_name, record.area, ...rtRwSearchVariants(record.area), record.date_of_death, record.date_of_death ? formatDate(record.date_of_death) : "", numericDate]
       .filter(Boolean).join(" ").toLocaleLowerCase("id-ID");
     return searchable.includes(query);
   });
@@ -1872,7 +2169,7 @@ function renderManageList() {
       const flag = document.createElement("span");
       flag.className = "manage-item-issue";
       flag.textContent = `${record.issue_count} field bermasalah`;
-      flag.title = "Buka menu Tinjauan Data untuk melihat file dan baris asalnya.";
+      flag.title = "Buka Impor Data lalu Tinjauan Data untuk melihat file dan baris asalnya.";
       text.append(flag);
     }
     const audit = document.createElement("small");
@@ -1931,7 +2228,13 @@ function renderManageList() {
   const printBody = document.querySelector("#print-records-body");
   if (printBody) {
     printBody.replaceChildren();
-    records.forEach((record, index) => {
+    const printNote = document.querySelector("#print-preview-note");
+    if (printNote) {
+      printNote.textContent = query
+        ? `Menampilkan ${filteredRecords.length} entri sesuai pencarian "${adminRecordSearchInput.value.trim()}".`
+        : `Menampilkan semua ${filteredRecords.length} entri.`;
+    }
+    filteredRecords.forEach((record, index) => {
       const row = document.createElement("tr");
       const values = [
         String(index + 1), formatWords(record.full_name), formatGenderLabel(record.gender), formatAreaLabel(record.area),
@@ -2152,9 +2455,7 @@ async function uploadNewsImage(articleId, file) {
       headers: { "Content-Type": file.type },
       body: file,
     });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Foto berita tidak dapat diunggah.");
-    return payload;
+    return readApiResponse(response, "Foto berita tidak dapat diunggah.");
   }, "Mengunggah foto berita...");
 }
 
@@ -2182,6 +2483,7 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   document.querySelector("#resident-dashboard").hidden = !isResident;
   document.querySelector("#resident-dashboard-name").textContent = profileName;
   document.querySelector("#resident-dashboard-username").textContent = currentUser?.username || "";
+  if (isResident) window.loadResidentRegistrations?.();
   document.querySelector("#dialog-title").textContent = mustChangePassword
     ? "Ganti Kata Sandi Awal"
     : isResident ? "Dashboard Warga" : enabled ? "Kelola Daftar Warga" : "Masuk Pengelola";
@@ -2199,10 +2501,11 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   const canManageRecords = permissions.has("records");
   document.querySelector('#record-form input[name="publish_address"]').closest("label").hidden = role === "Staff";
   document.querySelector("#staff-address-hint").hidden = role !== "Staff";
+  document.querySelector('[data-admin-group="registrations"]').hidden = !permissions.has("registration");
   document.querySelector('[data-admin-group="import"]').hidden = !permissions.has("import");
   document.querySelector('[data-admin-group="news"]').hidden = !permissions.has("news");
-  document.querySelector('[data-admin-group="media"]').hidden = !permissions.has("media") && !permissions.has("typography");
-  document.querySelector('[data-admin-group="maintenance"]').hidden = !permissions.has("maintenance");
+  document.querySelector('[data-admin-group="contacts"]').hidden = !permissions.has("contacts");
+  document.querySelector('[data-admin-group="media"]').hidden = !permissions.has("media") && !permissions.has("typography") && !permissions.has("maintenance");
   document.querySelector('[data-admin-group="program"]').hidden = !permissions.has("program");
   document.querySelector('[data-admin-group="finance"]').hidden = !permissions.has("finance") && !permissions.has("payments");
   const canManagePortraits = permissions.has("family") && role !== "Staff";
@@ -2548,8 +2851,6 @@ function renderContributionResidents() {
   contributionResidents = contributionResidents.filter((resident) => matchesContributionStatus(resident, selectedStatus));
 
   const container = document.querySelector("#contribution-resident-list");
-  const openResidentDetails = new Set([...container.querySelectorAll(".contribution-resident-details[open]")]
-    .map((details) => details.closest(".contribution-resident-card")?.dataset.residentId).filter(Boolean));
   const query = document.querySelector("#contribution-search").value.trim().toLocaleLowerCase("id-ID");
   const filter = contributionStatusKey;
   const paidCount = contributionResidents.filter((resident) => resident.paid_this_month).length;
@@ -2566,7 +2867,7 @@ function renderContributionResidents() {
   });
 
   const visible = contributionResidents.filter((resident) => {
-    const matchesQuery = !query || [resident.full_name, resident.national_id_number, resident.address, resident.rt, resident.rw]
+    const matchesQuery = !query || [resident.full_name, resident.national_id_number, resident.address, resident.rt, resident.rw, ...residentRtRwVariants(resident.rt, resident.rw)]
       .some((value) => String(value || "").toLocaleLowerCase("id-ID").includes(query));
     const matchesStatus = matchesContributionStatus(resident, filter);
     return matchesQuery && matchesStatus;
@@ -2679,6 +2980,11 @@ function renderContributionResidents() {
     editResident.className = "action-button";
     editResident.textContent = "Edit Data";
     editResident.addEventListener("click", () => openContributionResidentDialog(resident));
+    const historyButton = document.createElement("button");
+    historyButton.type = "button";
+    historyButton.className = "action-button";
+    historyButton.textContent = "Riwayat Iuran";
+    historyButton.addEventListener("click", () => openContributionHistoryDialog(resident));
     const deleteResident = document.createElement("button");
     deleteResident.type = "button";
     deleteResident.className = "action-button delete-resident-btn";
@@ -2693,104 +2999,8 @@ function renderContributionResidents() {
         }
       }
     });
-    actions.append(addPayment, editResident, deleteResident);
-
-    const details = document.createElement("details");
-    details.className = "contribution-resident-details";
-    details.open = openResidentDetails.has(String(resident.id));
-    const summaryToggle = document.createElement("summary");
-    summaryToggle.textContent = "Riwayat iuran";
-    const detailsBody = document.createElement("div");
-    detailsBody.className = "contribution-resident-details-body";
-    if (resident.photo_url) {
-      const removePhoto = document.createElement("button");
-      removePhoto.type = "button";
-      removePhoto.className = "text-button contribution-remove-photo";
-      removePhoto.textContent = "Hapus Foto Warga";
-      removePhoto.addEventListener("click", async () => {
-        try {
-          const removed = await deleteAdminMedia("contribution_resident", { resident_id: resident.id }, `Hapus foto ${resident.full_name}?`);
-          if (removed) await loadContributionResidents();
-        } catch (error) {
-          document.querySelector("#contribution-list-status").textContent = error.message;
-        }
-      });
-      detailsBody.append(removePhoto);
-    }
-    const historyHeading = document.createElement("h4");
-    historyHeading.textContent = `Riwayat Setoran (${resident.payments.length})`;
-    detailsBody.append(historyHeading);
-    if (resident.payments.length) {
-      const history = document.createElement("ul");
-      history.className = "contribution-payment-history";
-      for (const payment of resident.payments) {
-        const row = document.createElement("li");
-        const description = document.createElement("div");
-        description.className = "contribution-payment-description";
-        const period = document.createElement("strong");
-        period.textContent = payment.period;
-        const dateLabel = document.createElement("span");
-        dateLabel.textContent = payment.paid_at ? formatDate(payment.paid_at) : "Tanggal belum diisi";
-        const amount = document.createElement("b");
-        amount.textContent = contributionMoney.format(payment.amount);
-        const status = document.createElement("span");
-        status.className = `payment-status payment-status-${payment.status === "Terverifikasi" ? "verified" : payment.status === "Ditolak" ? "rejected" : "pending"}`;
-        status.textContent = payment.status;
-        description.append(period, dateLabel, amount, status);
-        row.append(description);
-        if (payment.note) {
-          const note = document.createElement("small");
-          note.textContent = payment.note;
-          row.append(note);
-        }
-        if (payment.proof_url) {
-          const proof = document.createElement("a");
-          proof.href = payment.proof_url;
-          proof.target = "_blank";
-          proof.rel = "noopener noreferrer";
-          proof.textContent = "Lihat bukti";
-          row.append(proof);
-        }
-        if (payment.editable || payment.deletable) {
-          const paymentActions = document.createElement("div");
-          paymentActions.className = "contribution-payment-actions";
-          if (payment.editable) {
-            const editPayment = document.createElement("button");
-            editPayment.type = "button";
-            editPayment.className = "action-button";
-            editPayment.textContent = "Edit";
-            editPayment.addEventListener("click", () => openContributionPaymentDialog(resident, payment));
-            paymentActions.append(editPayment);
-          }
-          if (payment.deletable) {
-            const deletePayment = document.createElement("button");
-            deletePayment.type = "button";
-            deletePayment.className = "text-button";
-            deletePayment.textContent = "Hapus";
-            deletePayment.addEventListener("click", async () => {
-              if (!window.confirm(`Hapus setoran ${payment.period} untuk ${resident.full_name}?`)) return;
-              try {
-                await request(`/api/admin/contribution-payments/${payment.id}`, { method: "DELETE" });
-                await loadContributionResidents();
-              } catch (error) {
-                document.querySelector("#contribution-list-status").textContent = error.message;
-              }
-            });
-            paymentActions.append(deletePayment);
-          }
-          row.append(paymentActions);
-        }
-        history.append(row);
-      }
-      detailsBody.append(history);
-    } else {
-      const noHistory = document.createElement("p");
-      noHistory.className = "form-hint";
-      noHistory.textContent = "Belum ada transaksi iuran yang tercatat.";
-      detailsBody.append(noHistory);
-    }
-    details.append(summaryToggle, detailsBody);
-    card.append(heading, actions, details);
+    actions.append(addPayment, editResident, historyButton, deleteResident);
+    card.append(heading, actions);
     container.append(card);
   });
   const contributionPageNumbers = document.querySelector("#contribution-residents-page-numbers");
@@ -2855,6 +3065,107 @@ function openContributionResidentDialog(resident = null) {
   }
   if (!dialog.open) dialog.showModal();
   form.elements.full_name.focus({ preventScroll: true });
+}
+
+function openContributionHistoryDialog(resident) {
+  const dialog = document.querySelector("#contribution-history-dialog");
+  const body = document.querySelector("#contribution-history-body");
+  body.replaceChildren();
+  document.querySelector("#contribution-history-title").textContent = `Riwayat Iuran - ${resident.full_name}`;
+  if (resident.photo_url) {
+    const removePhoto = document.createElement("button");
+    removePhoto.type = "button";
+    removePhoto.className = "text-button contribution-remove-photo";
+    removePhoto.textContent = "Hapus Foto Warga";
+    removePhoto.addEventListener("click", async () => {
+      try {
+        const removed = await deleteAdminMedia("contribution_resident", { resident_id: resident.id }, `Hapus foto ${resident.full_name}?`);
+        if (removed) {
+          dialog.close();
+          await loadContributionResidents();
+        }
+      } catch (error) {
+        document.querySelector("#contribution-list-status").textContent = error.message;
+      }
+    });
+    body.append(removePhoto);
+  }
+  const historyHeading = document.createElement("h4");
+  historyHeading.textContent = `Riwayat Setoran (${resident.payments.length})`;
+  body.append(historyHeading);
+  if (resident.payments.length) {
+    const history = document.createElement("ul");
+    history.className = "contribution-payment-history";
+    for (const payment of resident.payments) {
+      const row = document.createElement("li");
+      const description = document.createElement("div");
+      description.className = "contribution-payment-description";
+      const period = document.createElement("strong");
+      period.textContent = payment.period;
+      const dateLabel = document.createElement("span");
+      dateLabel.textContent = payment.paid_at ? formatDate(payment.paid_at) : "Tanggal belum diisi";
+      const amount = document.createElement("b");
+      amount.textContent = contributionMoney.format(payment.amount);
+      const status = document.createElement("span");
+      status.className = `payment-status payment-status-${payment.status === "Terverifikasi" ? "verified" : payment.status === "Ditolak" ? "rejected" : "pending"}`;
+      status.textContent = payment.status;
+      description.append(period, dateLabel, amount, status);
+      row.append(description);
+      if (payment.note) {
+        const note = document.createElement("small");
+        note.textContent = payment.note;
+        row.append(note);
+      }
+      if (payment.proof_url) {
+        const proof = document.createElement("a");
+        proof.href = payment.proof_url;
+        proof.target = "_blank";
+        proof.rel = "noopener noreferrer";
+        proof.textContent = "Lihat bukti";
+        row.append(proof);
+      }
+      if (payment.editable || payment.deletable) {
+        const paymentActions = document.createElement("div");
+        paymentActions.className = "contribution-payment-actions";
+        if (payment.editable) {
+          const editPayment = document.createElement("button");
+          editPayment.type = "button";
+          editPayment.className = "action-button";
+          editPayment.textContent = "Edit";
+          editPayment.addEventListener("click", () => openContributionPaymentDialog(resident, payment));
+          paymentActions.append(editPayment);
+        }
+        if (payment.deletable) {
+          const deletePayment = document.createElement("button");
+          deletePayment.type = "button";
+          deletePayment.className = "text-button";
+          deletePayment.textContent = "Hapus";
+          deletePayment.addEventListener("click", async () => {
+            if (!window.confirm(`Hapus setoran ${payment.period} untuk ${resident.full_name}?`)) return;
+            try {
+              await request(`/api/admin/contribution-payments/${payment.id}`, { method: "DELETE" });
+              dialog.close();
+              await loadContributionResidents();
+            } catch (error) {
+              document.querySelector("#contribution-list-status").textContent = error.message;
+            }
+          });
+          paymentActions.append(deletePayment);
+        }
+        row.append(paymentActions);
+      }
+      history.append(row);
+    }
+    body.append(history);
+  } else {
+    const noHistory = document.createElement("p");
+    noHistory.className = "form-hint";
+    noHistory.textContent = "Belum ada transaksi iuran yang tercatat.";
+    body.append(noHistory);
+  }
+  dialog.scrollTop = 0;
+  if (!dialog.open) dialog.showModal();
+  document.querySelector("#contribution-history-close").focus({ preventScroll: true });
 }
 
 function openFamilyDialog(familyCardNumber, currentResident) {
@@ -3248,6 +3559,473 @@ newsForm.addEventListener("submit", async (event) => {
   }
 });
 
+/* STRUKTUR JABATAN: urutan jabatan menentukan peringkat, dari Ketua RW ke Sieba. */
+const OTHER_POSITION_LABEL = "Jabatan Lainnya";
+let positionTitles = [];
+let editingPositionId = null;
+const positionForm = document.querySelector("#position-form");
+const positionError = document.querySelector("#position-error");
+const positionResult = document.querySelector("#position-result");
+const positionSubmitButton = document.querySelector("#position-submit");
+const positionCancelButton = document.querySelector("#position-cancel-edit");
+
+async function loadPositionTitles() {
+  try {
+    const payload = await request("/api/admin/position-titles");
+    positionTitles = payload.titles || [];
+    renderPositionTitles();
+  } catch (error) {
+    positionError.textContent = error.message;
+  }
+}
+
+function renderPositionTitles() {
+  const list = document.querySelector("#position-list");
+  list.replaceChildren();
+  positionTitles.forEach((item, index) => {
+    const row = document.createElement("li");
+    row.className = "position-item";
+    const order = document.createElement("span");
+    order.className = "position-order";
+    order.textContent = String(index + 1);
+    const name = document.createElement("span");
+    name.className = "position-name";
+    name.textContent = item.title;
+    const actions = document.createElement("div");
+    actions.className = "admin-news-actions";
+    const moveUp = document.createElement("button");
+    moveUp.className = "edit-button";
+    moveUp.type = "button";
+    moveUp.textContent = "Naik";
+    moveUp.disabled = index === 0;
+    moveUp.addEventListener("click", () => reorderPositionTitles(index, index - 1));
+    const moveDown = document.createElement("button");
+    moveDown.className = "edit-button";
+    moveDown.type = "button";
+    moveDown.textContent = "Turun";
+    moveDown.disabled = index === positionTitles.length - 1;
+    moveDown.addEventListener("click", () => reorderPositionTitles(index, index + 1));
+    const edit = document.createElement("button");
+    edit.className = "edit-button";
+    edit.type = "button";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", () => {
+      editingPositionId = item.id;
+      positionForm.elements.title_id.value = String(item.id);
+      positionForm.elements.title.value = item.title;
+      positionSubmitButton.textContent = "Simpan Jabatan";
+      positionCancelButton.hidden = false;
+      positionResult.hidden = true;
+      focusAdminTask("position-structure-panel", "Struktur Jabatan");
+    });
+    const remove = document.createElement("button");
+    remove.className = "delete-button";
+    remove.type = "button";
+    remove.textContent = "Hapus";
+    remove.addEventListener("click", async () => {
+      if (!window.confirm(`Hapus jabatan “${item.title}”?`)) return;
+      try {
+        await request(`/api/admin/position-titles/${item.id}`, { method: "DELETE" });
+        await loadPositionTitles();
+        await loadAdminContacts();
+        await loadContacts();
+      } catch (error) {
+        positionError.textContent = error.message;
+      }
+    });
+    actions.append(moveUp, moveDown, edit, remove);
+    row.append(order, name, actions);
+    list.append(row);
+  });
+  if (!positionTitles.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "Belum ada jabatan tersimpan.";
+    list.append(empty);
+  }
+}
+
+async function reorderPositionTitles(fromIndex, toIndex) {
+  const ordered = [...positionTitles];
+  const [moved] = ordered.splice(fromIndex, 1);
+  ordered.splice(toIndex, 0, moved);
+  try {
+    const payload = await request("/api/admin/position-titles/reorder", {
+      method: "POST",
+      body: JSON.stringify({ title_ids: ordered.map((item) => item.id) }),
+    });
+    positionTitles = payload.titles;
+    renderPositionTitles();
+    await loadAdminContacts();
+    await loadContacts();
+  } catch (error) {
+    positionError.textContent = error.message;
+  }
+}
+
+function resetPositionForm() {
+  positionForm.reset();
+  positionForm.elements.title_id.value = "";
+  editingPositionId = null;
+  positionSubmitButton.textContent = "Tambah Jabatan";
+  positionCancelButton.hidden = true;
+  positionError.textContent = "";
+}
+
+positionCancelButton.addEventListener("click", resetPositionForm);
+positionForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  positionError.textContent = "";
+  positionResult.hidden = true;
+  const title = positionForm.elements.title.value.trim();
+  const editing = editingPositionId !== null;
+  try {
+    const payload = await request(editing ? "/api/admin/position-titles/update" : "/api/admin/position-titles", {
+      method: "POST",
+      body: JSON.stringify(editing ? { title_id: editingPositionId, title } : { title }),
+    });
+    positionTitles = payload.titles;
+    resetPositionForm();
+    positionResult.textContent = editing ? "Perubahan jabatan tersimpan." : "Jabatan berhasil ditambahkan.";
+    positionResult.hidden = false;
+    renderPositionTitles();
+    await loadAdminContacts();
+    await loadContacts();
+  } catch (error) {
+    positionError.textContent = error.message;
+  }
+});
+
+/* KONTAK: daftar nomor pengurus yang dikelola dari panel admin. */
+let editingContactId = null;
+const contactForm = document.querySelector("#contact-form");
+const contactError = document.querySelector("#contact-error");
+const contactResult = document.querySelector("#contact-result");
+const contactFormTitle = document.querySelector("#contacts-admin-title");
+const contactSubmitButton = document.querySelector("#contact-submit");
+const contactCancelButton = document.querySelector("#contact-cancel-edit");
+
+let areaContactsAdmin = [];
+
+const contactPositionSelect = contactForm?.elements.position_select;
+const contactPositionCustomField = document.querySelector("#contact-position-custom-field");
+let contactPositionTitles = [];
+
+function renderContactPositionOptions(selected = "") {
+  if (!contactPositionSelect) return;
+  contactPositionSelect.replaceChildren();
+  contactPositionTitles.forEach((item) => contactPositionSelect.add(new Option(item.title, item.title)));
+  if (selected) contactPositionSelect.value = selected;
+  updateContactPositionCustomField();
+}
+
+function updateContactPositionCustomField() {
+  if (!contactPositionSelect || !contactPositionCustomField) return;
+  const isOther = contactPositionSelect.value === OTHER_POSITION_LABEL;
+  contactPositionCustomField.hidden = !isOther;
+  const customInput = contactForm.elements.position_name;
+  customInput.required = isOther;
+  customInput.disabled = !isOther;
+  if (!isOther) customInput.value = "";
+}
+
+contactPositionSelect?.addEventListener("change", updateContactPositionCustomField);
+
+async function loadContactPositionTitles(selected = "") {
+  try {
+    const payload = await request("/api/position-titles");
+    contactPositionTitles = payload.titles || [];
+    renderContactPositionOptions(selected);
+  } catch {
+    contactPositionTitles = [{ title: OTHER_POSITION_LABEL }];
+    renderContactPositionOptions(selected);
+  }
+}
+
+async function loadAdminContacts() {
+  if (!contactForm) return;
+  await loadContactPositionTitles(contactForm.elements.position_select?.value || "");
+  try {
+    const payload = await request("/api/admin/contacts");
+    areaContactsAdmin = payload.contacts || [];
+    renderAdminContacts(areaContactsAdmin);
+  } catch (error) {
+    contactError.textContent = error.message;
+  }
+}
+
+const CONTACTS_PAGE_SIZE = 10;
+let adminContactsPage = 0;
+
+function filterAdminContacts(contacts) {
+  const query = document.querySelector("#contact-search")?.value.trim().toLocaleLowerCase("id-ID") || "";
+  if (!query) return contacts;
+  return contacts.filter((contact) => [
+    contact.contact_name, contact.position_name, contact.phone, contactUnitLabel(contact),
+  ].some((value) => String(value || "").toLocaleLowerCase("id-ID").includes(query)));
+}
+
+function renderAdminContacts(contacts) {
+  const list = document.querySelector("#admin-contact-list");
+  list.replaceChildren();
+  const filtered = filterAdminContacts(contacts);
+  const countElement = document.querySelector("#contact-list-count");
+  if (countElement) {
+    const query = document.querySelector("#contact-search")?.value.trim() || "";
+    countElement.textContent = query
+      ? `${filtered.length} dari ${contacts.length} kontak`
+      : `${contacts.length} kontak`;
+  }
+  const pageCount = Math.max(1, Math.ceil(filtered.length / CONTACTS_PAGE_SIZE));
+  adminContactsPage = Math.min(adminContactsPage, pageCount - 1);
+  const pageStart = adminContactsPage * CONTACTS_PAGE_SIZE;
+  filtered.slice(pageStart, pageStart + CONTACTS_PAGE_SIZE).forEach((contact) => {
+    const item = document.createElement("li");
+    item.className = "admin-news-item";
+    const copy = document.createElement("div");
+    copy.className = "admin-news-copy";
+    const title = document.createElement("h4");
+    title.textContent = `${contactUnitLabel(contact)} · ${contact.contact_name}`;
+    const meta = document.createElement("small");
+    meta.className = "admin-news-meta";
+    meta.textContent = `${contact.position_name || "Pengurus"} · ${contact.phone}${contact.active ? "" : " · disembunyikan"}`;
+    copy.append(title, meta);
+    if (contact.rank_order && contact.rank_order > 90) {
+      const custom = document.createElement("small");
+      custom.className = "contact-range-warning";
+      custom.textContent = "Jabatan di luar struktur baku.";
+      copy.append(custom);
+    }
+    // Wilayah di luar jumlah RT/RW saat ini tetap disimpan, tetapi ditandai
+    // supaya pengelola tahu nomor tersebut perlu disesuaikan.
+    const unitLimit = contact.unit_type === "RW" ? settings.rw_count : settings.rt_count;
+    if (contact.unit_number > unitLimit) {
+      const warning = document.createElement("small");
+      warning.className = "contact-range-warning";
+      warning.textContent = `Di luar jumlah ${contact.unit_type} saat ini (${unitLimit}).`;
+      copy.append(warning);
+    }
+    const actions = document.createElement("div");
+    actions.className = "admin-news-actions";
+    const edit = document.createElement("button");
+    edit.className = "edit-button";
+    edit.type = "button";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", () => {
+      editingContactId = contact.id;
+      contactForm.elements.contact_id.value = String(contact.id);
+      contactForm.elements.unit_type.value = contact.unit_type;
+      fillContactUnitSelect();
+      // Wilayah lama yang sudah tidak ada di daftar pilihan (mis. jumlah RT
+      // dikurangi) tetap dapat diedit tanpa kehilangan data.
+      if (![...contactUnitSelect.options].some((option) => option.value === String(contact.unit_number))) {
+        contactUnitSelect.add(new Option(`${contact.unit_type} ${String(contact.unit_number).padStart(3, "0")}`, String(contact.unit_number)));
+      }
+      contactUnitSelect.value = String(contact.unit_number);
+      contactForm.elements.contact_name.value = contact.contact_name;
+      contactForm.elements.phone.value = contact.phone;
+      const knownPosition = contactPositionTitles.some((item) => item.title === contact.position_name);
+      if (knownPosition) {
+        contactForm.elements.position_select.value = contact.position_name;
+        contactForm.elements.position_name.value = "";
+      } else {
+        contactForm.elements.position_select.value = OTHER_POSITION_LABEL;
+        contactForm.elements.position_name.value = contact.position_name;
+      }
+      updateContactPositionCustomField();
+      contactForm.elements.active.checked = Boolean(contact.active);
+      contactFormTitle.textContent = "Edit Nomor Kontak";
+      contactSubmitButton.textContent = "Simpan Perubahan";
+      contactCancelButton.hidden = false;
+      contactResult.hidden = true;
+      focusAdminTask("contact-form", "Edit Nomor Kontak");
+    });
+    const remove = document.createElement("button");
+    remove.className = "delete-button";
+    remove.type = "button";
+    remove.textContent = "Hapus";
+    remove.addEventListener("click", async () => {
+      if (!window.confirm(`Hapus kontak ${contact.contact_name} (${contactUnitLabel(contact)})?`)) return;
+      try {
+        await request(`/api/admin/contacts/${contact.id}`, { method: "DELETE" });
+        await loadAdminContacts();
+        await loadContacts();
+      } catch (error) {
+        contactError.textContent = error.message;
+      }
+    });
+    actions.append(edit, remove);
+    item.append(copy, actions);
+    list.append(item);
+  });
+  if (!filtered.length) {
+    const empty = document.createElement("li");
+    empty.textContent = contacts.length ? "Tidak ada kontak yang sesuai dengan pencarian." : "Belum ada nomor kontak tersimpan.";
+    list.append(empty);
+  }
+  renderContactPagination(pageCount);
+}
+
+let contactSearchTimer = null;
+document.querySelector("#contact-search")?.addEventListener("input", () => {
+  window.clearTimeout(contactSearchTimer);
+  contactSearchTimer = window.setTimeout(() => {
+    adminContactsPage = 0;
+    renderAdminContacts(areaContactsAdmin);
+  }, 200);
+});
+
+/* KONTAK: pratinjau cetak dan unduh PDF mengikuti filter pencarian. */
+function renderContactPrint() {
+  const body = document.querySelector("#contact-print-body");
+  if (!body) return;
+  body.replaceChildren();
+  const filtered = filterAdminContacts(areaContactsAdmin);
+  const note = document.querySelector("#contact-print-note");
+  if (note) {
+    const query = document.querySelector("#contact-search")?.value.trim() || "";
+    note.textContent = query
+      ? `Menampilkan ${filtered.length} kontak sesuai pencarian "${query}".`
+      : `Menampilkan semua ${filtered.length} kontak.`;
+  }
+  // Dikelompokkan per wilayah: tiap wilayah memulai halaman baru dan
+  // penomorannya kembali dari 1.
+  const groups = new Map();
+  filtered.forEach((contact) => {
+    const unit = contactUnitLabel(contact);
+    if (!groups.has(unit)) groups.set(unit, []);
+    groups.get(unit).push(contact);
+  });
+  let groupIndex = 0;
+  groups.forEach((members, unit) => {
+    const headingRow = document.createElement("tr");
+    headingRow.className = "contact-print-unit";
+    if (groupIndex > 0) headingRow.dataset.pageBreak = "true";
+    const headingCell = document.createElement("th");
+    headingCell.colSpan = 5;
+    headingCell.textContent = unit;
+    headingRow.append(headingCell);
+    body.append(headingRow);
+    members.forEach((contact, index) => {
+      const row = document.createElement("tr");
+      for (const value of [
+        String(index + 1), contact.position_name || "-", contact.contact_name || "-",
+        contact.phone || "-", contact.active ? "Tampil" : "Disembunyikan",
+      ]) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      }
+      body.append(row);
+    });
+    groupIndex += 1;
+  });
+  if (!filtered.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.textContent = "Belum ada kontak tersimpan.";
+    row.append(cell);
+    body.append(row);
+  }
+}
+
+document.querySelector("#contact-print-button")?.addEventListener("click", () => {
+  renderContactPrint();
+  const dialog = document.querySelector("#contact-print-dialog");
+  if (dialog && !dialog.open) dialog.showModal();
+});
+document.querySelector("#contact-print-back")?.addEventListener("click", () => {
+  document.querySelector("#contact-print-dialog")?.close();
+});
+document.querySelector("#contact-print-confirm")?.addEventListener("click", () => window.print());
+document.querySelector("#contact-print-pdf")?.addEventListener("click", () => {
+  const params = new URLSearchParams({ type: "contacts" });
+  params.set("q", document.querySelector("#contact-search")?.value.trim() || "");
+  window.open(`/api/admin/export/pdf?${params.toString()}`, "_blank");
+});
+
+function renderContactPagination(pageCount) {
+  const pageNumbers = document.querySelector("#admin-contacts-page-numbers");
+  if (!pageNumbers) return;
+  pageNumbers.replaceChildren();
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+    const pageButton = document.createElement("button");
+    pageButton.className = "record-page-number";
+    pageButton.type = "button";
+    pageButton.textContent = String(pageIndex + 1);
+    pageButton.setAttribute("aria-current", String(pageIndex === adminContactsPage));
+    pageButton.addEventListener("click", () => {
+      adminContactsPage = pageIndex;
+      renderAdminContacts(areaContactsAdmin);
+    });
+    pageNumbers.append(pageButton);
+  }
+  document.querySelector("#admin-contacts-previous").disabled = adminContactsPage === 0;
+  document.querySelector("#admin-contacts-next").disabled = adminContactsPage >= pageCount - 1;
+}
+
+document.querySelector("#admin-contacts-previous")?.addEventListener("click", () => {
+  adminContactsPage = Math.max(0, adminContactsPage - 1);
+  renderAdminContacts(areaContactsAdmin);
+});
+document.querySelector("#admin-contacts-next")?.addEventListener("click", () => {
+  const pageCount = Math.max(1, Math.ceil(areaContactsAdmin.length / CONTACTS_PAGE_SIZE));
+  adminContactsPage = Math.min(pageCount - 1, adminContactsPage + 1);
+  renderAdminContacts(areaContactsAdmin);
+});
+
+function resetContactForm() {
+  contactForm.reset();
+  contactForm.elements.contact_id.value = "";
+  contactForm.elements.active.checked = true;
+  contactForm.elements.position_name.value = "";
+  contactForm.elements.position_name.disabled = true;
+  renderContactPositionOptions();
+  editingContactId = null;
+  contactFormTitle.textContent = "Tambah Nomor Kontak";
+  contactSubmitButton.textContent = "Simpan Kontak";
+  contactCancelButton.hidden = true;
+  contactError.textContent = "";
+}
+
+contactCancelButton.addEventListener("click", () => {
+  const wasEditing = editingContactId !== null;
+  resetContactForm();
+  if (wasEditing) focusAdminTask("contacts-saved-panel", "Kontak Tersimpan");
+});
+
+contactForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  contactError.textContent = "";
+  contactResult.hidden = true;
+  const payload = Object.fromEntries(new FormData(contactForm));
+  payload.unit_number = Number(payload.unit_number);
+  payload.active = contactForm.elements.active.checked;
+  if (contactForm.elements.position_select.value === OTHER_POSITION_LABEL) {
+    payload.position_name = contactForm.elements.position_name.value.trim();
+  } else {
+    payload.position_name = contactForm.elements.position_select.value;
+  }
+  delete payload.contact_id;
+  delete payload.position_select;
+  const editing = editingContactId !== null;
+  if (editing) payload.contact_id = editingContactId;
+  try {
+    await request(editing ? "/api/admin/contacts/update" : "/api/admin/contacts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    resetContactForm();
+    contactResult.textContent = editing ? "Perubahan kontak tersimpan." : "Nomor kontak berhasil ditambahkan.";
+    contactResult.hidden = false;
+    await loadAdminContacts();
+    await loadContacts();
+    if (editing) focusAdminTask("contacts-saved-panel", "Kontak Tersimpan");
+  } catch (error) {
+    contactError.textContent = error.message;
+  }
+});
+
 function renderAdminTaskNavigation(name) {
   const taskNavigation = document.querySelector("#admin-task-nav");
   const menus = {
@@ -3256,19 +4034,31 @@ function renderAdminTaskNavigation(name) {
       { label: "Data Tersimpan", target: "records-list-panel" },
       { label: "Atur Jumlah RT dan RW", target: "settings-form", permission: "area" },
     ],
-    import: [{ label: "Pilih File dan Pratinjau", target: "import-task-panel" }],
+    registrations: [
+      { label: "Antrean Formulir", target: "registrations-panel", permission: "registration" },
+    ],
+    import: [
+      { label: "Pilih File dan Pratinjau", target: "import-task-panel" },
+      { label: "Tinjauan Data", target: "issues-panel" },
+    ],
     news: [
       { label: "Tambah Berita", target: "news-form" },
       { label: "Berita Tersimpan", target: "news-saved-panel" },
+    ],
+    contacts: [
+      { label: "Tambah Nomor Kontak", target: "contact-form" },
+      { label: "Kontak Tersimpan", target: "contacts-saved-panel" },
+      { label: "Struktur Jabatan", target: "position-structure-panel" },
     ],
     media: [
       { label: "Logo Dan Gambar Utama", target: "site-images-panel", permission: "media" },
       { label: "Atur Footer dan Skala Logo", target: "footer-settings-form", permission: "media" },
       { label: "Atur Dana Apresiasi", target: "donation-settings-form", permission: "media" },
-      { label: "Kop Ekspor", target: "export-letterhead-section", permission: "media" },
+      { label: "Kop Ekspor dan Tanda Tangan", target: "export-letterhead-section", permission: "media" },
       { label: "Font Dan Tipografi", target: "typography-form", permission: "typography" },
+      { label: "Atur Jadwal Maintenance", target: "maintenance-form", permission: "maintenance" },
     ],
-    maintenance: [{ label: "Atur Jadwal Maintenance", target: "maintenance-form" }],
+    
     users: [{ label: "Daftar Pengguna", target: "users-list-panel" }],
     payments: [{ label: "Periksa Bukti Pembayaran", target: "admin-payments-section" }],
     program: [{ label: "Edit Informasi Program", target: "admin-program-section" }],
@@ -3351,6 +4141,7 @@ function clearAdminTaskFocus() {
 function focusAdminTask(targetId, label) {
   if (mobileTaskDialog.open && mobileTaskTarget) restoreMobileTaskTarget();
   if (targetId === "contribution-residents-panel") loadContributionResidents();
+  if (targetId === "issues-panel") loadDataIssues();
   clearAdminTaskFocus();
   const target = document.getElementById(targetId);
   const view = target?.closest(".admin-view");
@@ -3463,8 +4254,13 @@ function setAdminTab(name, focus = false, openGroup = true) {
     else tab.removeAttribute("aria-current");
     if (active && focus) tab.focus();
     if (active && tab.dataset.adminTab === "news") loadAdminNews();
+    if (active && tab.dataset.adminTab === "contacts") {
+      loadPositionTitles();
+      loadAdminContacts();
+    }
     if (active && tab.dataset.adminTab === "program") loadAdminProgramInfo();
-    if (active && tab.dataset.adminTab === "issues") loadDataIssues();
+    if (active && tab.dataset.adminTab === "registrations") window.loadRegistrations?.();
+    if (active && tab.dataset.adminTab === "import") loadDataIssues();
     if (active && tab.dataset.adminTab === "finance") {
       if (currentUser?.permissions?.includes("finance") || rolePermissionDefaults[currentUser?.role]?.includes("finance")) loadAdminFinance();
       if (currentUser?.permissions?.includes("payments") || rolePermissionDefaults[currentUser?.role]?.includes("payments")) loadAdminPayments();
@@ -3504,7 +4300,7 @@ function updateIssueTabBadge(openTotal) {
   if (!badge) return;
   badge.textContent = String(openTotal);
   badge.hidden = !openTotal;
-  const tab = document.querySelector("#admin-tab-issues");
+  const tab = document.querySelector("#admin-tab-import");
   if (tab) tab.setAttribute("title", openTotal ? `${openTotal} field bermasalah belum diperbaiki` : "Tidak ada field bermasalah");
 }
 
@@ -3651,9 +4447,36 @@ document.querySelector("#admin-profile-logout").addEventListener("click", async 
   if (isAdminPage) window.location.href = "/";
   else if (!wasResident) await refreshRecords().catch(() => {});
 });
-dialog.addEventListener("click", (event) => {
-  if (!isAdminPage && event.target === dialog) dialog.close();
-});
+/* POPUP: klik area di luar popup (backdrop) menutupnya.
+   Daftar ini berisi popup yang tidak boleh ditutup sembarangan karena
+   isinya sedang berjalan atau berisi tombol yang belum selesai. */
+const dialogsNeedingExplicitClose = new Set([
+  "admin-dialog",
+  "processing-dialog",
+  "import-done-dialog",
+  "import-report-dialog",
+  "contribution-print-dialog",
+]);
+for (const popup of document.querySelectorAll("dialog")) {
+  if (dialogsNeedingExplicitClose.has(popup.id)) continue;
+  popup.addEventListener("click", (event) => {
+    // event.target === popup hanya terjadi saat klik pada latar di
+    // luar kotak popup, karena isi popup targeting-nya anak-anaknya.
+    if (event.target !== popup) return;
+    // Jangan tutup saat klik dimulai di dalam popup lalu ditarik ke luar.
+    if (popup.dataset.draggedOut === "true") {
+      popup.dataset.draggedOut = "";
+      return;
+    }
+    popup.close();
+  });
+  popup.addEventListener("pointerdown", (event) => {
+    if (event.target === popup) popup.dataset.draggedOut = "false";
+  });
+  popup.addEventListener("pointerup", (event) => {
+    if (event.target === popup && popup.dataset.draggedOut === "false") popup.dataset.draggedOut = "";
+  });
+}
 function showResidentAuthForm(register = false) {
   loginForm.hidden = register;
   document.querySelector("#resident-register-form").hidden = !register;
@@ -4078,6 +4901,10 @@ const importFileInput = document.querySelector("#import-file");
 const importFileList = document.querySelector("#import-file-list");
 const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_IMPORT_FILES = 500;
+// Batas total satu permintaan. Nginx bawaan hanya menerima 1 MB dan akan
+// membalas 413 lebih dulu sebelum aplikasi sempat memproses data. Base64
+// menambah ukuran sekitar 4/3, jadi total file dinilai dalam ukuran terkirim.
+const MAX_IMPORT_BODY_BYTES = 12 * 1024 * 1024;
 // File dikumpulkan di sini, bukan langsung dari input, agar file yang sudah dipilih
 // tidak hilang saat input dibuka lagi untuk menambahkan file berikutnya.
 let pendingImportFiles = [];
@@ -4157,6 +4984,16 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
   const oversize = files.filter((file) => file.size > MAX_IMPORT_FILE_BYTES);
   if (oversize.length) {
     errorElement.textContent = `Ukuran file maksimal 10 MB. Periksa: ${oversize.map((f) => f.name).join(", ")}`;
+    return;
+  }
+  // Total file dibatasi juga karena dikirim dalam satu permintaan. Base64
+  // menambah sekitar 4/3 dari ukuran asli.
+  const totalFileBytes = files.reduce((sum, file) => sum + file.size, 0);
+  const estimatedBodyBytes = totalFileBytes * 1.37 + 64 * 1024;
+  if (estimatedBodyBytes > MAX_IMPORT_BODY_BYTES) {
+    const megabytes = (totalFileBytes / 1024 / 1024).toFixed(1);
+    const limitMegabytes = (MAX_IMPORT_BODY_BYTES / 1024 / 1024).toFixed(0);
+    errorElement.textContent = `Total file terlalu besar (${megabytes} MB, batas ${limitMegabytes} MB). Kurangi jumlah file lalu ulangi.`;
     return;
   }
   importDestination = importDestinationSelect.value;
@@ -4770,25 +5607,84 @@ document.querySelector("#clear-export-header-button").addEventListener("click", 
     document.querySelector("#export-header-error"), "Hapus seluruh teks Kop Ekspor?");
 });
 const signatureSettingsForm = document.querySelector("#signature-settings-form");
+const signatureRtUnitSelect = document.querySelector("#signature-rt-unit-select");
+const signatureRtStatus = document.querySelector("#signature-rt-status");
+let signatureRtNames = {};
+let signatureRtImages = {};
+let signatureRtCommonName = "";
+let signatureRtCommonImage = false;
+
+/* DROPDOWN RT: setiap wilayah bisa punya tanda tangan Ketua RT sendiri. */
+function fillSignatureRtUnits() {
+  if (!signatureRtUnitSelect) return;
+  const selected = signatureRtUnitSelect.value;
+  signatureRtUnitSelect.replaceChildren();
+  signatureRtUnitSelect.add(new Option("Semua RT (umum)", ""));
+  const count = Number(settings.rt_count) || 1;
+  for (let unit = 1; unit <= count; unit += 1) {
+    signatureRtUnitSelect.add(new Option(`RT ${String(unit).padStart(3, "0")}`, String(unit)));
+  }
+  signatureRtUnitSelect.value = [...signatureRtUnitSelect.options].some((option) => option.value === selected)
+    ? selected
+    : "";
+}
+
+function loadSignatureRtUnit() {
+  if (!signatureRtUnitSelect) return;
+  const unit = signatureRtUnitSelect.value;
+  if (unit) {
+    signatureSettingsForm.elements.signature_rt_name.value = signatureRtNames[unit] || "";
+    signatureRtStatus.textContent = signatureRtImages[unit]
+      ? `Gambar tanda tangan RT ${String(unit).padStart(3, "0")} tersimpan.`
+      : `Belum ada gambar tanda tangan khusus RT ${String(unit).padStart(3, "0")}.`;
+  } else {
+    signatureSettingsForm.elements.signature_rt_name.value = signatureRtCommonName;
+    signatureRtStatus.textContent = signatureRtCommonImage
+      ? "Gambar tanda tangan umum tersimpan."
+      : "Belum ada gambar tanda tangan umum.";
+  }
+}
+
+signatureRtUnitSelect?.addEventListener("change", () => {
+  loadSignatureRtUnit();
+});
 signatureSettingsForm.addEventListener("input", () => { signatureSettingsForm.dataset.dirty = "true"; });
 signatureSettingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const errorElement = document.querySelector("#signature-error");
   errorElement.textContent = "";
   const form = event.currentTarget;
+  const selectedRtUnit = signatureRtUnitSelect ? signatureRtUnitSelect.value : "";
+  const signaturePayload = {
+    signature_date: form.elements.signature_date.value,
+    signature_show_bsk: form.elements.signature_show_bsk.checked,
+    signature_show_rw: form.elements.signature_show_rw.checked,
+    signature_show_lmk: form.elements.signature_show_lmk.checked,
+    signature_show_rt: form.elements.signature_show_rt.checked,
+    signature_show_maker: form.elements.signature_show_maker.checked,
+    signature_maker_name: form.elements.signature_maker_name.value,
+    signature_lmk_name: form.elements.signature_lmk_name.value,
+    signature_rw_name: form.elements.signature_rw_name.value,
+    signature_bsk_name: form.elements.signature_bsk_name.value,
+    signature_place: form.elements.signature_place.value,
+    signature_note: form.elements.signature_note.value,
+    signature_label_maker: form.elements.signature_label_maker.value,
+    signature_label_rt: form.elements.signature_label_rt.value,
+    signature_label_lmk: form.elements.signature_label_lmk.value,
+    signature_label_rw: form.elements.signature_label_rw.value,
+    signature_label_bsk: form.elements.signature_label_bsk.value,
+  };
+  // Nama Ketua RT disimpan ke wilayah yang dipilih pada dropdown, jadi
+  // mengetik di RT 002 tidak menimpa RT 001.
+  if (selectedRtUnit) {
+    signaturePayload[`signature_rt_name_${String(selectedRtUnit).padStart(3, "0")}`] = form.elements.signature_rt_name.value;
+  } else {
+    signaturePayload.signature_rt_name = form.elements.signature_rt_name.value;
+  }
   try {
     await request("/api/settings", {
       method: "POST",
-      body: JSON.stringify({
-        rt_count: settings.rt_count,
-        rw_count: settings.rw_count,
-        signature_date: form.elements.signature_date.value,
-        signature_maker_name: form.elements.signature_maker_name.value,
-        signature_rt_name: form.elements.signature_rt_name.value,
-        signature_lmk_name: form.elements.signature_lmk_name.value,
-        signature_rw_name: form.elements.signature_rw_name.value,
-        signature_bsk_name: form.elements.signature_bsk_name.value,
-      }),
+      body: JSON.stringify({ rt_count: settings.rt_count, rw_count: settings.rw_count, ...signaturePayload }),
     });
     const signatureInputs = [
       ["maker", form.elements.signature_maker],
@@ -4803,7 +5699,12 @@ signatureSettingsForm.addEventListener("submit", async (event) => {
     }
     for (const [role, input] of signatureInputs) {
       const file = input.files && input.files[0];
-      if (file) await uploadImage(file, "signature", { role });
+      if (!file) continue;
+      if (role === "rt" && selectedRtUnit) {
+        await uploadImage(file, "signature", { role, unit_number: Number(selectedRtUnit) });
+      } else {
+        await uploadImage(file, "signature", { role });
+      }
     }
     delete signatureSettingsForm.dataset.dirty;
     await loadSettings();
@@ -4854,6 +5755,19 @@ document.querySelector("#signature-pad-clear").addEventListener("click", clearSi
 document.querySelector("#signature-pad-close").addEventListener("click", () => signaturePadDialog.close());
 signaturePadDialog.addEventListener("click", (event) => { if (event.target === signaturePadDialog) signaturePadDialog.close(); });
 signaturePadDialog.addEventListener("cancel", () => signaturePadDialog.close());
+// Tutup panel tanda tangan selalu mengembalikan dropdown jabatan dan
+// membersihkan sisa konteks formulir pendaftaran.
+signaturePadDialog.addEventListener("close", () => {
+  delete signaturePadCanvas.dataset.registrationRole;
+  delete signaturePadCanvas.dataset.registrationId;
+  delete signaturePadCanvas.dataset.registrationName;
+  const roleSelect = document.querySelector("#signature-pad-role-select");
+  if (roleSelect) {
+    roleSelect.disabled = false;
+    const wrapper = roleSelect.closest("label");
+    if (wrapper) wrapper.style.display = "";
+  }
+});
 
 // Close button for family dialog
 const familyDialog = document.querySelector("#family-dialog");
@@ -4861,6 +5775,14 @@ if (familyDialog) {
   document.querySelector("#family-dialog-close")?.addEventListener("click", () => familyDialog.close());
   familyDialog.addEventListener("click", (event) => { if (event.target === familyDialog) familyDialog.close(); });
   familyDialog.addEventListener("cancel", () => familyDialog.close());
+}
+
+// Close button for contribution history dialog
+const contributionHistoryDialog = document.querySelector("#contribution-history-dialog");
+if (contributionHistoryDialog) {
+  document.querySelector("#contribution-history-close")?.addEventListener("click", () => contributionHistoryDialog.close());
+  contributionHistoryDialog.addEventListener("click", (event) => { if (event.target === contributionHistoryDialog) contributionHistoryDialog.close(); });
+  contributionHistoryDialog.addEventListener("cancel", () => contributionHistoryDialog.close());
 }
 document.querySelector("#signature-pad-save").addEventListener("click", async () => {
   const error = document.querySelector("#signature-error");
@@ -4873,8 +5795,38 @@ document.querySelector("#signature-pad-save").addEventListener("click", async ()
     }
     const saveRole = document.querySelector("#signature-pad-role-select").value;
     const file = new File([blob], `signature-${saveRole}.png`, { type: "image/png" });
+    // Panel tanda tangan pada formulir pendaftaran menyimpan gambar ke
+    // formulir itu sendiri, bukan ke tanda tangan global per jabatan.
+    const registrationRole = signaturePadCanvas.dataset.registrationRole;
+    if (registrationRole) {
+      const registrationName = signaturePadCanvas.dataset.registrationName || "";
+      try {
+        const result = await request("/api/admin/registration-signature", {
+          method: "POST",
+          body: JSON.stringify({
+            registration_id: Number(signaturePadCanvas.dataset.registrationId),
+            role: registrationRole,
+            name: registrationName,
+            content_type: file.type,
+            content_base64: await imageBase64(file, "Menyiapkan tanda tangan..."),
+          }),
+        });
+        signaturePadDialog.close();
+        window.onRegistrationSignatureSaved?.(result.registration);
+      } catch (uploadError) {
+        error.textContent = uploadError.message;
+      }
+      return;
+    }
+    // Gambar yang digambar langsung mengikuti wilayah yang dipilih pada dropdown,
+    // supaya tidak menimpa tanda tangan RT lain.
+    const selectedRtUnit = signaturePadRoleName === "rt" && signatureRtUnitSelect ? signatureRtUnitSelect.value : "";
     try {
-      await uploadImage(file, "signature", { role: saveRole });
+      if (selectedRtUnit) {
+        await uploadImage(file, "signature", { role: saveRole, unit_number: Number(selectedRtUnit) });
+      } else {
+        await uploadImage(file, "signature", { role: saveRole });
+      }
       signaturePadDialog.close();
       await loadSettings();
     } catch (uploadError) {
@@ -5058,13 +6010,13 @@ heroPlaylistForm.addEventListener("submit", async (event) => {
     for (const file of files) {
       statusElement.textContent = `Mengunggah ${uploaded + 1} dari ${files.length}: ${file.name}`;
       const result = await withProcessing(async () => {
+        const mediaType = file.type || (/\.mp4$/i.test(file.name) ? "video/mp4" : /\.webm$/i.test(file.name) ? "video/webm" : "application/octet-stream");
         const response = await fetch("/api/admin/hero-playlist", {
           method: "POST",
-          headers: { "Content-Type": file.type, "X-Media-Name": encodeURIComponent(file.name) },
+          headers: { "Content-Type": mediaType, "X-Media-Name": encodeURIComponent(file.name) },
           body: file,
         });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Media slideshow tidak dapat diunggah.");
+        const payload = await readApiResponse(response, "Media slideshow tidak dapat diunggah.");
         return payload;
       }, "Mengunggah media slideshow...");
       uploaded += 1;
@@ -5119,6 +6071,8 @@ settingsForm.addEventListener("submit", async (event) => {
       }),
     });
     await loadSettings();
+    // Penandaan wilayah di luar jumlah RT/RW mengikuti jumlah terbaru.
+    if (contactForm && !document.querySelector("#admin-view-contacts").hidden) renderAdminContacts(areaContactsAdmin);
   } catch (error) {
     errorElement.textContent = error.message;
   }
@@ -5177,6 +6131,8 @@ function previewTypographySettings() {
   const values = {
     font_preset: typographyForm.elements.font_preset.value,
     font_scale: Number(typographyForm.elements.font_scale.value),
+    font_style: typographyForm.elements.font_style.value,
+    font_style_target: typographyForm.elements.font_style_target.value,
     intro_text_alignment: typographyForm.elements.intro_text_alignment.value,
     news_text_alignment: typographyForm.elements.news_text_alignment.value,
     directory_text_alignment: typographyForm.elements.directory_text_alignment.value,
@@ -5198,6 +6154,8 @@ typographyForm.addEventListener("submit", async (event) => {
   const values = {
     font_preset: typographyForm.elements.font_preset.value,
     font_scale: Number(typographyForm.elements.font_scale.value),
+    font_style: typographyForm.elements.font_style.value,
+    font_style_target: typographyForm.elements.font_style_target.value,
     intro_text_alignment: typographyForm.elements.intro_text_alignment.value,
     news_text_alignment: typographyForm.elements.news_text_alignment.value,
     directory_text_alignment: typographyForm.elements.directory_text_alignment.value,
@@ -5206,6 +6164,8 @@ typographyForm.addEventListener("submit", async (event) => {
     await request("/api/admin/typography", { method: "POST", body: JSON.stringify(values) });
     settings.site_font_preset = values.font_preset;
     settings.site_font_scale = values.font_scale;
+    settings.site_font_style = values.font_style;
+    settings.site_font_style_target = values.font_style_target;
     settings.intro_text_alignment = values.intro_text_alignment;
     settings.news_text_alignment = values.news_text_alignment;
     settings.directory_text_alignment = values.directory_text_alignment;
@@ -5226,6 +6186,12 @@ document.querySelector("#print-preview-back")?.addEventListener("click", () => {
   document.querySelector("#print-preview-panel").hidden = true;
 });
 document.querySelector("#print-preview-confirm")?.addEventListener("click", () => window.print());
+document.querySelector("#print-pdf-button")?.addEventListener("click", () => {
+  const params = new URLSearchParams({ type: "records" });
+  params.set("q", adminRecordSearchInput.value.trim());
+  params.set("sort", adminRecordSortSelect.value);
+  window.open(`/api/admin/export/pdf?${params.toString()}`, "_blank");
+});
 
 // Contribution print preview handling
 function renderContributionPrint() {
@@ -5239,15 +6205,22 @@ function renderContributionPrint() {
     displayResidents = displayResidents.filter(r => r.family_card_number === familyFilterKK);
   }
   displayResidents = displayResidents.filter((resident) => matchesContributionStatus(resident, selectedStatus));
+  const query = document.querySelector("#contribution-search")?.value.trim().toLocaleLowerCase("id-ID") || "";
+  if (query) {
+    displayResidents = displayResidents.filter((resident) => [resident.full_name, resident.national_id_number, resident.address, resident.rt, resident.rw, ...residentRtRwVariants(resident.rt, resident.rw)]
+      .some((value) => String(value || "").toLocaleLowerCase("id-ID").includes(query)));
+  }
   if (displayResidents.length) {
     displayResidents.forEach((resident, idx) => {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${idx + 1}</td><td>${formatWords(resident.full_name)}</td><td>${resident.family_card_number || ''}</td><td>${resident.national_id_number || ''}</td><td>${resident.rt || ''}</td><td>${resident.rw || ''}</td><td>${formatGenderLabel(resident.gender)}</td><td>${formatWords(resident.birthplace)}</td><td>${resident.birth_date ? formatDate(resident.birth_date) : ''}</td><td>${formatWords(resident.religion)}</td><td>${formatWords(resident.relationship)}</td><td>${resident.phone || ''}</td><td>${formatWords(resident.residence_status)}</td>`;
+      const rtLabel = resident.rt ? `RT ${String(resident.rt).padStart(3, "0")}` : "-";
+      const rwLabel = resident.rw ? `RW ${String(resident.rw).padStart(3, "0")}` : "-";
+      tr.innerHTML = `<td>${idx + 1}</td><td>${formatWords(resident.full_name)}</td><td>${resident.family_card_number || ''}</td><td>${resident.national_id_number || ''}</td><td>${rtLabel}</td><td>${rwLabel}</td><td>${formatGenderLabel(resident.gender)}</td><td>${formatWords(resident.birthplace)}</td><td>${resident.birth_date ? formatDate(resident.birth_date) : ''}</td><td>${formatWords(resident.religion)}</td><td>${formatWords(resident.relationship)}</td><td>${resident.phone || ''}</td><td>${formatWords(resident.residence_status)}</td>`;
       tbody.appendChild(tr);
     });
   } else {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="8" style="text-align:center;color:var(--muted);">Belum ada data warga iuran.</td>';
+    tr.innerHTML = '<td colspan="13" style="text-align:center;color:var(--muted);">Belum ada data warga iuran.</td>';
     tbody.appendChild(tr);
   }
 }
@@ -5268,6 +6241,13 @@ document.querySelector("#contribution-print-back")?.addEventListener("click", ()
 });
 
 document.querySelector("#contribution-print-confirm")?.addEventListener("click", () => window.print());
+document.querySelector("#contribution-print-pdf")?.addEventListener("click", () => {
+  const params = new URLSearchParams({ type: "contributions" });
+  params.set("q", document.querySelector("#contribution-search")?.value.trim() || "");
+  params.set("status", contributionStatusKey);
+  if (familyFilterKK) params.set("family", familyFilterKK);
+  window.open(`/api/admin/export/pdf?${params.toString()}`, "_blank");
+});
 
 // Fill contribution print table if panel is open
 if (document.querySelector("#contribution-print-dialog") && document.querySelector("#contribution-print-dialog").open) {
@@ -5370,4 +6350,3 @@ document.querySelector("#contribution-resident-list")?.addEventListener("click",
   contributionResidentsPage = 0;
   renderContributionResidents();
 });
-``

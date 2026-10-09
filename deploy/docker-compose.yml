@@ -9,6 +9,8 @@ services:
       PORT: "8000"
       TZ: Asia/Jakarta
     # Hanya localhost agar wajib lewat reverse proxy (HTTPS).
+    # Port host 8081 inilah yang harus diarahkan oleh reverse proxy
+    # (lihat deploy/nginx-kifayah.conf).
     ports:
       - "127.0.0.1:8081:8000"
     volumes:

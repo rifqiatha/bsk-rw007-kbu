@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#ededed">
   <title>Masuk Warga | Kifayah</title>
   <link rel="stylesheet" href="/auth.css">
-  <script src="/auth.js" defer></script>
+  <script src="/auth.js?v=20261009-03" defer></script>
 </head>
 <body>
   <main class="auth-shell">
@@ -20,8 +20,8 @@
         <label>Nama Pengguna<input name="username" autocomplete="username" required placeholder="Masukkan nama pengguna"></label>
         <label>Password<span class="password-control"><input name="password" type="password" autocomplete="current-password" required placeholder="Masukkan password"><button class="password-toggle" type="button" data-password-toggle aria-label="Tampilkan password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
         <p id="login-error" class="error-message" role="alert"></p>
-        <button class="submit-button" type="submit">Masuk</button>
-        <div class="auth-links"><button id="forgot-button" type="button">Lupa password?</button><button id="show-register" type="button">Daftar baru sebagai warga</button></div>
+        <div class="auth-submit-row"><button id="forgot-button" type="button">Lupa password?</button><button class="submit-button" type="submit">Masuk</button></div>
+        <div class="auth-links"><button id="show-register" type="button">Daftar baru sebagai warga</button></div>
         <p id="forgot-message" class="help-message" hidden>Untuk menjaga keamanan akun, hubungi admin BSK atau pengurus RT untuk verifikasi dan reset password.</p>
       </form>
       <form id="register-form" class="auth-form" hidden>

@@ -32,15 +32,39 @@ fetch("/api/settings").then((response) => response.ok ? response.json() : null).
   const isConfigured = settings.theme_logo_ready?.logo2?.[mode];
   authUpdateProfileLogos(isConfigured ? `/media/theme-logo/logo2/${mode}` : null);
 }).catch(() => {});
+// Reverse proxy dapat membalas halaman HTML (misal 413 Request Entity Too
+// Large) alih-alih JSON, sehingga response.json() melempar SyntaxError dan
+// menutupi penyebab sebenarnya. Badan respons dibaca sebagai teks dulu.
+async function readApiResponse(response, fallbackMessage) {
+  const text = await response.text();
+  let payload = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = null;
+    }
+  }
+  if (payload !== null) {
+    if (!response.ok) throw new Error(payload.error || fallbackMessage);
+    return payload;
+  }
+  if (response.status === 413) {
+    throw new Error("Ukuran data terlalu besar untuk server. Pilih file yang lebih kecil.");
+  }
+  if (response.status === 502 || response.status === 503 || response.status === 504) {
+    throw new Error("Server tidak dapat dihubungi saat ini. Coba beberapa saat lagi.");
+  }
+  throw new Error(`${fallbackMessage} (HTTP ${response.status})`);
+}
+
 async function authRequest(path, body) {
   const response = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Permintaan tidak berhasil. Coba kembali.");
-  return payload;
+  return readApiResponse(response, "Permintaan tidak berhasil. Coba kembali.");
 }
 
 function showDashboard(user) {
@@ -147,8 +171,7 @@ async function loadResidentPayments() {
   history.replaceChildren(document.createTextNode("Memuat riwayat pembayaran…"));
   try {
     const response = await fetch("/api/resident/payments", { cache: "no-store" });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Riwayat pembayaran tidak dapat dimuat.");
+    const payload = await readApiResponse(response, "Riwayat pembayaran tidak dapat dimuat.");
     history.replaceChildren();
     if (!payload.payments.length) {
       history.textContent = "Belum ada pembayaran yang dikirim.";
@@ -192,8 +215,7 @@ async function loadProgramInfo() {
   container.textContent = "Memuat informasi program…";
   try {
     const response = await fetch("/api/program-info", { cache: "no-store" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Informasi program belum dapat dimuat.");
+    const data = await readApiResponse(response, "Informasi program belum dapat dimuat.");
     container.replaceChildren();
     const title = document.createElement("h3");
     title.textContent = data.title;
@@ -208,8 +230,7 @@ async function loadDeathRecords() {
   container.textContent = "Memuat arsip warga…";
   try {
     const response = await fetch("/api/records", { cache: "no-store" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Data kematian belum dapat dimuat.");
+    const data = await readApiResponse(response, "Data kematian belum dapat dimuat.");
     container.replaceChildren();
     if (!data.records.length) { container.textContent = "Belum ada data yang tersedia."; return; }
     for (const record of data.records) {
@@ -231,8 +252,7 @@ async function loadResidentFinance() {
   container.textContent = "Memuat data keuangan…";
   try {
     const response = await fetch("/api/resident/finance", { cache: "no-store" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Data keuangan belum dapat dimuat.");
+    const data = await readApiResponse(response, "Data keuangan belum dapat dimuat.");
     container.replaceChildren();
     const totalIncome = data.entries.reduce((sum, entry) => sum + entry.income, 0);
     const totalExpense = data.entries.reduce((sum, entry) => sum + entry.expense, 0);
@@ -346,8 +366,7 @@ document.querySelector("#payment-form").addEventListener("submit", async (event)
         content_base64: btoa(binary),
       }),
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Bukti pembayaran tidak dapat dikirim.");
+    const result = await readApiResponse(response, "Bukti pembayaran tidak dapat dikirim.");
     form.reset();
     const now = new Date();
     document.querySelector('#payment-form [name="paid_at"]').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -365,7 +384,7 @@ async function loadPortal() {
   const isDashboard = window.location.pathname === "/dashboard-warga";
   try {
     const response = await fetch("/api/session", { cache: "no-store" });
-    const session = await response.json();
+    const session = await readApiResponse(response, "Sesi tidak dapat diperiksa.");
     if (session.admin && session.user?.role === "Warga") {
       showDashboard(session.user);
       return;
