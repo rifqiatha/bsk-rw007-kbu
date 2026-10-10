@@ -129,7 +129,9 @@ loginForm.addEventListener("submit", async (event) => {
 
 document.querySelector("#resident-logout").addEventListener("click", async () => {
   await fetch("/api/logout", { method: "POST" }).catch(() => {});
-  window.location.href = "/";
+  // Setelah keluar, tetap di halaman masuk supaya terlihat jelas bahwa sesi
+  // sudah berakhir dan akun bisa dipakai untuk masuk kembali.
+  window.location.href = "/masuk";
 });
 
 async function loadResidentPayments() {

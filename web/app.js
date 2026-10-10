@@ -1630,7 +1630,7 @@ async function withProcessing(operation, message) {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261010-12";
+const EXPECTED_BACKEND_BUILD = "20261010-13";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
@@ -4477,11 +4477,14 @@ document.querySelector(".close-button").addEventListener("click", async () => {
     dialog.close();
     if (wasAuthenticated) {
       setAdminMode(false);
-      if (!wasResident) await refreshRecords().catch(() => {});
+      if (wasResident) window.location.href = "/masuk";
+      else await refreshRecords().catch(() => {});
     }
     return;
   }
-  window.location.href = "/";
+  // Tombol tutup ini sekaligus mengakhiri sesi, jadi tujuan akhirnya harus
+  // halaman masuk, sama seperti tombol Keluar.
+  window.location.href = "/masuk";
 });
 const adminProfile = document.querySelector(".admin-header-account");
 const adminProfileToggle = document.querySelector("#admin-profile-toggle");
@@ -4499,8 +4502,12 @@ document.querySelector("#admin-profile-logout").addEventListener("click", async 
   const wasResident = currentUser?.role === "Warga";
   await request("/api/logout", { method: "POST" }).catch(() => {});
   setAdminMode(false);
-  if (isAdminPage) window.location.href = "/";
-  else if (!wasResident) await refreshRecords().catch(() => {});
+  // Keluar dari panel ALWAYS berakhir di halaman masuk, bukan di beranda.
+  // Dulu halaman utama yang dibuka sehingga sulit memastikan sesi benar-benar
+  // sudah berakhir.
+  if (isAdminPage) window.location.href = "/masuk";
+  else if (wasResident) window.location.href = "/masuk";
+  else await refreshRecords().catch(() => {});
 });
 /* POPUP: klik area di luar popup (backdrop) menutupnya.
    Daftar ini berisi popup yang tidak boleh ditutup sembarangan karena
