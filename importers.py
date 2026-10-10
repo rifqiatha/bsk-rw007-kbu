@@ -591,11 +591,18 @@ def parse_import_file(filename, content):
 	except ImportFormatError:
 		raise
 	except Exception as error:
-		raise ImportFormatError("File rusak atau isinya tidak sesuai dengan ekstensi file.") from error
+		# Nama error aslinya ikut disertakan. Tanpa ini, semua kegagalan
+		# (versi pustaka berbeda di server, berkas rusak, dan lainnya) terlihat
+		# sama saja sehingga sulit ditelusuri.
+		detail = f"{type(error).__name__}: {error}".strip()
+		raise ImportFormatError(
+			f"File tidak bisa dibaca ({detail}). Coba simpan ulang filenya dari Excel atau LibreOffice, "
+			"lalu unggah ulang."
+		) from error
 	if not rows:
 		raise ImportFormatError(
-			"Isi file tidak bisa dibaca sebagai tabel warga. Pastikan file bukan kosong dan "
-			"memuat kolom nama. Bila judul kolomnya berbeda, ganti judulnya menjadi 'Nama'."
+			"Isi file tidak terbaca sebagai tabel warga. Coba buka filenya: apakah ada baris judul "
+			"kolom dan baris data di bawahnya? Kalau tidak ada, ganti format ke .xlsx lalu unggah ulang."
 		)
 	if any(not row.get("date_of_death") for row in rows):
 		warnings.add("Tanggal wafat belum terbaca pada sebagian baris. Baris tetap dapat diimpor dan dilengkapi kemudian.")

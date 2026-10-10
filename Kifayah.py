@@ -1359,7 +1359,12 @@ def mark_import_duplicates(destination, rows, settings, existing):
 
 def parse_import_files(files):
 	"""Terjemahkan daftar file menjadi satu hasil pratinjau gabungan.
-	files: [{"filename": str, "content": bytes}]
+
+	Fungsi ini sengaja tidak pernah melempar error. File yang gagal satu per satu
+	dicatat di "files" dan "warnings", sementara file lain tetap diproses.
+	Dulu fungsi ini melempar ValueError begitu tidak ada baris sama sekali,
+	sehingga satu file bermasalah menutupi semua file lain dan pengelola hanya
+	melihat satu kalimat umum tanpa tahu penyebabnya.
 	"""
 	combined_rows = []
 	warnings = set()
@@ -1383,6 +1388,13 @@ def parse_import_files(files):
 			files_summary.append({"filename": filename, "rows": 0, "status": f"gagal: {error}"})
 			warnings.add(f"{filename}: {error}")
 			continue
+		except Exception as error:
+			# Jaring pengaman terakhir. Kegagalan tak terduga dicatat per file
+			# supaya file lain dalam unggahan yang sama tetap bisa diimpor.
+			detail = f"{type(error).__name__}: {error}"
+			files_summary.append({"filename": filename, "rows": 0, "status": f"gagal: {detail}"})
+			warnings.add(f"{filename}: {detail}")
+			continue
 		for warning in parsed["warnings"]:
 			if "Tanggal wafat belum terbaca" in warning:
 				continue
@@ -1392,18 +1404,22 @@ def parse_import_files(files):
 		combined_rows.extend(parsed["rows"])
 		files_summary.append({"filename": filename, "rows": len(parsed["rows"]), "status": "ok"})
 	if not combined_rows:
-		# Sebutkan alasan sebenarnya per file. Pesan tunggal "kolom Nama tidak
-		# ditemukan" dulu menutupi penyebab sebenarnya, sehingga pengelola
-		# tidak tahu file-nya rusak, salah format, atau kosong.
-		reasons = "; ".join(sorted(warnings)) or "File tidak berisi data warga."
-		raise ValueError(f"Tidak ada data yang bisa disalin dari file yang dipilih. {reasons}")
+		# Hasil tetap dikembalikan (bukan error HTTP) supaya antarmuka bisa
+		# menampilkan alasan lengkap per file di panel pratinjau.
+		reasons = sorted(warnings)
+		warnings.add(
+			"Tidak ada baris yang bisa disalin. Perincian per file:"
+			+ ("" if not reasons else " " + " | ".join(reasons))
+		)
 	return {
 		"rows": combined_rows,
 		"warnings": sorted(warnings),
 		"filename": f"{len(files)} file",
 		"files": files_summary,
 		"total_bytes": total_bytes,
+		"failed": sum(1 for entry in files_summary if entry["status"].startswith("gagal")),
 	}
+
 
 
 class KifayahServer(ThreadingHTTPServer):
@@ -4849,7 +4865,13 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				with connect_database() as connection:
 					settings = get_settings(connection)
 					existing = load_import_existing_keys(connection, destination)
-				parsed["warnings"] = sorted(set(parsed["warnings"] + mark_import_duplicates(destination, parsed["rows"], settings, existing)))
+				# Penandaan duplikat hanya membantu tampilan. Kalau gagal, barisnya
+				# tetap layak diimpor, jadi kegagalannya dicatat sebagai catatan
+				# alih-alih membatalkan seluruh pratinjau.
+				try:
+					parsed["warnings"] = sorted(set(parsed["warnings"] + mark_import_duplicates(destination, parsed["rows"], settings, existing)))
+				except Exception as error:
+					parsed["warnings"] = sorted(set(parsed["warnings"] + [f"Duplikat belum dapat dicek ({type(error).__name__}). Baris tetap bisa diimpor."]))
 			except (ImportFormatError, ValueError, TypeError) as error:
 				self.send_json(400, {"error": str(error) or "File tidak dapat diproses."})
 				return

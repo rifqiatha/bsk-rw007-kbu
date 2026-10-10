@@ -5026,6 +5026,9 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
       : `${fileEntries.length} file diproses, total ${payload.rows.length} baris.`;
     notice.classList.toggle("has-error", fileFailed.length > 0);
     details.hidden = detailCount === 0;
+    // Detail dibuka langsung saat tidak ada baris sama sekali, supaya alasan
+    // kegagalannya terlihat tanpa perlu diklik.
+    details.open = payload.rows.length === 0 && detailCount > 0;
     detailsSummary.textContent = detailCount
       ? `Rincian file dan catatan (${detailCount})`
       : "Rincian file dan catatan";
@@ -5051,6 +5054,10 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
     notice.hidden = false;
     previewPanel.hidden = false;
     renderImportRows();
+    if (!payload.rows.length) {
+      // Tidak ada error HTTP lagi: alasannya tampil di panel rincian.
+      errorElement.textContent = "";
+    }
   } catch (error) {
     errorElement.textContent = error.message;
     importDestinationSelect.disabled = false;
