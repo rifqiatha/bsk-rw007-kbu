@@ -34,7 +34,7 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 # Nilai ini harus DILEBIHKAN atau sama dengan client_max_body_size pada reverse
 # proxy (lihat deploy/nginx-kifayah.conf), kalau tidak proxy membalas 413 lebih
 # dulu dan aplikasi tidak pernah menerima datanya.
-MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 32 * 1024 * 1024))
+MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -635,6 +635,13 @@ def image_extension(content):
 
 
 def optional_import_area_number(value, label, maximum):
+	"""Baca angka RT/RW dari file impor.
+
+	Nilai di luar 1-{maximum} tidak lagi ditolak. File impor sering memuat
+	data RT 012 padahal pengaturan situs masih 10, dan menolak baris seperti
+	itu membuat data warga hilang. Angkanya tetap disimpan apa adanya;
+	keluaran di luar rentang hanya dicatat sebagai catatan.
+	"""
 	if value is None or (isinstance(value, str) and not value.strip()):
 		return None
 	try:
@@ -643,8 +650,8 @@ def optional_import_area_number(value, label, maximum):
 		raise ValueError(f"{label} harus berupa angka.")
 	if isinstance(value, float) and value != number:
 		raise ValueError(f"{label} harus berupa angka bulat.")
-	if not 1 <= number <= maximum:
-		raise ValueError(f"{label} harus 1-{maximum}.")
+	if number < 0:
+		raise ValueError(f"{label} tidak boleh negatif.")
 	return number
 
 
@@ -665,15 +672,15 @@ def validate_import_row(payload, settings):
 	address = text_fields["address"]
 	if not full_name:
 		raise ValueError("Nama warga wajib diisi.")
-	if len(full_name) > 120:
-		raise ValueError("Nama maksimal 120 karakter.")
+	# Teks yang melebihi batas dipotong, bukan menolak baris. Menolak membuat
+	# satu kolom yang panjang menghilangkan seluruh data warga di file itu.
+	full_name = full_name[:120]
 	gender = normalize_import_gender(gender) or gender
-	if gender and gender not in ("P", "L"):
-		raise ValueError("Jenis kelamin harus P atau L.")
+	if gender not in ("P", "L"):
+		gender = gender[:2]
 	date_of_death = normalize_import_date(date_of_death) or date_of_death
 	parse_iso_date(date_of_death, "Tanggal wafat")
-	if len(address) > 300:
-		raise ValueError("Alamat maksimal 300 karakter.")
+	address = address[:300]
 	rt = optional_import_area_number(payload.get("rt"), "RT", settings["rt_count"])
 	rw = optional_import_area_number(payload.get("rw"), "RW", settings["rw_count"])
 	area_parts = []
@@ -697,8 +704,7 @@ def validate_import_row(payload, settings):
 		values[field] = values[field].strip()
 		if field in ("family_card_number", "national_id_number"):
 			values[field] = clean_number_text(values[field], limit)
-		if len(values[field]) > limit:
-			raise ValueError(f"{label} maksimal {limit} karakter.")
+		values[field] = values[field][:limit]
 	values["living_family_name"] = values["living_family_name"].upper()
 	birth_date = payload.get("birth_date", "")
 	if not isinstance(birth_date, str):
@@ -852,7 +858,9 @@ def collect_row_issues(destination, payload, settings):
 		if not digits:
 			note(field, raw, f"{label} \"{raw}\" bukan angka; dikosongkan.")
 		elif not 1 <= int(digits) <= limit:
-			note(field, raw, f"{label} {digits} di luar 1-{limit}; dikosongkan.")
+			# Angkanya tetap disimpan; keluarannya hanya dicatat supaya
+			# pengelola tahu kalau perlu menambah RT/RW di pengaturan.
+			note(field, raw, f"{label} {digits} di luar 1-{limit}; tetap disimpan.")
 
 	for field, label in (("family_card_number", "Nomor KK"), ("national_id_number", "NIK")):
 		raw = payload.get(field, "")
@@ -860,7 +868,7 @@ def collect_row_issues(destination, payload, settings):
 			continue
 		cleaned = clean_number_text(raw, 32)
 		if len(str(raw).strip()) != len(cleaned):
-			note(field, raw, f"{label}含有 pemisah; dirapikan menjadi {cleaned}.")
+			note(field, raw, f"{label} memuat pemisah; dirapikan menjadi {cleaned}.")
 		elif len(cleaned) > 32:
 			note(field, raw, f"{label} melebihi 32 karakter; dipotong.")
 
@@ -882,8 +890,8 @@ def collect_row_issues(destination, payload, settings):
 def salvage_import_row(destination, payload, settings):
 	"""Bentuk baris yang bisa disimpan meski ada field bermasalah.
 
-	Nilai manager yang tidak terbaca dikosongkan supaya database tetap rapi;
-	aslinya dicatat di data_issues dan bisa dicari Organize.
+	Nilai yang tidak terbaca dikosongkan supaya database tetap rapi;
+	aslinya dicatat di data_issues dan bisa dicari di Tinjauan Data.
 	"""
 	clean = dict(payload) if isinstance(payload, dict) else {}
 	clean.setdefault("full_name", "")
@@ -900,14 +908,13 @@ def salvage_import_row(destination, payload, settings):
 					clean[field] = value
 				except (TypeError, ValueError):
 					clean[field] = ""
-		for field, key in (("rt", "rt_count"), ("rw", "rw_count")):
+		for field in ("rt", "rw"):
 			if field not in clean or clean[field] in (None, ""):
 				continue
 			digits = re.sub(r"[^0-9]", "", str(clean[field]))
-			if digits and 1 <= int(digits) <= settings[key]:
-				clean[field] = int(digits)
-			else:
-				clean[field] = ""
+			# Di luar 1-999 tetap dibuang karena tidak masuk akal sebagai
+			# nomor RT/RW; angka 12 pada RT 012 tetap dipakai.
+			clean[field] = int(digits) if digits and int(digits) <= 999 else ""
 		area_parts = []
 		if clean.get("rt") is not None and clean["rt"] != "":
 			area_parts.append(f"RT {int(clean['rt']):03d}")
@@ -930,14 +937,11 @@ def salvage_import_row(destination, payload, settings):
 				clean["birth_date"] = value
 			except (TypeError, ValueError):
 				clean["birth_date"] = ""
-		for field, key in (("rt", "rt_count"), ("rw", "rw_count")):
+		for field in ("rt", "rw"):
 			if field not in clean or clean[field] in (None, ""):
 				continue
 			digits = re.sub(r"[^0-9]", "", str(clean[field]))
-			if digits and 1 <= int(digits) <= settings[key]:
-				clean[field] = digits
-			else:
-				clean[field] = ""
+			clean[field] = digits if digits and int(digits) <= 999 else ""
 		period = str(clean.get("payment_period", "") or "").strip()
 		amount = str(clean.get("amount", "") if clean.get("amount") is not None else "").strip()
 		paid_at = str(clean.get("paid_at", "") or "").strip()
@@ -1227,11 +1231,12 @@ def validate_contribution_import_row(payload, settings):
 		raise ValueError("Nama dan jenis kelamin harus berupa teks.")
 	name = name.strip().upper()
 	gender = gender.strip().upper()
-	if not name or len(name) > 120:
-		raise ValueError("Nama warga wajib diisi dan maksimal 120 karakter.")
+	if not name:
+		raise ValueError("Nama warga wajib diisi.")
+	name = name[:120]
 	gender = normalize_import_gender(gender) or gender
-	if gender and gender not in ("L", "P"):
-		raise ValueError("Jenis kelamin harus L atau P.")
+	if gender not in ("L", "P"):
+		gender = gender[:2]
 	rt = optional_import_area_number(payload.get("rt"), "RT", settings["rt_count"])
 	rw = optional_import_area_number(payload.get("rw"), "RW", settings["rw_count"])
 	fields = {}
@@ -1249,9 +1254,7 @@ def validate_contribution_import_row(payload, settings):
 		value = value.strip()
 		if field in ("family_card_number", "national_id_number"):
 			value = clean_number_text(value, limit)
-		if len(value) > limit:
-			raise ValueError(f"{field.replace('_', ' ').capitalize()} maksimal {limit} karakter.")
-		fields[field] = value
+		fields[field] = value[:limit]
 	fields["residence_status"] = normalize_residence_status(fields["residence_status"])
 	fields["birth_date"] = normalize_import_date(fields["birth_date"])
 	parse_iso_date(fields["birth_date"], "Tanggal lahir")
@@ -1389,7 +1392,11 @@ def parse_import_files(files):
 		combined_rows.extend(parsed["rows"])
 		files_summary.append({"filename": filename, "rows": len(parsed["rows"]), "status": "ok"})
 	if not combined_rows:
-		raise ValueError("Tidak ditemukan tabel dengan kolom Nama pada file yang dipilih.")
+		# Sebutkan alasan sebenarnya per file. Pesan tunggal "kolom Nama tidak
+		# ditemukan" dulu menutupi penyebab sebenarnya, sehingga pengelola
+		# tidak tahu file-nya rusak, salah format, atau kosong.
+		reasons = "; ".join(sorted(warnings)) or "File tidak berisi data warga."
+		raise ValueError(f"Tidak ada data yang bisa disalin dari file yang dipilih. {reasons}")
 	return {
 		"rows": combined_rows,
 		"warnings": sorted(warnings),
@@ -4835,7 +4842,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					if item.get("invalid"):
 						clean_files.append({"filename": item["filename"], "content": None, "error": "Isi file tidak valid."})
 					elif item.get("too_large"):
-						clean_files.append({"filename": item["filename"], "content": None, "error": "Ukuran file maksimal 10 MB."})
+						clean_files.append({"filename": item["filename"], "content": None, "error": "Ukuran file maksimal 60 MB."})
 					else:
 						clean_files.append({"filename": item["filename"], "content": item["content"], "error": None})
 				parsed = parse_import_files(clean_files)

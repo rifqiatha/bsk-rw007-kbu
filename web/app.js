@@ -346,8 +346,12 @@ function importDateIsValid(value) {
   return Boolean(value) && !Number.isNaN(parsedDate.valueOf()) && parsedDate.toISOString().slice(0, 10) === value;
 }
 
-// Kembalikan daftar alasan kenapa satu baris tidak bisa diimpor.
-// Dipakai untuk memberi tahu pengelola, bukan sekadar menolak diam-diam.
+// Kembalikan daftar alasan kenapa satu baris perlu diperiksa.
+//
+// Catatan: ini hanya informational. Baris bermasalah tetap dikirim ke server
+// supaya data tidak hilang; server membersihkan field yang tak terbaca dan
+// mencatat sisanya di Tinjauan Data. Hanya baris tanpa nama yang benar-benar
+// tidak bisa disimpan.
 function importRowProblems(row) {
   const text = (field) => typeof row[field] === "string" ? row[field].trim() : "";
   const problems = [];
@@ -357,8 +361,6 @@ function importRowProblems(row) {
   const birthDate = text("birth_date");
   const rtText = row.rt == null ? "" : String(row.rt).trim();
   const rwText = row.rw == null ? "" : String(row.rw).trim();
-  const rt = Number(rtText);
-  const rw = Number(rwText);
   const familyName = text("living_family_name");
   const familyRelationship = text("living_family_relationship");
   const paymentPeriod = text("payment_period");
@@ -368,26 +370,19 @@ function importRowProblems(row) {
   const contributions = importDestination === "contributions";
 
   if (!fullName.length) problems.push("nama warga kosong");
-  else if (fullName.length > 120) problems.push("nama warga lebih dari 120 karakter");
-  if (gender && !["P", "L"].includes(gender)) problems.push(`jenis kelamin "${gender}" bukan P atau L`);
-  if (rtText && (!/^\d+$/.test(rtText) || rt < 1 || rt > settings.rt_count)) {
-    problems.push(`RT "${rtText}" di luar 1-${settings.rt_count}`);
-  }
-  if (rwText && (!/^\d+$/.test(rwText) || rw < 1 || rw > settings.rw_count)) {
-    problems.push(`RW "${rwText}" di luar 1-${settings.rw_count}`);
-  }
-  if (birthDate && !importDateIsValid(birthDate)) problems.push(`tanggal lahir "${birthDate}" tidak berformat YYYY-MM-DD`);
+  // Nilai di luar rentang RT/RW hanya diperingatkan. Server tetap menyimpannya
+  // supaya RT 012 tidak hilang hanya karena pengaturan situs masih RT 10.
+  if (rtText && !/^\d+$/.test(rtText)) problems.push(`RT "${rtText}" bukan angka`);
+  else if (rtText && Number(rtText) < 1) problems.push(`RT "${rtText}" di luar 1-${settings.rt_count}`);
+  else if (rtText && Number(rtText) > settings.rt_count) problems.push(`RT "${rtText}" di luar 1-${settings.rt_count}, tetap disimpan`);
+  if (rwText && !/^\d+$/.test(rwText)) problems.push(`RW "${rwText}" bukan angka`);
+  else if (rwText && Number(rwText) < 1) problems.push(`RW "${rwText}" di luar 1-${settings.rw_count}`);
+  else if (rwText && Number(rwText) > settings.rw_count) problems.push(`RW "${rwText}" di luar 1-${settings.rw_count}, tetap disimpan`);
+  if (gender && !["P", "L"].includes(gender)) problems.push(`jenis kelamin "${gender}" tidak dikenali, dikosongkan`);
+  if (birthDate && !importDateIsValid(birthDate)) problems.push(`tanggal lahir "${birthDate}" tidak terbaca, dikosongkan`);
   if (!contributions && dateOfDeath && !importDateIsValid(dateOfDeath)) {
-    problems.push(`tanggal wafat "${dateOfDeath}" tidak berformat YYYY-MM-DD`);
+    problems.push(`tanggal wafat "${dateOfDeath}" tidak terbaca, dikosongkan`);
   }
-  if (text("address").length > 300) problems.push("alamat lebih dari 300 karakter");
-  if (text("family_card_number").length > 32) problems.push("nomor KK lebih dari 32 karakter");
-  if (text("national_id_number").length > 32) problems.push("NIK lebih dari 32 karakter");
-  if (text("birthplace").length > 100) problems.push("tempat lahir lebih dari 100 karakter");
-  if (text("religion").length > 50) problems.push("agama lebih dari 50 karakter");
-  if (contributions && text("payment_recipient").length > 120) problems.push("penerima setoran lebih dari 120 karakter");
-  if (!contributions && familyName.length > 120) problems.push("nama keluarga lebih dari 120 karakter");
-  if (!contributions && familyRelationship.length > 60) problems.push("hubungan keluarga lebih dari 60 karakter");
   if (hasPaymentData) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(paymentPeriod)) {
       problems.push(`bulan iuran "${paymentPeriod}" tidak berformat YYYY-MM`);
@@ -395,13 +390,14 @@ function importRowProblems(row) {
     if (!paymentDate) problems.push("tanggal pembayaran kosong padahal ada setoran");
     else if (!importDateIsValid(paymentDate)) problems.push(`tanggal pembayaran "${paymentDate}" tidak berformat YYYY-MM-DD`);
     if (!/^\d+$/.test(amountText)) problems.push(`nominal "${amountText}" bukan angka bulat`);
-    else if (Number(amountText) < 1 || Number(amountText) > 1_000_000_000_000) problems.push("nominal di luar 1 sampai 1.000.000.000.000");
   }
   return problems;
 }
 
+// Hanya baris tanpa nama yang tidak bisa diimpor. Selebihnya tetap dikirim
+// dan dibersihkan di server.
 function importRowIsValid(row) {
-  return importRowProblems(row).length === 0;
+  return String(row.full_name ?? "").trim().length > 0;
 }
 
 function updateImportSummary() {
@@ -438,10 +434,10 @@ function updateImportSummary() {
     }
   }
   const problemNote = problemCounts.size
-    ? `; ${skippedCount} baris dilewati karena: ${[...problemCounts.entries()].map(([problem, count]) => `${problem} (${count} baris)`).join(", ")}`
+    ? `; ${[...problemCounts.entries()].map(([problem, count]) => `${problem} (${count} baris)`).join(", ")}`
     : "";
   document.querySelector("#import-summary").textContent = importRows.length
-    ? `${importRows.length} baris ditemukan. ${selectedRows.length} dipilih; ${validCount} siap diimpor${duplicateNote}${problemNote}.`
+    ? `${importRows.length} baris ditemukan. ${selectedRows.length} akan disalin${duplicateNote}${problemNote ? `. Catatan: ${problemNote}` : "."}`
     : "";
   const detail = document.querySelector("#import-problem-detail");
   if (detail) {
@@ -512,7 +508,7 @@ function renderImportRows() {
     selectLabel.className = "import-row-select";
     const select = document.createElement("input");
     select.type = "checkbox";
-    if (typeof row.selected !== "boolean") row.selected = !row.duplicate;
+    if (typeof row.selected !== "boolean") row.selected = importRowIsValid(row);
     select.checked = row.selected;
     select.addEventListener("change", () => {
       row.selected = select.checked;
@@ -524,14 +520,18 @@ function renderImportRows() {
     if (row.source_file) title.title = `Sumber: ${row.source_file}`;
     const problems = importRowProblems(row);
     const status = document.createElement("span");
-    status.className = problems.length
+    status.className = !importRowIsValid(row)
       ? "import-status invalid"
-      : row.duplicate
-        ? "import-status duplicate"
-        : row.ocr_confidence < 0.7 ? "import-status review" : "import-status";
-    status.textContent = problems.length
-      ? `Tidak valid: ${problems.join("; ")}`
-      : row.duplicate ? "Duplikat (boleh di-replace)" : row.ocr_confidence < 0.7 ? "Periksa OCR" : "Pratinjau";
+      : problems.length
+        ? "import-status review"
+        : row.duplicate
+          ? "import-status duplicate"
+          : row.ocr_confidence < 0.7 ? "import-status review" : "import-status";
+    status.textContent = !importRowIsValid(row)
+      ? "Tidak bisa disimpan: nama kosong"
+      : problems.length
+        ? `Perlu diperiksa: ${problems.join("; ")}`
+        : row.duplicate ? "Duplikat (boleh di-replace)" : row.ocr_confidence < 0.7 ? "Periksa OCR" : "Pratinjau";
     if (problems.length) status.title = problems.join("; ");
     heading.append(selectLabel, title, status);
     if (row.source_file) {
@@ -4899,12 +4899,12 @@ updateImportDestinationControls();
 
 const importFileInput = document.querySelector("#import-file");
 const importFileList = document.querySelector("#import-file-list");
-const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_IMPORT_FILE_BYTES = 60 * 1024 * 1024;
 const MAX_IMPORT_FILES = 500;
 // Batas total satu permintaan. Nginx bawaan hanya menerima 1 MB dan akan
 // membalas 413 lebih dulu sebelum aplikasi sempat memproses data. Base64
 // menambah ukuran sekitar 4/3, jadi total file dinilai dalam ukuran terkirim.
-const MAX_IMPORT_BODY_BYTES = 12 * 1024 * 1024;
+const MAX_IMPORT_BODY_BYTES = 72 * 1024 * 1024;
 // File dikumpulkan di sini, bukan langsung dari input, agar file yang sudah dipilih
 // tidak hilang saat input dibuka lagi untuk menambahkan file berikutnya.
 let pendingImportFiles = [];
@@ -4983,7 +4983,7 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
   importPreviewPage = 0;
   const oversize = files.filter((file) => file.size > MAX_IMPORT_FILE_BYTES);
   if (oversize.length) {
-    errorElement.textContent = `Ukuran file maksimal 10 MB. Periksa: ${oversize.map((f) => f.name).join(", ")}`;
+    errorElement.textContent = `Ukuran file maksimal 60 MB. Periksa: ${oversize.map((f) => f.name).join(", ")}`;
     return;
   }
   // Total file dibatasi juga karena dikirim dalam satu permintaan. Base64
@@ -5083,6 +5083,14 @@ document.querySelector("#import-cancel").addEventListener("click", () => {
   document.querySelector("#import-form").reset();
   importDestinationSelect.disabled = false;
 });
+// "Salin Semua Langsung" mencentang semua baris lalu memakai alur commit
+// yang sama, supaya hasilnya persis seperti impor manual.
+document.querySelector("#import-commit-all")?.addEventListener("click", () => {
+  setAllImportRowsSelected(true);
+  updateImportSummary();
+  document.querySelector("#import-commit").click();
+});
+
 document.querySelector("#import-commit").addEventListener("click", async () => {
   const errorElement = document.querySelector("#import-commit-error");
   const resultElement = document.querySelector("#import-result");
@@ -5094,7 +5102,10 @@ document.querySelector("#import-commit").addEventListener("click", async () => {
       problemCounts.set(problem, (problemCounts.get(problem) || 0) + 1);
     }
   }
-  const invalidCount = selectedImportRows.filter((row) => importRowProblems(row).length > 0).length;
+  const invalidCount = selectedImportRows.filter((row) => !importRowIsValid(row)).length;
+  // Semua baris terpilih dikirim apa adanya. Server membersihkan field yang
+  // tak terbaca dan mencatat sisanya di Tinjauan Data, jadi tidak ada data
+  // warga yang hilang karena satu kolom bermasalah.
   const selectedRows = selectedImportRows.filter(importRowIsValid).map((row) => {
     const cleanRow = {};
     for (const [field] of currentImportFields()) cleanRow[field] = row[field] ?? "";
@@ -5104,7 +5115,7 @@ document.querySelector("#import-commit").addEventListener("click", async () => {
     return cleanRow;
   });
   if (!selectedRows.length) {
-    errorElement.textContent = "Pilih minimal satu baris dengan data valid untuk diimpor.";
+    errorElement.textContent = "Pilih minimal satu baris yang punya nama untuk diimpor.";
     return;
   }
   const duplicateAction =
@@ -5122,7 +5133,7 @@ document.querySelector("#import-commit").addEventListener("click", async () => {
     if (result.payments_created) summaryParts.push(`${result.payments_created} setoran dicatat`);
     if (result.payments_updated) summaryParts.push(`${result.payments_updated} setoran diperbarui`);
     if (result.skipped_duplicates) summaryParts.push(`${result.skipped_duplicates} duplikat dilewati`);
-    if (invalidCount) summaryParts.push(`${invalidCount} baris tidak valid dilewati`);
+    if (invalidCount) summaryParts.push(`${invalidCount} baris tanpa nama dilewati`);
     resultElement.textContent = `Impor selesai: ${summaryParts.join("; ")}.`;
     resultElement.hidden = false;
     importRows = [];
@@ -5318,8 +5329,8 @@ function showImportDone(result, destinationLabel, duplicateAction, invalidCount,
       duplicateAction === "replace" ? "is-more" : "is-error",
     );
   }
-  // Baris tidak valid: gabungan temuan server dan pemeriksaan peramban,
-  // dikunci per file+baris supaya tidak terhitung ganda.
+  // Baris yang benar-benar tidak bisa disimpan: gabungan temuan server dan
+  // pemeriksaan peramban, dikunci per file+baris supaya tidak terhitung ganda.
   const invalidRows = [];
   const seenInvalid = new Set();
   for (const group of groups) {
@@ -5338,7 +5349,7 @@ function showImportDone(result, destinationLabel, duplicateAction, invalidCount,
     label: "tidak valid",
     source: "klien",
   };
-  addGroup(invalidGroup, `${invalidCount} baris tidak valid dilewati`, "is-more");
+  addGroup(invalidGroup, `${invalidCount} baris tanpa nama dilewati`, "is-more");
   const stats = document.querySelector("#import-done-stats");
   stats.replaceChildren();
   items.forEach((row) => stats.append(row));
@@ -5347,7 +5358,7 @@ function showImportDone(result, destinationLabel, duplicateAction, invalidCount,
   const problemGroup = {
     id: "__problems",
     count: problemCounts.length,
-    label: "alasan tidak valid",
+    label: "catatan",
     source: "klien",
     items: problemCounts.map(([problem]) => {
       const group = groups.find((item) => item.id === `problem:${problem}`);
@@ -5360,7 +5371,7 @@ function showImportDone(result, destinationLabel, duplicateAction, invalidCount,
     const button = document.createElement("button");
     button.type = "button";
     button.className = "is-more";
-    button.textContent = `${problemCounts.length} alasan - klik untuk rincian`;
+    button.textContent = `${problemCounts.length} catatan - klik untuk rincian`;
     button.addEventListener("click", () => openImportReport("__problems"));
     row.append(button);
     stats.append(row);

@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
-MAX_IMPORT_BYTES = 10 * 1024 * 1024
+MAX_IMPORT_BYTES = 60 * 1024 * 1024
 SUPPORTED_EXTENSIONS = {".xlsx", ".xls", ".csv", ".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp"}
 FIELD_ALIASES = {
 	"full_name": {"nama", "nama lengkap", "nama warga", "name", "full name"},
@@ -37,6 +37,38 @@ NORMALIZED_ALIASES = {
 	field: {re.sub(r"[^a-z0-9]", "", alias.lower()) for alias in aliases}
 	for field, aliases in FIELD_ALIASES.items()
 }
+# Kata kunci untuk pencocokan sebagian. Dipakai kalau judul kolom tidak sama
+# persis dengan salah satu alias di atas, misalnya "Nama Warga (Lengkap)".
+# "nama" sengaja berada di paling akhir.
+FUZZY_HEADER_KEYS = (
+	("nomorkartukeluarga", "family_card_number"),
+	("nomorkk", "family_card_number"),
+	("nomorindukkependudukan", "national_id_number"),
+	("nomorktp", "national_id_number"),
+	("tanggalmeninggal", "date_of_death"),
+	("tanggalkematian", "date_of_death"),
+	("tanggalwafat", "date_of_death"),
+	("tanggallahir", "birth_date"),
+	("tempatlahir", "birthplace"),
+	("alamatdomisili", "address"),
+	("alamat", "address"),
+	("jabatan", "relationship"),
+	("hubungan", "relationship"),
+	("agama", "religion"),
+	("jeniskelamin", "gender"),
+	("nomortelepon", "phone"),
+	("nohp", "phone"),
+	("nomorhp", "phone"),
+	("bulaniuran", "payment_period"),
+	("tanggalbayar", "paid_at"),
+	("tanggalpembayaran", "paid_at"),
+	("nominal", "amount"),
+	("namakeluarga", "living_family_name"),
+	("namaanggotakeluarga", "living_family_name"),
+	("namakerabat", "living_family_name"),
+	("namakepalakeluarga", "full_name"),
+	("nama", "full_name"),
+)
 
 
 class ImportFormatError(ValueError):
@@ -72,6 +104,14 @@ def _field_for_header(value):
 		return "birth_date"
 	if "tempatlahir" in key:
 		return "birthplace"
+	# Pencocokan sebagian: judul kolom sering punya tambahan, misalnya
+	# "Nama Warga (Lengkap)". Kata kuncinya tetap dikenali supaya file tidak
+	# ditolak hanya karena judulnya sedikit beda. Urutan penting: kolom khusus
+	# diperiksa lebih dulu, dan "nama" paling akhir supaya "Nama Keluarga"
+	# tidak ikut dianggap sebagai Nama Warga.
+	for needle, field in FUZZY_HEADER_KEYS:
+		if needle in key:
+			return field
 	return None
 
 
@@ -162,8 +202,127 @@ def _records_with_known_fields(matrix, fields, warnings):
 	return results
 
 
+MAX_HEADER_SCAN_ROWS = 200
+
+
+def _looks_like_name(value):
+	"""Tebakan nama ketika file tidak punya kolom berlabel "Nama".
+
+	Umumnya nama orang punya huruf dan mengandung spasi. Angka boleh ikut
+	(tempel seperti "BUDI 1" atau "RT 012"), asal kata utamanya berupa huruf.
+	Ini hanya dipakai sebagai cadangan, bukan sebagai aturan.
+	"""
+	text = _text(value)
+	if len(text) < 2 or len(text) > 120:
+		return False
+	if not re.fullmatch(r"[A-Za-z0-9 .,()'/-]+", text):
+		return False
+	# Butuh minimal dua huruf berurutan supaya angka dan kode tidak dianggap nama.
+	if not re.search(r"[A-Za-z]{2}", text):
+		return False
+	# Nilai umum di kolom non-nama, misalnya judul kolom lain yang terbaca.
+	if _field_for_header(text):
+		return False
+	# Angka, kode, atau tanggal saja bukan nama.
+	if re.fullmatch(r"[\d .,/()-]+", text):
+		return False
+	return True
+
+
+def _guess_name_column(matrix, data_start):
+	"""Pilih kolom yang paling mungkin berisi nama warga."""
+	best_column = None
+	best_score = 0
+	column_count = max((len(row) for row in matrix[data_start:]), default=0)
+	sample = matrix[data_start:data_start + 60]
+	# Minimal beberapa baris harus terbaca sebagai nama. Ambang ikut menyesuaikan
+	# jumlah baris supaya file kecil tidak ikut ditolak.
+	minimum = 3 if len(sample) >= 3 else 2
+	for column_index in range(column_count):
+		score = 0
+		seen = set()
+		for values in sample:
+			if column_index >= len(values):
+				continue
+			if _looks_like_name(values[column_index]):
+				text = _text(values[column_index]).upper()
+				if text not in seen:
+					seen.add(text)
+					score += 1
+				if " " in text:
+					score += 1
+		if score > best_score:
+			best_score = score
+			best_column = column_index
+	return best_column if best_score >= minimum else None
+
+
+def _is_repeated_header_row(values, reference=None):
+	"""Baris yang isinya judul kolom, bukan data warga.
+
+	`reference` adalah baris judul yang pertama kali ditemukan. Baris berikutnya
+	yang isinya sama dengan baris itu (judul kop yang terulang atau baris judul
+	yang di-copy) ikut dilewati.
+	"""
+	filled = [_text(value) for value in values if _text(value)]
+	if len(filled) < 2:
+		return False
+	if reference:
+		reference_texts = {_text(value).lower() for value in reference if _text(value)}
+		if reference_texts:
+			matches = sum(1 for text in filled if text.lower() in reference_texts)
+			if matches * 2 >= len(filled):
+				return True
+	recognized = sum(1 for text in filled if _field_for_header(text))
+	return recognized * 2 >= len(filled)
+
+
+def _records_without_header(matrix, warnings):
+	"""Impor file yang judul kolomnya tidak bisa dibaca.
+
+	Baris kop (judul lembaga, baris kosong di awal) dilewati, lalu kolom
+	yang paling mungkin berisi nama dijadikan Nama Warga. Semua kolom lain
+	dibiarkan kosong, jadi data yang ada tetap tersalin.
+	"""
+	data_start = 0
+	for row_index, row in enumerate(matrix[:MAX_HEADER_SCAN_ROWS]):
+		filled = sum(1 for value in row if _text(value))
+		if filled >= 2:
+			data_start = row_index
+			break
+	else:
+		return []
+	name_column = _guess_name_column(matrix, data_start)
+	if name_column is None:
+		return []
+	# Baris tepat sebelum tebakan kolom nama dianggap baris judul. Isinya
+	# dipakai untuk mengenali baris judul yang sama di bagian bawah file.
+	reference = next(
+		(row for row in reversed(matrix[:data_start + 1]) if sum(1 for value in row if _text(value)) >= 2),
+		None,
+	)
+	results = []
+	for values in matrix[data_start:]:
+		if name_column >= len(values) or not _looks_like_name(values[name_column]):
+			continue
+		# Baris judul kolom tidak ikut diimpor sebagai data warga.
+		if _is_repeated_header_row(values, reference):
+			continue
+		source = {"full_name": values[name_column]}
+		record = _normalize_record(source, warnings)
+		if record["full_name"]:
+			results.append(record)
+	if not results:
+		return []
+	warnings.add(
+		"Tidak ditemukan kolom berlabel 'Nama'. Kolom yang paling mungkin berisi nama "
+		"dipakai sebagai Nama Warga; periksa pratinjau dan perbaiki bila perlu."
+	)
+	return results
+
+
 def _header_row_to_records(matrix, warnings, datemode=None):
-	for row_index, row in enumerate(matrix[:50]):
+	for row_index, row in enumerate(matrix[:MAX_HEADER_SCAN_ROWS]):
 		if sum(1 for value in row if _text(value)) < 2:
 			continue  # lewati baris kosong atau baris judul kop
 		fields = [_field_for_header(value) for value in row]
@@ -175,7 +334,10 @@ def _header_row_to_records(matrix, warnings, datemode=None):
 					merged = _field_for_header(combined)
 					if merged:
 						fields[column_index] = merged
-		if "full_name" not in fields or sum(field is not None for field in fields) < 2:
+		# Satu kolom yang dikenali (Nama) sudah cukup. Dulu minimal dua kolom
+		# harus cocok, sehingga file yang hanya memuat Nama dan satu kolom
+		# lain ikut ditolak.
+		if "full_name" not in fields:
 			continue
 		data_start = row_index + 1
 		if next_row is not None and any(_field_for_header(value) for value in next_row):
@@ -191,8 +353,10 @@ def _header_row_to_records(matrix, warnings, datemode=None):
 			record = _normalize_record(source, warnings)
 			if record["full_name"]:
 				results.append(record)
-		return results
-	return []
+		if results:
+			return results
+	return _records_without_header(matrix, warnings)
+
 
 
 def _parse_csv(content, warnings):
@@ -406,7 +570,7 @@ def _parse_pdf(content, warnings):
 
 def parse_import_file(filename, content):
 	if len(content) > MAX_IMPORT_BYTES:
-		raise ImportFormatError("Ukuran file maksimal 10 MB.")
+		raise ImportFormatError("Ukuran file maksimal 60 MB.")
 	extension = Path(filename).suffix.lower()
 	if extension not in SUPPORTED_EXTENSIONS:
 		raise ImportFormatError("Format yang didukung: XLSX, XLS, CSV, DOCX, PDF, PNG, JPG, dan WebP.")
@@ -429,7 +593,10 @@ def parse_import_file(filename, content):
 	except Exception as error:
 		raise ImportFormatError("File rusak atau isinya tidak sesuai dengan ekstensi file.") from error
 	if not rows:
-		raise ImportFormatError("Tidak menemukan tabel dengan kolom Nama. Gunakan baris judul kolom seperti Nama, RT, RW, dan Tanggal Wafat.")
+		raise ImportFormatError(
+			"Isi file tidak bisa dibaca sebagai tabel warga. Pastikan file bukan kosong dan "
+			"memuat kolom nama. Bila judul kolomnya berbeda, ganti judulnya menjadi 'Nama'."
+		)
 	if any(not row.get("date_of_death") for row in rows):
 		warnings.add("Tanggal wafat belum terbaca pada sebagian baris. Baris tetap dapat diimpor dan dilengkapi kemudian.")
 	return {"rows": rows, "warnings": sorted(warnings), "filename": Path(filename).name}

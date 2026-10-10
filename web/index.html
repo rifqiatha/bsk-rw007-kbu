@@ -11,8 +11,8 @@
   <link id="dynamic-favicon" rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="/styles.css?v=20261009-06">
-  <script src="/app.js?v=20261009-03" defer></script>
-  <script src="/registration.js?v=20261009-03" defer></script>
+  <script src="/app.js?v=20261010-01" defer></script>
+  <script src="/registration.js?v=20261010-01" defer></script>
   <script type="module" src="/reveal.js"></script>
 </head>
 <body>
@@ -586,7 +586,7 @@
                     <button id="import-add-more" class="text-button" type="button">+ Tambah File</button>
                   </div>
                   <ul class="import-file-notes">
-                    <li id="import-file-format-hint">Format: XLSX, XLS, CSV, DOCX, PDF, PNG, JPG, WebP. Batas 10 MB per file, tanpa batas jumlah file dan baris.</li>
+                    <li id="import-file-format-hint">Format: XLSX, XLS, CSV, DOCX, PDF, PNG, JPG, WebP. Batas 60 MB per file, tanpa batas jumlah file dan baris.</li>
                     <li>Banyak file: tekan Ctrl lalu klik tiap file, atau Shift untuk memilih rentang. Bisa juga klik "Tambah File" berkali-kali.</li>
                   </ul>
                 </div>
@@ -627,6 +627,7 @@
                 <p class="form-error" id="import-commit-error" role="alert"></p>
                 <div class="import-actions">
                   <button id="import-cancel" class="text-button" type="button">Batal</button>
+                  <button id="import-commit-all" class="text-button" type="button">Salin Semua Langsung</button>
                   <button id="import-commit" class="primary-button" type="button">Impor Baris Dipilih <span aria-hidden="true">→</span></button>
                 </div>
               </div>
