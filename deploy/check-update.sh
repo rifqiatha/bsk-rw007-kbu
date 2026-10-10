@@ -8,15 +8,18 @@
 # pesan error versi lama.
 set -u
 
-APP_DIR="${APP_DIR:-/opt/kifayah}"
 BRANCH="${BRANCH:-main}"
-EXPECTED_BUILD="20261010-07"
+EXPECTED_BUILD="20261010-08"
+
+# Lokasi repo dicari dari posisi script ini, sehingga jalan baik di
+# /opt/kifayah maupun di /DATA/AppData/nginx/config/www (CasaOS).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_DIR="${APP_DIR:-$(dirname "$SCRIPT_DIR")}"
 
 printf '%s\n' "=== Kifayah: pemeriksaan versi ==="
 
 cd "$APP_DIR" 2>/dev/null || {
     printf '%s\n' "GAGAL: folder $APP_DIR tidak ditemukan."
-    printf '%s\n' "Cek APP_DIR bila instalasi tidak di /opt/kifayah."
     exit 1
 }
 
@@ -49,9 +52,13 @@ fi
 running_build="$(grep -m1 '^APP_BUILD' Kifayah.py 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')"
 printf 'Build di kode   : %s\n' "${running_build:-(tidak ada)}"
 
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^kifayah$'; then
+# Di CasaOS nama container bisa berbeda, jadi dicari dari docker-compose
+# di folder deploy, bukan hanya nama tetap "kifayah".
+CONTAINER="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '(^|-)kifayah$' | head -n 1)"
+if [ -n "$CONTAINER" ]; then
     # Build dari kode yang benar-benar di dalam container, bukan dari folder.
-    container_build="$(docker exec kifayah grep -m1 '^APP_BUILD' /app/Kifayah.py 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')"
+    printf 'Container        : %s\n' "$CONTAINER"
+    container_build="$(docker exec "$CONTAINER" grep -m1 '^APP_BUILD' /app/Kifayah.py 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')"
     if [ -z "$container_build" ]; then
         printf '%s\n' "Build di container: TIDAK ADA -> container memakai Kifayah.py versi lama."
         printf '%s\n' "Perbaiki dengan: sh deploy/auto-update.sh"
@@ -62,8 +69,8 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^kifayah$'; then
         printf '%s\n' "Perbaiki dengan: sh deploy/auto-update.sh"
     fi
 else
-    printf '%s\n' "Container 'kifayah' tidak berjalan."
-    printf '%s\n' "Periksa dengan: docker ps -a | grep kifayah"
+    printf '%s\n' "Container Kifayah tidak berjalan."
+    printf '%s\n' "Periksa dengan: docker ps -a | grep -i kifayah"
 fi
 
 # 4. Catatan auto-update terakhir.

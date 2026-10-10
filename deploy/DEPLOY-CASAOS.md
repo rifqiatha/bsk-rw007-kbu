@@ -170,6 +170,24 @@ Untuk Caddy, tidak perlu disetel karena Caddy tidak membatasi ukuran badan.
 
 Setelah selesai, uji dengan mengimpor beberapa file sekaligus.
 
+## 5b. Lokasi repo tidak selalu `/opt/kifayah`
+
+Pada CasaOS, repo sering diletakkan di `/DATA/AppData/nginx/config/www`
+supaya Nginx bisa menyajikan layanannya. `auto-update.sh`, `check-update.sh`, dan
+unit systemd sudah mencari lokasi repo sendiri, jadi ketiganya tetap jalan
+walau repo tidak di `/opt/kifayah`. Kalau memindahkan repo ke tempat lain,
+jalankan manual dengan menyertakan lokasi:
+
+```bash
+APP_DIR=/DATA/AppData/nginx/config/www sh /path/ke/repo/deploy/auto-update.sh
+```
+
+Untuk melihat repo terdeteksi di mana:
+
+```bash
+sh /DATA/AppData/nginx/config/www/deploy/check-update.sh
+```
+
 ## 6. Aktifkan auto-update dari push
 
 Pasang timer systemd agar perubahan di GitHub langsung dipakai server:
@@ -178,6 +196,7 @@ Pasang timer systemd agar perubahan di GitHub langsung dipakai server:
 sudo cp /opt/kifayah/deploy/kifayah-auto-update.service /etc/systemd/system/
 sudo cp /opt/kifayah/deploy/kifayah-auto-update.timer /etc/systemd/system/
 sudo git config --global --add safe.directory /opt/kifayah
+sudo git config --global --add safe.directory /DATA/AppData/nginx/config/www
 sudo systemctl daemon-reload
 sudo systemctl enable --now kifayah-auto-update.timer
 systemctl list-timers | grep kifayah

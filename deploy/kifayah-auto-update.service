@@ -6,4 +6,9 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/opt/kifayah/deploy/auto-update.sh
+# systemd tidak bisa menebak lokasi repo, jadi systemd ExecStart tidak ditulis
+# dengan path repo. Sebagai gantinya, lokasi repo dicari di sini lewat
+# penanda Kifayah.py. Dengan begitu unit ini jalan baik di /opt/kifayah maupun
+# di /DATA/AppData/nginx/config/www (CasaOS) tanpa perlu diedit manual.
+Environment=APP_DIR=
+ExecStart=/bin/sh -c 'for d in /opt/kifayah /DATA/AppData/nginx/config/www "$APP_DIR"; do [ -n "$d" ] && [ -f "$d/deploy/auto-update.sh" ] && exec /bin/sh "$d/deploy/auto-update.sh"; done; echo "Kifayah: repo tidak ditemukan di /opt/kifayah atau /DATA/AppData/nginx/config/www" >&2; exit 1'

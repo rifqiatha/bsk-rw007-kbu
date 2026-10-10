@@ -3,11 +3,21 @@
 # Dijalankan otomatis oleh systemd timer (setiap 60 detik) atau manual.
 set -eu
 
-APP_DIR="${APP_DIR:-/opt/kifayah}"
 BRANCH="${BRANCH:-main}"
+
+# Lokasi repo tidak selalu /opt/kifayah. Pada CasaOS repo sering diletakkan
+# di /DATA/AppData/nginx/config/www. Script ini mencari sendiri lewat lokasi
+# dirinya, jadi tidak perlu mengatur APP_DIR di server mana pun.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_DIR="${APP_DIR:-$(dirname "$SCRIPT_DIR")}"
 COMPOSE_DIR="$APP_DIR/deploy"
 LOG="$APP_DIR/deploy/auto-update.log"
 BACKUP_DIR="$APP_DIR/deploy/backups"
+
+if [ ! -f "$APP_DIR/Kifayah.py" ]; then
+    printf '%s  GAGAL: Kifayah.py tidak ditemukan di %s\n' "$(date -Iseconds)" "$APP_DIR" >&2
+    exit 1
+fi
 
 mkdir -p "$BACKUP_DIR"
 
@@ -19,7 +29,7 @@ cd "$APP_DIR"
 
 # Perubahan lokal di-stash, bukan sekadar dilewati. Dulu script berhenti
 # begitu ada satu file yang berubah, sehingga server bisa tertinggal banyak
-# versi tanpa ada yang_MEMBER tahu. Stash dipakai supaya update tetap jalan.
+# versi tanpa ada yang tahu. Stash dipakai supaya update tetap jalan.
 if ! git diff --quiet 2>/dev/null; then
     log "Ada perubahan lokal yang belum di-commit; disimpan lewat stash lalu update dilanjutkan."
     if ! git stash push --include-untracked -m "auto-update $(date -Iseconds)" >>"$LOG" 2>&1; then
@@ -43,10 +53,23 @@ log "HEAD lokal = $current ; HEAD remote = $incoming"
 
 log "Ada versi baru: $(echo "$current" | cut -c1-7) -> $(echo "$incoming" | cut -c1-7)"
 
-# Cadangkan database sebelum mengganti kode.
-if [ -f "$APP_DIR/deploy/persist/kifayah.sqlite3" ]; then
-    cp "$APP_DIR/deploy/persist/kifayah.sqlite3" "$BACKUP_DIR/kifayah-$(date +%Y%m%d-%H%M%S).sqlite3"
+# Cadangkan database sebelum mengganti kode. Lokasi database berbeda-bedanya:
+# di /opt/kifayah biasanya deploy/persist, sedangkan di CasaOS database ikut
+# volume mount sehingga ada di root repo. Ketiganya dicoba, dan lokasi yang
+# dipakai dicatat agar jelas database mana yang diamankan.
+DB_PATH=""
+for candidate in "$APP_DIR/deploy/persist/kifayah.sqlite3" "$APP_DIR/kifayah.sqlite3" "$APP_DIR/deploy/persist/www/kifayah.sqlite3"; do
+    if [ -f "$candidate" ]; then
+        DB_PATH="$candidate"
+        break
+    fi
+done
+if [ -n "$DB_PATH" ]; then
+    cp "$DB_PATH" "$BACKUP_DIR/kifayah-$(date +%Y%m%d-%H%M%S).sqlite3"
     ls -1t "$BACKUP_DIR"/*.sqlite3 2>/dev/null | tail -n +11 | xargs -r rm -f
+    log "Cadangan database: $DB_PATH"
+else
+    log "PERINGATAN: kifayah.sqlite3 tidak ditemukan, tidak ada cadangan dibuat."
 fi
 
 if ! git merge --ff-only "origin/$BRANCH"; then
