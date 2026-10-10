@@ -1050,7 +1050,12 @@ dialog:not([open]) { display: none !important; }
 .import-status.invalid { flex: 1 1 auto; color: var(--rust); font-weight: 500; overflow-wrap: anywhere; }
 .import-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
 .import-fields label { display: grid; min-width: 0; gap: 5px; color: var(--muted); font-size: calc((12.5px) * var(--site-font-scale, 1)); }
-.import-fields input { min-width: 0; min-height: 42px !important; padding: 9px !important; border-radius: var(--radius-control); font-size: calc((13px) * var(--site-font-scale, 1)) !important; }
+/* Kolom pratinjau memakai input dan select (Jenis Kelamin). Keduanya harus
+   ditata bersama; kalau select tidak ikut, ia tampil sebagai kotak bawaan
+   browser yang berbeda dari input di sebelahnya. */
+.import-fields input, .import-fields select { min-width: 0; min-height: 42px !important; padding: 9px !important; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); color: var(--ink); background: var(--surface-soft); font-size: calc((13px) * var(--site-font-scale, 1)) !important; }
+.import-fields select { appearance: none; padding-right: 30px !important; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 16px) 19px, calc(100% - 11px) 19px; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+.import-fields input:focus, .import-fields select:focus { border-color: var(--green); background-color: var(--surface); outline: none; }
 .import-actions { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 15px; }
 .import-actions .text-button { justify-self: start; }
 .import-actions .primary-button:disabled { cursor: not-allowed; opacity: .5; }
