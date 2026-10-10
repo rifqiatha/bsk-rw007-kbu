@@ -1589,6 +1589,24 @@ async function withProcessing(operation, message) {
 // Contohnya 413 Request Entity Too Large saat unggah melebihi client_max_body_size.
 // response.json() akan melempar SyntaxError dan menutupi penyebab aslinya, jadi
 // badan respons dibaca sebagai teks lebih dulu dan diterjemahkan ke pesan yang jelas.
+// Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
+// APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
+// dan beberapa fitur baru tidak akan bekerja.
+const EXPECTED_BACKEND_BUILD = "20261010-06";
+let backendBuildChecked = false;
+
+// Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
+function warnOutdatedBackend() {
+  if (backendBuildChecked) return;
+  backendBuildChecked = true;
+  const notice = document.querySelector("#import-build-label");
+  if (notice) {
+    notice.textContent = "Peringatan: server menjalankan kode versi lama. Fitur baru mungkin tidak berfungsi. Jalankan auto-update di server.";
+    notice.classList.add("is-error");
+    notice.hidden = false;
+  }
+}
+
 async function readApiResponse(response, fallbackMessage) {
   const text = await response.text();
   let payload = null;
@@ -5019,7 +5037,22 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
       rows: perFileResults.flatMap((part) => part.rows),
       warnings: perFileResults.flatMap((part) => part.warnings || []),
       files: perFileResults.flatMap((part) => part.files || []),
+      builds: perFileResults.map((part) => part.build).filter(Boolean),
     };
+    // Server yang belum diperbarui tidak mengirim nomor build dan masih
+    // memakai pesan lama. Keduanya dikenali di sini supaya tidak perlu
+    // menebak penyebabnya.
+    const missingBuild = perFileResults.every((part) => !part.build);
+    const staleMessage = "Tidak ditemukan tabel dengan kolom Nama pada file yang dipilih.";
+    const staleBackend = missingBuild || perFileResults.some((part) =>
+      (part.warnings || []).some((w) => typeof w === "string" && w.includes(staleMessage)));
+    if (staleBackend && !payload.rows.length) {
+      warnOutdatedBackend();
+      payload.warnings.unshift(
+        "Server belum menjalankan kode terbaru, sehingga impor gagal dengan pesan lama. "
+        + "Di server jalankan: cd /opt/kifayah && git reset --hard origin/main && sh deploy/auto-update.sh",
+      );
+    }
     importRows = payload.rows;
     const notice = document.querySelector("#import-notice");
     const noticeSummary = document.querySelector("#import-notice-summary");
@@ -6356,12 +6389,22 @@ document.addEventListener("keydown", (event) => {
 if (isAdminPage) {
   dialog.setAttribute("open", "");
   request("/api/session").then(({ admin, user, force_password_change, build }) => {
-    // Nomor build backend ditampilkan di panel impor. Kalau kode di server
-    // belum terbaru, penanda ini yang mengatakannya.
+    // Nomor build backend ditampilkan di panel impor. Kalau build tidak ada
+    // sama sekali, berarti server masih menjalankan Kifayah.py versi lama;
+    // hal ini yang membuat fitur impor baru tidak berjalan.
     const buildLabel = document.querySelector("#import-build-label");
-    if (buildLabel && build) {
-      buildLabel.textContent = `Versi server: ${build}`;
-      buildLabel.title = "Kalau versinya berbeda dari kode terbaru, jalankan auto-update di server.";
+    if (buildLabel) {
+      if (!build) {
+        warnOutdatedBackend();
+      } else if (build !== EXPECTED_BACKEND_BUILD) {
+        buildLabel.textContent = `Versi server: ${build} (kode terbaru: ${EXPECTED_BACKEND_BUILD}). Jalankan auto-update di server.`;
+        buildLabel.classList.add("is-error");
+        buildLabel.hidden = false;
+      } else {
+        buildLabel.textContent = `Versi server: ${build}`;
+        buildLabel.title = "Kode server sudah paling baru.";
+        buildLabel.hidden = false;
+      }
     }
     // Akun warga yang kebetulan membuka /admin langsung diarahkan ke
     // dashboard-nya, bukan melihat panel pengelola yang tidak berguna.

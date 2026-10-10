@@ -38,7 +38,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261010-04"
+APP_BUILD = "20261010-06"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -1426,6 +1426,7 @@ def parse_import_files(files):
 		"files": files_summary,
 		"total_bytes": total_bytes,
 		"failed": sum(1 for entry in files_summary if entry["status"].startswith("gagal")),
+		"build": APP_BUILD,
 	}
 
 
@@ -4072,6 +4073,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"admin": True,
 				"user": {"id": user["id"], "username": user["username"], "display_name": user["display_name"], "role": user["role"], "permissions": sorted(set(json.loads(user["permissions"] or "[]")) or ROLE_PERMISSIONS.get(user["role"], set()))},
 					"force_password_change": bool(user["force_password_change"]),
+				"build": APP_BUILD,
 				},
 				{"Set-Cookie": f"kifayah_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200"},
 			)
