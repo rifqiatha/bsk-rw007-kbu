@@ -10,7 +10,7 @@ set -u
 
 APP_DIR="${APP_DIR:-/opt/kifayah}"
 BRANCH="${BRANCH:-main}"
-EXPECTED_BUILD="20261010-06"
+EXPECTED_BUILD="20261010-07"
 
 printf '%s\n' "=== Kifayah: pemeriksaan versi ==="
 

@@ -230,31 +230,54 @@ def _looks_like_name(value):
 
 
 def _guess_name_column(matrix, data_start):
-	"""Pilih kolom yang paling mungkin berisi nama warga."""
-	best_column = None
-	best_score = 0
-	column_count = max((len(row) for row in matrix[data_start:]), default=0)
-	sample = matrix[data_start:data_start + 60]
+	"""Pilih kolom yang paling mungkin berisi nama warga.
+
+	Kolom dinilai dari beberapa sudut supaya file dengan berbagai bentuk tetap
+	aman: berapa banyak baris yang isinya terbaca sebagai nama, berapa banyak
+	nilai berbeda (kolom angka atau kode nilainya sama semua), dan apakah nilai
+	itu punya spasi (nama orang umumnya dua kata atau lebih). Kolom yang
+	kosongnya banyak ikut diabaikan.
+	"""
+	sample = [values for values in matrix[data_start:data_start + 60] if any(_text(value) for value in values)]
+	if not sample:
+		return None
 	# Minimal beberapa baris harus terbaca sebagai nama. Ambang ikut menyesuaikan
 	# jumlah baris supaya file kecil tidak ikut ditolak.
 	minimum = 3 if len(sample) >= 3 else 2
+	column_count = max(len(values) for values in sample)
+	best_column = None
+	best_score = 0.0
 	for column_index in range(column_count):
-		score = 0
-		seen = set()
+		name_like = 0
+		distinct = set()
+		spaced = 0
 		for values in sample:
 			if column_index >= len(values):
 				continue
 			if _looks_like_name(values[column_index]):
+				name_like += 1
 				text = _text(values[column_index]).upper()
-				if text not in seen:
-					seen.add(text)
-					score += 1
+				distinct.add(text)
 				if " " in text:
-					score += 1
-		if score > best_score:
+					spaced += 1
+		if name_like < minimum:
+			continue
+		# Kolom yang kosongnya banyak (mis. kolom sisa di kanan tabel) tidak
+		# boleh mengalahkan kolom nama yang terisi penuh.
+		ratio = name_like / len(sample)
+		if ratio < 0.6:
+			continue
+		score = (
+			ratio
+			+ 0.3 * (len(distinct) / name_like)
+			+ 0.3 * (spaced / name_like)
+		)
+		# Di skor sama, kolom paling kiri dipilih. Nama warga umumnya ditulis
+		# lebih dulu, sedangkan kolom catatan/alamat biasanya berada di kanan.
+		if score > best_score + 1e-9:
 			best_score = score
 			best_column = column_index
-	return best_column if best_score >= minimum else None
+	return best_column
 
 
 def _is_repeated_header_row(values, reference=None):
@@ -293,16 +316,18 @@ def _records_without_header(matrix, warnings):
 	else:
 		return []
 	name_column = _guess_name_column(matrix, data_start)
-	if name_column is None:
-		return []
-	# Baris tepat sebelum tebakan kolom nama dianggap baris judul. Isinya
-	# dipakai untuk mengenali baris judul yang sama di bagian bawah file.
-	reference = next(
-		(row for row in reversed(matrix[:data_start + 1]) if sum(1 for value in row if _text(value)) >= 2),
-		None,
-	)
+	# Baris pada posisi data_start dianggap baris judul bila isinya memang
+	# berisi judul kolom yang dikenali. Baris judul itu dipakai untuk
+	# melewati judul berulang di bagian bawah file. Kalau baris tersebut
+	# bukan judul (file tanpa baris judul sama sekali), acuan tidak diambil
+	# dari sana supaya baris data pertama tidak ikut terlewat.
+	reference = None
+	if data_start > 0 and any(_field_for_header(value) for value in matrix[data_start]):
+		reference = matrix[data_start]
 	results = []
-	for values in matrix[data_start:]:
+	# Tanpa tebakan kolom, seluruh kolom dilewati dan hanya upaya terakhir di
+	# bawah yang dipakai. Jadi file tidak langsung ditolak.
+	for values in ([] if name_column is None else matrix[data_start:]):
 		if name_column >= len(values) or not _looks_like_name(values[name_column]):
 			continue
 		# Baris judul kolom tidak ikut diimpor sebagai data warga.
@@ -313,11 +338,39 @@ def _records_without_header(matrix, warnings):
 		if record["full_name"]:
 			results.append(record)
 	if not results:
-		return []
+		# Upaya terakhir: tidak ada satu kolom pun yang layak ditebak. Alih-alih
+		# menolak seluruh file (dulu muncul sebagai "Tidak ditemukan tabel dengan
+		# kolom Nama"), nama diambil dari sel teks pertama yang terbaca sebagai
+		# nama pada tiap baris. Hasilnya tetap masuk pratinjau untuk diperiksa.
+		results = _records_from_name_like_cells(matrix, data_start, reference, warnings)
+		if not results:
+			return []
+		warnings.add(
+			"Kolom nama tidak dapat dikenali pada file ini. Nama diambil dari sel teks "
+			"pertama pada tiap baris; periksa pratinjau dan perbaiki bila perlu."
+		)
+		return results
 	warnings.add(
 		"Tidak ditemukan kolom berlabel 'Nama'. Kolom yang paling mungkin berisi nama "
 		"dipakai sebagai Nama Warga; periksa pratinjau dan perbaiki bila perlu."
 	)
+	return results
+
+
+def _records_from_name_like_cells(matrix, data_start, reference, warnings):
+	"""Ambil nama sel per baris ketika tidak ada kolom nama yang bisa ditebak."""
+	results = []
+	for values in matrix[data_start:]:
+		if not any(_text(value) for value in values):
+			continue
+		if _is_repeated_header_row(values, reference):
+			continue
+		candidate = next((value for value in values if _looks_like_name(value)), None)
+		if candidate is None:
+			continue
+		record = _normalize_record({"full_name": candidate}, warnings)
+		if record["full_name"]:
+			results.append(record)
 	return results
 
 

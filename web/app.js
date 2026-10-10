@@ -1592,7 +1592,7 @@ async function withProcessing(operation, message) {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261010-06";
+const EXPECTED_BACKEND_BUILD = "20261010-07";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
@@ -5039,18 +5039,30 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
       files: perFileResults.flatMap((part) => part.files || []),
       builds: perFileResults.map((part) => part.build).filter(Boolean),
     };
-    // Server yang belum diperbarui tidak mengirim nomor build dan masih
-    // memakai pesan lama. Keduanya dikenali di sini supaya tidak perlu
-    // menebak penyebabnya.
-    const missingBuild = perFileResults.every((part) => !part.build);
+    // Server yang belum diperbarui tidak mengirim nomor build atau mengirim
+    // nomor build lama, dan masih memakai pesan lama. Ketiganya dikenali di
+    // sini supaya tidak perlu menebak penyebabnya. Hanya respons yang benar-
+    // benar diterima yang dinilai; permintaan yang gagal (versi salah, jaringan,
+    // dan lainnya) tidak boleh disalahartikan sebagai server versi lama.
+    const answered = perFileResults.filter((part) => Array.isArray(part.files));
+    const reportedBuilds = answered.map((part) => part.build).filter(Boolean);
+    const missingBuild = answered.length > 0 && reportedBuilds.length === 0;
+    const oldBuild = reportedBuilds.some((build) => build !== EXPECTED_BACKEND_BUILD);
     const staleMessage = "Tidak ditemukan tabel dengan kolom Nama pada file yang dipilih.";
-    const staleBackend = missingBuild || perFileResults.some((part) =>
+    const staleBackend = missingBuild || oldBuild || answered.some((part) =>
       (part.warnings || []).some((w) => typeof w === "string" && w.includes(staleMessage)));
     if (staleBackend && !payload.rows.length) {
       warnOutdatedBackend();
       payload.warnings.unshift(
         "Server belum menjalankan kode terbaru, sehingga impor gagal dengan pesan lama. "
         + "Di server jalankan: cd /opt/kifayah && git reset --hard origin/main && sh deploy/auto-update.sh",
+      );
+    } else if (!payload.rows.length) {
+      // Server sudah terbaru, jadi masalahnya ada di file. Catalan apa yang
+      // perlu diperbaiki supaya pengelola tidak mencari penyebab di server.
+      payload.warnings.push(
+        "Tidak ada baris yang terbaca dari file di atas. Pastikan file memuat baris judul "
+        + "kolom dan baris data di bawahnya, lalu unggah ulang sebagai .xlsx.",
       );
     }
     importRows = payload.rows;

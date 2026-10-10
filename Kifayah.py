@@ -38,7 +38,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261010-06"
+APP_BUILD = "20261010-07"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
