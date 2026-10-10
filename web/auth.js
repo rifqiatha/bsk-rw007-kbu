@@ -92,9 +92,9 @@ function showForm(register) {
   registerForm.hidden = !register;
   document.querySelector("#auth-title").textContent = register ? "Daftar Warga" : "Masuk";
   document.querySelector("#auth-description").hidden = register;
-  document.querySelector("#auth-description").textContent = "Masuk untuk membuka dashboard warga.";
+  document.querySelector("#auth-description").textContent = "Masuk untuk membuka dashboard warga. Akun admin dan pengelola juga dapat masuk dari sini.";
   document.querySelector(".auth-heading .eyebrow").hidden = false;
-  document.querySelector(".auth-heading .eyebrow").textContent = register ? "Buat akun" : "Ruang Warga";
+  document.querySelector(".auth-heading .eyebrow").textContent = register ? "Buat akun" : "Masuk";
   if (!register) document.querySelector("#login-form input[name='username']").focus();
   else document.querySelector("#register-form input[name='full_name']").focus();
 }
@@ -132,9 +132,11 @@ loginForm.addEventListener("submit", async (event) => {
       username: values.get("username"),
       password: values.get("password"),
     });
+    // Admin dan pengelola diarahkan ke panelnya. Dulu akun admin justru
+    // ditolak di halaman ini sehingga pengguna harus mengetik /admin sendiri.
     if (result.user?.role !== "Warga") {
-      await fetch("/api/logout", { method: "POST" });
-      throw new Error("Akun admin/pengelola masuk melalui halaman admin.");
+      window.location.href = "/admin";
+      return;
     }
     window.location.href = "/dashboard-warga";
   } catch (error) {

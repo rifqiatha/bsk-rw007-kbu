@@ -6363,6 +6363,12 @@ if (isAdminPage) {
       buildLabel.textContent = `Versi server: ${build}`;
       buildLabel.title = "Kalau versinya berbeda dari kode terbaru, jalankan auto-update di server.";
     }
+    // Akun warga yang kebetulan membuka /admin langsung diarahkan ke
+    // dashboard-nya, bukan melihat panel pengelola yang tidak berguna.
+    if (admin && user?.role === "Warga") {
+      window.location.replace("/dashboard-warga");
+      return;
+    }
     setAdminMode(admin, user, force_password_change);
     if (admin && !force_password_change && user?.role !== "Warga") return refreshRecords();
   }).catch(() => setAdminMode(false));
