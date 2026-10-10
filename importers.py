@@ -132,7 +132,7 @@ def _parse_date(value, excel_datemode=None):
 		return ""
 	# Format tak lazim (pemisah campur, tahun 2-3 digit, salah ketik OCR)
 	# ditangani normalize_flexible_date; hasilnya dikembalikan apa adanya
-	# bila memang tidak bisa ditebak supaya Organize bisa memperbaiki.
+	# bila memang tidak bisa ditebak supaya pengelola bisa memperbaiki sendiri.
 	return normalize_flexible_date(text)
 
 
@@ -833,7 +833,7 @@ def normalize_flexible_date(value, today=None):
 
 	Menangani pemisah campuran (/ - . ' spasi), tahun 2-3 digit, dan salah
 	ketik akibat OCR seperti "16/101/982" atau "18/081977". Nilai yang tidak
-	mungkin ditebak dikembalikan apa adanya supaya Organize bisa reviewing.
+	mungkin ditebak dikembalikan apa adanya supaya pengelola bisa memperbaikinya.
 	"""
 	if isinstance(value, datetime):
 		return value.date().isoformat()

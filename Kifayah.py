@@ -756,7 +756,7 @@ def parse_iso_date(value, label):
 
 
 def normalize_import_date(value):
-	"""Rapikan tanggal yang diketik Organize sebelum divalidasi.
+	"""Rapikan tanggal yang diketik manual sebelum divalidasi.
 
 	Format tak lazim seperti "07\'08\'1976" atau "14/01/969" diubah menjadi
 	YYYY-MM-DD. Nilai yang tidak bisa ditebak dikembalikan apa adanya supaya
