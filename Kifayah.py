@@ -37,7 +37,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261010-13"
+APP_BUILD = "20261010-14"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -2761,6 +2761,13 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				record["family"] = family_by_record.get(record["id"], [])
 				record["issue_count"] = issue_counts.get(("record", record["id"]), 0)
 			self.send_json(200, {"records": records, "role": self.current_admin["role"]})
+			return
+		if path == "/health":
+			# Dipakai health check Docker dan CasaOS. Tanpa rute ini, probe
+			# tersebut membanjiri log dengan 404 padahal aplikasi sehat.
+			with connect_database() as connection:
+				connection.execute("SELECT 1").fetchone()
+			self.send_json(200, {"status": "ok", "build": APP_BUILD})
 			return
 		if path == "/api/session":
 			user = self.current_user()
