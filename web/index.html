@@ -11,8 +11,8 @@
   <link id="dynamic-favicon" rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="/styles.css?v=20261009-06">
-  <script src="/app.js?v=20261010-03" defer></script>
-  <script src="/registration.js?v=20261010-03" defer></script>
+  <script src="/app.js?v=20261010-04" defer></script>
+  <script src="/registration.js?v=20261010-04" defer></script>
   <script type="module" src="/reveal.js"></script>
 </head>
 <body>
@@ -576,6 +576,7 @@
           <section id="admin-view-import" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-import" tabindex="0" data-admin-panel="import" hidden>
             <section id="import-task-panel" class="admin-section import-section" aria-labelledby="import-title">
               <h3 id="import-title">Impor Data Dari File</h3>
+              <p class="form-hint" id="import-build-label" role="status"></p>
               <label>Import data ke<select id="import-destination"><option value="records">Daftar Warga - Wafat</option><option value="contributions">Daftar Warga - Iuran</option></select></label>
               <a id="import-template-link" class="template-link" href="/api/admin/import/template.xlsx">Unduh Template XLSX</a>
               <form id="import-form" class="form-stack">

@@ -35,6 +35,10 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 # proxy (lihat deploy/nginx-kifayah.conf), kalau tidak proxy membalas 413 lebih
 # dulu dan aplikasi tidak pernah menerima datanya.
 MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
+# Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
+# bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
+# naik setiap kali alur impor berubah.
+APP_BUILD = "20261010-04"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -965,11 +969,13 @@ def salvage_import_row(destination, payload, settings):
 
 
 def records_import_keys(row):
-	"""Kunci unik warga wafat.
+	"""Kunci unik warga.
 
-	Tanggal wafat tidak selalu tersedia, jadi NIK dan kombinasi nama + area
-	dipakai sebagai kunci cadangan. Tanpa ini, impor data yang belum berstatus
-	wafat selalu lolos sebagai data baru dan menggandakan entri.
+	Urutan kekuatan: NIK > nama+tanggal wafat+area > nama+area.
+	Key "nama-area" dipakai hanya sebagai cadangan untuk data yang belum punya
+	tanggal wafat maupun NIK, karena dua orang dengan nama sama di satu RT
+	 memang bisa terjadi. Tanpa cadangan ini, impor berulang akan menggandakan
+	setiap entri yang belum berstatus wafat.
 	"""
 	name = " ".join(str(row.get("full_name") or "").casefold().split())
 	if not name:
@@ -982,7 +988,9 @@ def records_import_keys(row):
 		keys.add(("wafat", name, area, date_of_death))
 	if national_id:
 		keys.add(("nik", national_id))
-	keys.add(("nama-area", name, area))
+	# Cadangan longgar hanya dipakai bila tidak ada identitas yang lebih kuat.
+	if not date_of_death and not national_id:
+		keys.add(("nama-area", name, area))
 	return keys
 
 
@@ -2742,6 +2750,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				"admin": bool(user),
 					"user": {"id": user["id"], "username": user["username"], "display_name": user["display_name"], "role": user["role"], "permissions": sorted(user["permissions"])} if user else None,
 				"force_password_change": bool(user and user["force_password_change"]),
+				"build": APP_BUILD,
 			})
 			return
 		if path == "/api/admin/import/template.xlsx":

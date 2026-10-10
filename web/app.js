@@ -4901,10 +4901,8 @@ const importFileInput = document.querySelector("#import-file");
 const importFileList = document.querySelector("#import-file-list");
 const MAX_IMPORT_FILE_BYTES = 60 * 1024 * 1024;
 const MAX_IMPORT_FILES = 500;
-// Batas total satu permintaan. Nginx bawaan hanya menerima 1 MB dan akan
-// membalas 413 lebih dulu sebelum aplikasi sempat memproses data. Base64
-// menambah ukuran sekitar 4/3, jadi total file dinilai dalam ukuran terkirim.
-const MAX_IMPORT_BODY_BYTES = 72 * 1024 * 1024;
+// Tidak ada lagi batas total permintaan: berkas dikirim satu per satu, jadi
+// ukuran POST hanya sebesar satu berkas.
 // File dikumpulkan di sini, bukan langsung dari input, agar file yang sudah dipilih
 // tidak hilang saat input dibuka lagi untuk menambahkan file berikutnya.
 let pendingImportFiles = [];
@@ -4986,30 +4984,42 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
     errorElement.textContent = `Ukuran file maksimal 60 MB. Periksa: ${oversize.map((f) => f.name).join(", ")}`;
     return;
   }
-  // Total file dibatasi juga karena dikirim dalam satu permintaan. Base64
-  // menambah sekitar 4/3 dari ukuran asli.
-  const totalFileBytes = files.reduce((sum, file) => sum + file.size, 0);
-  const estimatedBodyBytes = totalFileBytes * 1.37 + 64 * 1024;
-  if (estimatedBodyBytes > MAX_IMPORT_BODY_BYTES) {
-    const megabytes = (totalFileBytes / 1024 / 1024).toFixed(1);
-    const limitMegabytes = (MAX_IMPORT_BODY_BYTES / 1024 / 1024).toFixed(0);
-    errorElement.textContent = `Total file terlalu besar (${megabytes} MB, batas ${limitMegabytes} MB). Kurangi jumlah file lalu ulangi.`;
-    return;
-  }
+	// Berkas dikirim satu per satu, jadi total ukuran tidak lagi menjadi
+  // masalah. Yang diperiksa hanya ukuran tiap berkas.
   importDestination = importDestinationSelect.value;
   importDestinationSelect.disabled = true;
   try {
-    const encodedFiles = [];
+    // File dikirim satu per satu, lalu digabung di peramban. Mengirim
+    // sekaligus membuat satu permintaan besar (base64 menambah sekitar 4/3 dari
+    // ukuran asli) yang mudah ditolak proxy sebelum sampai ke server, dan
+    // satu file bermasalah ikut membatalkan semua file lain.
+    const perFileResults = [];
     for (const [index, file] of files.entries()) {
-      encodedFiles.push({
-        filename: file.name,
-        content_base64: await imageBase64(file, `Menyiapkan file ${index + 1} dari ${files.length}...`),
-      });
+      try {
+        const encoded = await imageBase64(file, `Menyiapkan file ${index + 1} dari ${files.length}...`);
+        const part = await request("/api/admin/import/preview", {
+          method: "POST",
+          body: JSON.stringify({
+            destination: importDestination,
+            files: [{ filename: file.name, content_base64: encoded }],
+          }),
+        });
+        perFileResults.push(part);
+      } catch (error) {
+        // Satu file gagal tidak boleh menghentikan file lain. Kegagalan
+        // dicatat sebagai entri file supaya muncul di panel rincian.
+        perFileResults.push({
+          rows: [],
+          warnings: [`${file.name}: ${error.message}`],
+          files: [{ filename: file.name, rows: 0, status: `gagal: ${error.message}` }],
+        });
+      }
     }
-    const payload = await request("/api/admin/import/preview", {
-      method: "POST",
-      body: JSON.stringify({ destination: importDestination, files: encodedFiles }),
-    });
+    const payload = {
+      rows: perFileResults.flatMap((part) => part.rows),
+      warnings: perFileResults.flatMap((part) => part.warnings || []),
+      files: perFileResults.flatMap((part) => part.files || []),
+    };
     importRows = payload.rows;
     const notice = document.querySelector("#import-notice");
     const noticeSummary = document.querySelector("#import-notice-summary");
@@ -6345,7 +6355,14 @@ document.addEventListener("keydown", (event) => {
 
 if (isAdminPage) {
   dialog.setAttribute("open", "");
-  request("/api/session").then(({ admin, user, force_password_change }) => {
+  request("/api/session").then(({ admin, user, force_password_change, build }) => {
+    // Nomor build backend ditampilkan di panel impor. Kalau kode di server
+    // belum terbaru, penanda ini yang mengatakannya.
+    const buildLabel = document.querySelector("#import-build-label");
+    if (buildLabel && build) {
+      buildLabel.textContent = `Versi server: ${build}`;
+      buildLabel.title = "Kalau versinya berbeda dari kode terbaru, jalankan auto-update di server.";
+    }
     setAdminMode(admin, user, force_password_change);
     if (admin && !force_password_change && user?.role !== "Warga") return refreshRecords();
   }).catch(() => setAdminMode(false));
