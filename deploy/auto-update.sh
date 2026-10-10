@@ -17,9 +17,15 @@ log() {
 
 cd "$APP_DIR"
 
+# Perubahan lokal di-stash, bukan sekadar dilewati. Dulu script berhenti
+# begitu ada satu file yang berubah, sehingga server bisa tertinggal banyak
+# versi tanpa ada yang_MEMBER tahu. Stash dipakai supaya update tetap jalan.
 if ! git diff --quiet 2>/dev/null; then
-    log "LEWATI: ada perubahan lokal di server, tidak ditimpa."
-    exit 0
+    log "Ada perubahan lokal yang belum di-commit; disimpan lewat stash lalu update dilanjutkan."
+    if ! git stash push --include-untracked -m "auto-update $(date -Iseconds)" >>"$LOG" 2>&1; then
+        log "GAGAL: tidak bisa menyimpan perubahan lokal. Jalankan 'cd $APP_DIR && git status' untuk diperiksa."
+        exit 0
+    fi
 fi
 
 current="$(git rev-parse HEAD)"
@@ -33,6 +39,8 @@ if [ "$current" = "$incoming" ]; then
     exit 0
 fi
 
+log "HEAD lokal = $current ; HEAD remote = $incoming"
+
 log "Ada versi baru: $(echo "$current" | cut -c1-7) -> $(echo "$incoming" | cut -c1-7)"
 
 # Cadangkan database sebelum mengganti kode.
@@ -42,14 +50,25 @@ if [ -f "$APP_DIR/deploy/persist/kifayah.sqlite3" ]; then
 fi
 
 if ! git merge --ff-only "origin/$BRANCH"; then
-    log "GAGAL: tidak bisa fast-forward, perlu interventions manual."
+    log "GAGAL: tidak bisa fast-forward, perlu intervensi manual."
     exit 1
 fi
 
 cd "$COMPOSE_DIR"
-if docker compose build && docker compose up -d; then
+
+# Build tanpa cache. Cache Docker bisa mengembalikan image lama sehingga
+# container terlihat sudah restart, padahal kodenya belum berubah.
+if docker compose build --no-cache && docker compose up -d --force-recreate; then
     log "Sukses: container dijalankan ulang pada $(git -C "$APP_DIR" rev-parse --short HEAD)."
 else
     log "GAGAL: build atau restart container gagal."
     exit 1
+fi
+
+# Pastikan container benar-benar hidup dan menjawab.
+sleep 8
+if docker compose ps --status running | grep -q kifayah; then
+    log "Verifikasi: container kifayah berjalan pada commit $(git -C "$APP_DIR" rev-parse --short HEAD)."
+else
+    log "PERINGATAN: container tidak berjalan setelah update. Cek 'docker compose logs -n 50'."
 fi
