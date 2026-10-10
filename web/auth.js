@@ -1,8 +1,6 @@
 const loginForm = document.querySelector("#login-form");
-const registerForm = document.querySelector("#register-form");
 const dashboard = document.querySelector("#resident-dashboard");
 const loginError = document.querySelector("#login-error");
-const registerError = document.querySelector("#register-error");
 const savedTheme = localStorage.getItem("kifayah-theme");
 const authUsesDarkTheme = savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
 document.documentElement.dataset.mode = authUsesDarkTheme ? "dark" : "light";
@@ -69,7 +67,6 @@ async function authRequest(path, body) {
 
 function showDashboard(user) {
   loginForm.hidden = true;
-  registerForm.hidden = true;
   dashboard.hidden = false;
   document.querySelector("#auth-title").hidden = true;
   document.querySelector("#auth-description").hidden = true;
@@ -85,18 +82,6 @@ function showDashboard(user) {
   const now = new Date();
   document.querySelector('#payment-form [name="paid_at"]').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   document.querySelector('#payment-form [name="period"]').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function showForm(register) {
-  loginForm.hidden = register;
-  registerForm.hidden = !register;
-  document.querySelector("#auth-title").textContent = register ? "Daftar Warga" : "Masuk";
-  document.querySelector("#auth-description").hidden = register;
-  document.querySelector("#auth-description").textContent = "Masuk untuk membuka dashboard warga. Akun admin dan pengelola juga dapat masuk dari sini.";
-  document.querySelector(".auth-heading .eyebrow").hidden = false;
-  document.querySelector(".auth-heading .eyebrow").textContent = register ? "Buat akun" : "Masuk";
-  if (!register) document.querySelector("#login-form input[name='username']").focus();
-  else document.querySelector("#register-form input[name='full_name']").focus();
 }
 
 document.querySelectorAll("[data-password-toggle]").forEach((button) => {
@@ -116,8 +101,6 @@ document.querySelectorAll("[data-password-toggle]").forEach((button) => {
   });
 });
 
-document.querySelector("#show-register").addEventListener("click", () => showForm(true));
-document.querySelector("#show-login").addEventListener("click", () => showForm(false));
 document.querySelector("#forgot-button").addEventListener("click", () => {
   const message = document.querySelector("#forgot-message");
   message.hidden = !message.hidden;
@@ -141,25 +124,6 @@ loginForm.addEventListener("submit", async (event) => {
     window.location.href = "/dashboard-warga";
   } catch (error) {
     loginError.textContent = error.message;
-  }
-});
-
-registerForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  registerError.textContent = "";
-  const values = new FormData(registerForm);
-  if (values.get("password") !== values.get("confirm_password")) {
-    registerError.textContent = "Password yang dimasukkan belum sama.";
-    return;
-  }
-  try {
-    await authRequest("/api/register", {
-      full_name: values.get("full_name"),
-      password: values.get("password"),
-    });
-    window.location.href = "/dashboard-warga";
-  } catch (error) {
-    registerError.textContent = error.message;
   }
 });
 
@@ -395,12 +359,12 @@ async function loadPortal() {
       window.location.replace("/admin");
       return;
     }
-  } catch { /* The login and registration forms remain available if session lookup fails. */ }
+  } catch { /* Formulir login tetap dapat dipakai bila pengecekan sesi gagal. */ }
   if (isDashboard) {
     window.location.replace("/masuk");
     return;
   }
-  showForm(false);
+  loginForm.querySelector("input[name='username']").focus();
 }
 
 loadPortal();

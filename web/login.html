@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#ededed">
   <title>Masuk | Kifayah</title>
   <link rel="stylesheet" href="/auth.css">
-  <script src="/auth.js?v=20261010-10" defer></script>
+  <script src="/auth.js?v=20261010-11" defer></script>
 </head>
 <body>
   <main class="auth-shell">
@@ -15,23 +15,13 @@
         <div><p class="eyebrow">Masuk</p><h1 id="auth-title">Masuk</h1></div>
         <a class="auth-close" href="/" aria-label="Kembali ke halaman utama" title="Kembali ke halaman utama">×</a>
       </header>
-      <p id="auth-description" class="auth-description">Masuk untuk membuka dashboard warga. Akun admin dan pengelola juga dapat masuk dari sini.</p>
+      <p id="auth-description" class="auth-description">Masuk memakai nama pengguna dan password yang diberikan admin atau pengurus RT/RW.</p>
       <form id="login-form" class="auth-form">
         <label>Nama Pengguna<input name="username" autocomplete="username" required placeholder="Masukkan nama pengguna"></label>
         <label>Password<span class="password-control"><input name="password" type="password" autocomplete="current-password" required placeholder="Masukkan password"><button class="password-toggle" type="button" data-password-toggle aria-label="Tampilkan password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
         <p id="login-error" class="error-message" role="alert"></p>
         <div class="auth-submit-row"><button id="forgot-button" type="button">Lupa password?</button><button class="submit-button" type="submit">Masuk</button></div>
-        <div class="auth-links"><button id="show-register" type="button">Daftar baru sebagai warga</button></div>
         <p id="forgot-message" class="help-message" hidden>Untuk menjaga keamanan akun, hubungi admin BSK atau pengurus RT untuk verifikasi dan reset password.</p>
-      </form>
-      <form id="register-form" class="auth-form" hidden>
-        <label>Nama Lengkap<input name="full_name" autocomplete="name" maxlength="100" required placeholder="Masukkan nama lengkap"></label>
-        <label>Password<span class="password-control"><input name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="Minimal 8 karakter"><button class="password-toggle" type="button" data-password-toggle aria-label="Tampilkan password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
-        <label>Ulangi Password<input name="confirm_password" type="password" autocomplete="new-password" minlength="8" required placeholder="Ulangi password"></label>
-        <p class="form-hint">Username akan dibuat otomatis dari nama lengkap Anda.</p>
-        <p id="register-error" class="error-message" role="alert"></p>
-        <button class="submit-button" type="submit">Daftar</button>
-        <div class="auth-links auth-links-end"><button id="show-login" type="button">Sudah punya akun? Masuk</button></div>
       </form>
       <section id="resident-dashboard" class="resident-dashboard" hidden aria-label="Dashboard warga">
         <header class="resident-content-heading">

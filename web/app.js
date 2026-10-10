@@ -1630,7 +1630,7 @@ async function withProcessing(operation, message) {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261010-10";
+const EXPECTED_BACKEND_BUILD = "20261010-11";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
@@ -2533,7 +2533,6 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   const isResident = Boolean(enabled && currentUser?.role === "Warga" && !mustChangePassword);
   document.body.classList.toggle("admin-authenticated", enabled && !mustChangePassword);
   loginForm.hidden = enabled;
-  document.querySelector("#resident-register-form").hidden = enabled || isAdminPage;
   document.querySelector("#change-password-form").hidden = !mustChangePassword;
   managerPanel.hidden = !enabled || mustChangePassword || isResident;
   document.querySelector("#resident-dashboard").hidden = !isResident;
@@ -4533,23 +4532,20 @@ for (const popup of document.querySelectorAll("dialog")) {
     if (event.target === popup && popup.dataset.draggedOut === "false") popup.dataset.draggedOut = "";
   });
 }
-function showResidentAuthForm(register = false) {
-  loginForm.hidden = register;
-  document.querySelector("#resident-register-form").hidden = !register;
+function showResidentAuthForm() {
+  loginForm.hidden = false;
   document.querySelector("#change-password-form").hidden = true;
   document.querySelector("#resident-dashboard").hidden = true;
   document.querySelector("#forgot-password-message").hidden = true;
-  document.querySelector("#dialog-title").textContent = register ? "Daftar Akun Warga" : "Masuk Warga";
-  document.querySelector(register ? '#resident-register-form input[name="full_name"]' : '#login-form input[name="username"]').focus();
+  document.querySelector("#dialog-title").textContent = "Masuk Warga";
+  document.querySelector('#login-form input[name="username"]').focus();
 }
-for (const [selector, register] of [["#show-register-form", true], ["#show-login-form", false]]) {
-  document.querySelector(selector)?.addEventListener("click", () => {
-    if (!dialog.open) dialog.showModal();
-    showResidentAuthForm(register);
-  });
-}
+// Pendaftaran mandiri ditutup, jadi hanya ada aksi "Masuk".
+document.querySelector("#resident-login-open")?.addEventListener("click", () => {
+  if (!dialog.open) dialog.showModal();
+  showResidentAuthForm();
+});
 if (isAdminPage) {
-  document.querySelector("#show-register-form").hidden = true;
   document.querySelector("#resident-login-open").hidden = true;
 }
 document.querySelector("#login-password-toggle").addEventListener("click", (event) => {
@@ -4570,27 +4566,6 @@ document.querySelector("#login-password-toggle").addEventListener("click", (even
 document.querySelector("#forgot-password-button").addEventListener("click", () => {
   const message = document.querySelector("#forgot-password-message");
   message.hidden = !message.hidden;
-});
-document.querySelector("#resident-register-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const values = new FormData(form);
-  const errorElement = document.querySelector("#register-error");
-  errorElement.textContent = "";
-  if (values.get("password") !== values.get("confirm_password")) {
-    errorElement.textContent = "Password yang dimasukkan belum sama.";
-    return;
-  }
-  try {
-    const payload = await request("/api/register", {
-      method: "POST",
-      body: JSON.stringify({ full_name: values.get("full_name"), password: values.get("password") }),
-    });
-    form.reset();
-    setAdminMode(true, payload.user, false);
-  } catch (error) {
-    errorElement.textContent = error.message;
-  }
 });
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();

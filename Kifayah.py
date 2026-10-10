@@ -12,7 +12,6 @@ import sqlite3
 import sys
 import threading
 import time
-import unicodedata
 from datetime import date, datetime, timezone
 from html import escape
 from http.cookies import SimpleCookie
@@ -38,7 +37,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261010-10"
+APP_BUILD = "20261010-11"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -4026,42 +4025,13 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			self.send_json(200, {"saved": True})
 			return
 		if path == "/api/register":
-			try:
-				payload = self.read_json()
-				full_name = payload.get("full_name", "")
-				password = payload.get("password", "")
-				if not isinstance(full_name, str) or not isinstance(password, str):
-					raise ValueError("Nama dan password harus berupa teks.")
-				full_name = " ".join(full_name.split())
-				if not 2 <= len(full_name) <= 100:
-					raise ValueError("Nama lengkap harus terdiri dari 2-100 karakter.")
-				if not 8 <= len(password) <= 256:
-					raise ValueError("Password harus terdiri dari 8-256 karakter.")
-				slug = unicodedata.normalize("NFKD", full_name).encode("ascii", "ignore").decode("ascii").lower()
-				base_username = re.sub(r"[^a-z0-9]+", ".", slug).strip(".")[:32] or "warga"
-				with connect_database() as connection:
-					username = base_username
-					suffix = 2
-					while connection.execute("SELECT 1 FROM admin_users WHERE username = ?", (username,)).fetchone():
-						username = f"{base_username[:35-len(str(suffix))]}.{suffix}"
-						suffix += 1
-					salt, password_hash_value = hash_password(password)
-					cursor = connection.execute(
-						"INSERT INTO admin_users (username, display_name, first_name, role, password_salt, password_hash, force_password_change, permissions) "
-						"VALUES (?, ?, ?, 'Warga', ?, ?, 0, '[]')",
-						(username, full_name, full_name.split()[0], salt, password_hash_value),
-					)
-					user_id = cursor.lastrowid
-				token = secrets.token_urlsafe(32)
-				with self.server.session_lock:
-					self.server.sessions[token] = {"user_id": user_id, "expires_at": time.time() + 12 * 60 * 60}
-				self.send_json(201, {
-					"admin": True,
-					"user": {"id": user_id, "username": username, "display_name": full_name, "role": "Warga", "permissions": []},
-					"force_password_change": False,
-				}, {"Set-Cookie": f"kifayah_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200"})
-			except (ValueError, TypeError) as error:
-				self.send_json(400, {"error": str(error)})
+			# Pendaftaran mandiri ditutup. Akun warga dibuat oleh admin atau
+			# pengurus lewat panel pengelola. Menutup endpoint ini (bukan hanya
+			# menyembunyikan form) mencegah pendaftaran lewat request langsung.
+			self.send_json(403, {
+				"error": "Pendaftaran mandiri sudah ditutup. Hubungi admin BSK atau pengurus RT/RW "
+				"untuk mendapat nama pengguna dan password."
+			})
 			return
 		if path == "/api/login":
 			try:

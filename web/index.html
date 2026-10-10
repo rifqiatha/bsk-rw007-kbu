@@ -11,8 +11,8 @@
   <link id="dynamic-favicon" rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="/styles.css?v=20261009-06">
-  <script src="/app.js?v=20261010-10" defer></script>
-  <script src="/registration.js?v=20261010-10" defer></script>
+  <script src="/app.js?v=20261010-11" defer></script>
+  <script src="/registration.js?v=20261010-11" defer></script>
   <script type="module" src="/reveal.js"></script>
 </head>
 <body>
@@ -173,17 +173,7 @@
       <label>Kata Sandi<span class="password-field-control"><input id="login-password" name="password" type="password" required autocomplete="current-password" placeholder="Masukkan Kata Sandi"><button id="login-password-toggle" class="password-visibility-toggle" type="button" aria-label="Tampilkan password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
       <p class="form-error" id="login-error" role="alert"></p>
       <div class="auth-submit-row"><button id="forgot-password-button" class="text-button" type="button">Lupa password?</button><button class="primary-button" type="submit">Masuk <span aria-hidden="true">→</span></button></div>
-      <div class="auth-secondary-actions"><button id="show-register-form" class="text-button" type="button">Daftar baru sebagai warga</button></div>
       <p id="forgot-password-message" class="form-hint" hidden>Untuk menjaga keamanan akun, hubungi admin BSK atau pengurus RT untuk verifikasi dan reset password.</p>
-    </form>
-    <form id="resident-register-form" class="form-stack" hidden>
-      <p class="form-hint">Buat akun warga untuk membuka dashboard. Username dibuat otomatis dari nama lengkap.</p>
-      <label>Nama Lengkap<input name="full_name" type="text" maxlength="100" required autocomplete="name"></label>
-      <label>Password<input name="password" type="password" minlength="8" required autocomplete="new-password"></label>
-      <label>Ulangi Password<input name="confirm_password" type="password" minlength="8" required autocomplete="new-password"></label>
-      <p class="form-error" id="register-error" role="alert"></p>
-      <button class="primary-button" type="submit">Daftar</button>
-      <button id="show-login-form" class="text-button" type="button">Sudah punya akun? Masuk</button>
     </form>
     <form id="change-password-form" class="form-stack" hidden>
       <p class="form-hint">Sandi awal akun harus diganti sebelum melanjutkan. Gunakan kata sandi baru yang tidak kosong.</p>
