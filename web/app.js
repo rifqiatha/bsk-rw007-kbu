@@ -4900,7 +4900,7 @@ updateImportDestinationControls();
 const importFileInput = document.querySelector("#import-file");
 const importFileList = document.querySelector("#import-file-list");
 const MAX_IMPORT_FILE_BYTES = 60 * 1024 * 1024;
-const MAX_IMPORT_FILES = 500;
+const MAX_IMPORT_FILES = 2000;
 // Tidak ada lagi batas total permintaan: berkas dikirim satu per satu, jadi
 // ukuran POST hanya sebesar satu berkas.
 // File dikumpulkan di sini, bukan langsung dari input, agar file yang sudah dipilih
