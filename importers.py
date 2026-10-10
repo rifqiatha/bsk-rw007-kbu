@@ -621,6 +621,60 @@ def _parse_pdf(content, warnings):
 	return results
 
 
+def merge_duplicate_rows(rows, warnings):
+	"""Gabungkan baris yang menunjuk warga yang sama.
+
+	Satu berkas sering memuat warga yang sama lebih dari sekali. Contohnya
+	berkas BSK yang punya sheet "DATA BSK KK" (urutan kartu keluarga) dan
+	"ABJAD BSK" (urutan abjad); isi keduanya sama persis. Tanpa penggabungan,
+	satu warga tersimpan beberapa kali.
+
+	Baris dianggap sama bila NIK-nya sama, atau saat NIK kosong lalu kombinasi
+	nomor kartu keluarga + nama sama. Baris pertama dipertahankan; field yang
+	kosong pada baris pertama diisi dari baris kembarannya. Field yang sudah
+	terisi tidak ditimpa, jadi nilai yang sudah terbaca tidak berubah.
+	"""
+	def identity(row):
+		national_id = _text(row.get("national_id_number"))
+		if national_id:
+			return ("nik", national_id)
+		family_card = _text(row.get("family_card_number"))
+		name = _text(row.get("full_name")).casefold()
+		if family_card and name:
+			return ("kk", family_card, name)
+		return None
+
+	merged = {}
+	order = []
+	for row in rows:
+		key = identity(row)
+		if key is None:
+			order.append((key, row))
+			continue
+		if key not in merged:
+			merged[key] = dict(row)
+			order.append((key, merged[key]))
+			continue
+		target = merged[key]
+		for field, value in row.items():
+			if field == "source_file":
+				continue
+			if not _text(target.get(field)) and _text(value):
+				target[field] = value
+		sources = _text(target.get("source_file"))
+		extra = _text(row.get("source_file"))
+		if extra and extra not in sources:
+			target["source_file"] = f"{sources}, {extra}" if sources else extra
+	merged_count = sum(1 for key, _ in order if key is not None) - len(merged)
+	if merged_count:
+		warnings.add(
+			f"{merged_count} baris adalah warga yang sama yang tertulis lebih dari sekali "
+			"(misalnya satu nama ada di beberapa sheet). Baris kembarannya sudah digabung "
+			"menjadi satu; periksa pratinjau bila ada data yang berbeda."
+		)
+	return [row for _, row in order]
+
+
 def parse_import_file(filename, content):
 	if len(content) > MAX_IMPORT_BYTES:
 		raise ImportFormatError("Ukuran file maksimal 60 MB.")
@@ -657,6 +711,7 @@ def parse_import_file(filename, content):
 			"Isi file tidak terbaca sebagai tabel warga. Coba buka filenya: apakah ada baris judul "
 			"kolom dan baris data di bawahnya? Kalau tidak ada, ganti format ke .xlsx lalu unggah ulang."
 		)
+	rows = merge_duplicate_rows(rows, warnings)
 	if any(not row.get("date_of_death") for row in rows):
 		warnings.add("Tanggal wafat belum terbaca pada sebagian baris. Baris tetap dapat diimpor dan dilengkapi kemudian.")
 	return {"rows": rows, "warnings": sorted(warnings), "filename": Path(filename).name}
