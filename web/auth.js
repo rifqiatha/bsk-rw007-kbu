@@ -24,11 +24,58 @@ function authUpdateProfileLogos(configuredUrl) {
   });
 }
 authUpdateProfileLogos(null);
+
+// HEADER: tombol tema memakai kunci localStorage yang sama dengan panel
+// /admin, jadi pilihan territory di salah satu halaman ikut berlaku di
+// halaman lain tanpa perlu menyetel ulang.
+const AUTH_THEME_ICONS = {
+  dark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>',
+  light: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.6v2.3M12 19.1v2.3M4.6 4.6l1.7 1.7M17.7 17.7l1.7 1.7M2.6 12h2.3M19.1 12h2.3M4.6 19.4l1.7-1.7M17.7 6.3l1.7-1.7"/></svg>',
+};
+function authApplyTheme(theme) {
+  const isDark = theme === "dark";
+  document.documentElement.dataset.mode = isDark ? "dark" : "light";
+  document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+  const toggle = document.querySelector("#auth-theme-toggle");
+  if (toggle) {
+    document.querySelector("#auth-theme-icon").innerHTML = AUTH_THEME_ICONS[isDark ? "dark" : "light"];
+    toggle.title = isDark ? "Tema gelap" : "Tema terang";
+  }
+}
+authApplyTheme(authUsesDarkTheme ? "dark" : "light");
+document.querySelector("#auth-theme-toggle")?.addEventListener("click", () => {
+  const next = document.documentElement.dataset.mode === "dark" ? "light" : "dark";
+  localStorage.setItem("kifayah-theme", next);
+  authApplyTheme(next);
+});
+
+function authUpdateBrandLogo(settings) {
+  const image = document.querySelector("#auth-brand-icon");
+  const markText = document.querySelector("#auth-brand-mark-text");
+  if (!image || !markText) return;
+  const theme = document.documentElement.dataset.mode === "dark" ? "dark" : "light";
+  const configured = settings?.theme_logo_ready?.logo1?.[theme] ? `/media/theme-logo/logo1/${theme}` : null;
+  const source = configured || (settings?.site_icon_ready ? "/media/site-icon" : null);
+  if (!source) {
+    image.hidden = true;
+    markText.hidden = false;
+    return;
+  }
+  markText.hidden = true;
+  image.hidden = false;
+  const scale = Number(settings.icon_zoom_1 || 100) / 100;
+  image.style.width = `${40 * scale}px`;
+  image.style.height = `${44 * scale}px`;
+  if (image.getAttribute("src") !== source) image.src = source;
+}
+authUpdateBrandLogo(null);
 fetch("/api/settings").then((response) => response.ok ? response.json() : null).then((settings) => {
   if (!settings) return;
-  const mode = authUsesDarkTheme ? "dark" : "light";
+  document.querySelector("#auth-brand-area").textContent = settings.footer_area || "Warga Kota Bambu Utara";
+  const mode = document.documentElement.dataset.mode === "dark" ? "dark" : "light";
   const isConfigured = settings.theme_logo_ready?.logo2?.[mode];
   authUpdateProfileLogos(isConfigured ? `/media/theme-logo/logo2/${mode}` : null);
+  authUpdateBrandLogo(settings);
 }).catch(() => {});
 // Reverse proxy dapat membalas halaman HTML (misal 413 Request Entity Too
 // Large) alih-alih JSON, sehingga response.json() melempar SyntaxError dan

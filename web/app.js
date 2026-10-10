@@ -1630,7 +1630,7 @@ async function withProcessing(operation, message) {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261010-13";
+const EXPECTED_BACKEND_BUILD = "20261010-15";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
@@ -2573,6 +2573,9 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   document.querySelector("#record-portrait-hint").hidden = !canManagePortraits;
   document.querySelector('[data-admin-group="users"]').hidden = !permissions.has("users");
   document.querySelector("#permissions-task-panel").hidden = !isSuperAdmin;
+  // Hapus total hanya untuk Super Admin agar tidak salah klik oleh Staff/Admin.
+  document.querySelector("#delete-all-records").hidden = !isSuperAdmin;
+  document.querySelector("#delete-all-contributions").hidden = !isSuperAdmin;
   document.querySelector("#edit-record-form").hidden = true;
   document.querySelector(".export-warning").hidden = !permissions.has("export");
   document.querySelector(".export-button").hidden = !permissions.has("export");
@@ -3106,6 +3109,41 @@ async function loadContributionResidents() {
     status.textContent = error.message;
   }
 }
+
+// HAPUS TOTAL: kosongkan satu daftar. Karena tidak bisa dikembalikan,
+// Outlet minta ketik ulang konfirmasi sebelum permintaan dikirim.
+async function deleteAllList(endpoint, label, count, reload) {
+  if (currentUser?.role !== "Super Admin") {
+    window.alert("Hapus semua data hanya dapat dilakukan oleh Super Admin.");
+    return;
+  }
+  if (!window.confirm(
+    `Hapus SEMUA data pada "${label}"?\n\n` +
+    `${new Intl.NumberFormat("id-ID").format(count)} data akan dihapus permanen dan tidak dapat dikembalikan.\n\n` +
+    `Sebaiknya unduh cadangan XLSX terlebih dahulu. Lanjutkan?`
+  )) return;
+  const typed = window.prompt(`Ketik HAPUS SEMUA untuk mengonfirmasi penghapusan "${label}":`);
+  if (typed === null) return;
+  if (typed.trim().toUpperCase() !== "HAPUS SEMUA") {
+    window.alert("Konfirmasi tidak sesuai. Data tidak dihapus.");
+    return;
+  }
+  try {
+    const result = await request(endpoint, { method: "DELETE", body: JSON.stringify({ confirm: "HAPUS SEMUA" }) });
+    await reload();
+    window.alert(`${new Intl.NumberFormat("id-ID").format(result.count || 0)} data pada "${label}" berhasil dihapus.`);
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+document.querySelector("#delete-all-records")?.addEventListener("click", () => {
+  deleteAllList("/api/admin/records-all", "Daftar Warga - Wafat", records.length, () => refreshRecords(true));
+});
+
+document.querySelector("#delete-all-contributions")?.addEventListener("click", () => {
+  deleteAllList("/api/admin/contribution-residents-all", "Daftar Warga - Iuran", originalContributionResidents.length, loadContributionResidents);
+});
 
 function openContributionResidentDialog(resident = null) {
   const dialog = document.querySelector("#contribution-resident-dialog");

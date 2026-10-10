@@ -37,7 +37,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261010-14"
+APP_BUILD = "20261010-15"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -5277,9 +5277,51 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			return
 		self.send_json(404, {"error": "Rute tidak ditemukan."})
 
+	def handle_bulk_delete(self, records):
+		"""Kosongkan satu daftar sekaligus.
+
+		Aksi ini menghapus seluruh isi daftar tanpa sisa, jadi hanya
+		Super Admin yang boleh menjalankannya dan klien harus mengirim
+		konfirmasi teks agar tidak terjadi karena tidak sengaja.
+		"""
+		if not self.require_super_admin():
+			return
+		label = "Daftar Warga - Wafat" if records else "Daftar Warga - Iuran"
+		try:
+			payload = self.read_json() or {}
+		except Exception:
+			self.send_json(400, {"error": "Data tidak valid."})
+			return
+		if payload.get("confirm") != "HAPUS SEMUA":
+			self.send_json(400, {"error": "Konfirmasi tidak sesuai. Ketik HAPUS SEMUA untuk melanjutkan."})
+			return
+		with connect_database() as connection:
+			if records:
+				portraits = [row["portrait_file"] for row in connection.execute(
+					"SELECT portrait_file FROM records WHERE portrait_file <> ''"
+				)]
+				connection.execute("DELETE FROM family_connections WHERE record_id IN (SELECT id FROM records)")
+				connection.execute("DELETE FROM data_issues WHERE destination = 'records'")
+				removed = connection.execute("DELETE FROM records").rowcount
+				for filename in portraits:
+					delete_upload_if_unreferenced(connection, filename)
+			else:
+				photos = [row["photo_file"] for row in connection.execute(
+					"SELECT photo_file FROM contribution_residents WHERE photo_file <> ''"
+				)]
+				connection.execute("DELETE FROM contribution_payments")
+				connection.execute("DELETE FROM data_issues WHERE destination = 'contributions'")
+				removed = connection.execute("DELETE FROM contribution_residents").rowcount
+				for filename in photos:
+					delete_upload_if_unreferenced(connection, filename)
+		self.send_json(200, {"deleted": True, "count": removed, "list": label})
+
 	# DELETE ROUTES: account removal is separate from resident/family deletion.
 	def do_DELETE(self):
 		path = urlparse(self.path).path
+		if path in ("/api/admin/records-all", "/api/admin/contribution-residents-all"):
+			self.handle_bulk_delete(path == "/api/admin/records-all")
+			return
 		if path.startswith("/api/admin/position-titles/"):
 			if not self.require_admin("Admin"):
 				return

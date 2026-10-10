@@ -5,10 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ededed">
   <title>Masuk | Kifayah</title>
-  <link rel="stylesheet" href="/auth.css">
-  <script src="/auth.js?v=20261010-14" defer></script>
+  <link rel="stylesheet" href="/auth.css?v=20261010-15">
+  <script src="/auth.js?v=20261010-15" defer></script>
 </head>
 <body>
+  <!-- HEADER: samakan dengan panel /admin agar halaman masuk tidak kosong. -->
+  <header class="auth-topbar">
+    <a class="auth-brand" href="/" aria-label="Beranda Data Kifayah">
+      <span class="auth-brand-mark" aria-hidden="true">
+        <span id="auth-brand-mark-text">K</span>
+        <img id="auth-brand-icon" alt="" hidden>
+      </span>
+      <span class="auth-brand-copy"><strong>Kifayah</strong><small id="auth-brand-area">Warga Kota Bambu Utara</small></span>
+    </a>
+    <div class="auth-topbar-right">
+      <button id="auth-theme-toggle" class="auth-icon-button" type="button" aria-label="Pilih tema" title="Pilih tema">
+        <span id="auth-theme-icon" aria-hidden="true"></span>
+      </button>
+    </div>
+  </header>
   <main class="auth-shell">
     <section id="auth-panel" class="auth-card" aria-labelledby="auth-title">
       <header class="auth-heading">

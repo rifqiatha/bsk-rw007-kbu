@@ -4,7 +4,20 @@ body { min-width: 320px; min-height: 100vh; margin: 0; }
 button, input { font: inherit; }
 button { cursor: pointer; }
 [hidden] { display: none !important; }
-.auth-shell { display: flex; min-height: 100vh; align-items: center; justify-content: center; padding: 24px; }
+/* HEADER: cermin dari .topbar panel /admin supaya keduanya terasa satu halaman. */
+body { display: flex; flex-direction: column; }
+.auth-topbar { position: sticky; top: 0; z-index: 30; display: flex; min-height: 76px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 18px; padding: 10px max(5vw, calc((100vw - 1180px) / 2)); border-bottom: 1px solid #d0d0d0; background: #f8f8f8; }
+.auth-brand { display: flex; align-items: center; gap: 12px; color: #171717; text-decoration: none; }
+.auth-brand-mark { display: grid; width: 40px; height: 40px; flex: none; place-items: center; color: #292929; border-radius: 50%; background: #e2e2e2; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7); font-size: 21px; font-weight: 600; }
+.auth-brand-mark img { width: 40px; height: 44px; object-fit: contain; }
+.auth-brand-copy { display: grid; gap: 2px; }
+.auth-brand-copy strong { color: #171717; font-size: 15px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
+.auth-brand-copy small { color: #5b5b5b; font-size: 12px; letter-spacing: .02em; }
+.auth-topbar-right { display: flex; flex: none; align-items: center; gap: 14px; }
+.auth-icon-button { display: grid; width: 44px; height: 44px; place-items: center; padding: 0; color: #292929; border: 1px solid #d0d0d0; border-radius: 50%; background: #f8f8f8; line-height: 1; transition: color 200ms cubic-bezier(.22, 1, .36, 1), border-color 200ms cubic-bezier(.22, 1, .36, 1), background-color 200ms cubic-bezier(.22, 1, .36, 1); }
+.auth-icon-button:hover { border-color: #292929; background: #ededed; }
+.auth-icon-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.auth-shell { display: flex; min-height: 0; flex: 1 1 auto; align-items: center; justify-content: center; padding: 24px; }
 .auth-card { width: min(100%, 440px); padding: 28px; border: 1px solid #d0d0d0; border-radius: 30px; background: #f8f8f8; }
 .auth-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .eyebrow { margin: 0 0 5px; color: #555555; font-size: 10px; font-weight: 650; letter-spacing: .18em; text-transform: uppercase; }
@@ -75,10 +88,10 @@ h1 { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Sego
 .secondary-button:hover { background: #e5e5e5; }
 @media (max-width: 560px) { .auth-shell { padding: 12px; } .auth-card, .auth-card:has(.resident-dashboard:not([hidden])) { padding: 18px; border-radius: 22px; } .auth-links button { font-size: 11px; } /* Layar sempit: tombol Masuk baris penuh, tautan lupa password di bawahnya. */ .auth-submit-row { flex-wrap: wrap; gap: 8px; } .auth-submit-row .submit-button { order: 1; width: 100%; } .auth-submit-row > button:not(.submit-button) { order: 2; width: 100%; flex: 1 0 100%; white-space: normal; } .payment-form { grid-template-columns: minmax(0, 1fr); } .payment-proof-field, .payment-form .error-message, .payment-form .submit-button { grid-column: auto; } .resident-view-heading { display: block; } .resident-view-heading > p { margin-top: 4px; } }
 
-.auth-shell:has(.resident-dashboard:not([hidden])) { display: block; min-height: 100vh; padding: 0; }
-.auth-shell:has(.resident-dashboard:not([hidden])) #auth-panel { width: 100%; min-height: 100vh; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-#auth-panel .resident-dashboard:not([hidden]) { display: grid; min-height: 100vh; grid-template-columns: 280px minmax(0, 1fr); color: #171717; background: #ededed; }
-.resident-sidebar { position: sticky; top: 0; display: flex; min-height: 100vh; flex-direction: column; gap: 24px; padding: 26px 18px; border-right: 1px solid #d0d0d0; background: #f8f8f8; }
+.auth-shell:has(.resident-dashboard:not([hidden])) { display: block; min-height: 0; flex: 1 1 auto; padding: 0; }
+.auth-shell:has(.resident-dashboard:not([hidden])) #auth-panel { width: 100%; min-height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+#auth-panel .resident-dashboard:not([hidden]) { display: grid; min-height: 100%; grid-template-columns: 280px minmax(0, 1fr); color: #171717; background: #ededed; }
+.resident-sidebar { position: sticky; top: 0; display: flex; min-height: 100%; flex-direction: column; gap: 24px; padding: 26px 18px; border-right: 1px solid #d0d0d0; background: #f8f8f8; }
 .resident-sidebar-brand { display: flex; align-items: center; gap: 11px; padding: 0 8px; }
 .resident-sidebar-brand > span:last-child { display: grid; gap: 2px; }
 .resident-sidebar-brand strong { font-size: 15px; letter-spacing: .14em; text-transform: uppercase; }
@@ -156,14 +169,15 @@ h1 { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Sego
 /* Resident dashboard uses the same compact, accordion panel pattern as admin. */
 .auth-shell:has(.resident-dashboard:not([hidden])) {
   display: flex;
-  min-height: 100vh;
+  min-height: 0;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   padding: 24px;
 }
 .auth-shell:has(.resident-dashboard:not([hidden])) #auth-panel {
   width: min(100%, 560px);
-  max-height: calc(100vh - 48px);
+  max-height: 100%;
   min-height: 0;
   overflow: auto;
   padding: 28px;
@@ -350,6 +364,13 @@ html[data-mode="dark"] .resident-account-menu-copy { border-color: #505050; }
 html[data-mode="dark"] .resident-account-logout:hover { background: #4a4a4a; }
 html[data-mode="dark"] .payment-form { border-color: #505050; background: #292929; }
 html[data-mode="dark"] .resident-account-chevron { color: #ddd; }
+html[data-mode="dark"] .auth-topbar { border-color: #505050; background: #282828; }
+html[data-mode="dark"] .auth-brand { color: #f5f5f5; }
+html[data-mode="dark"] .auth-brand-copy strong { color: #f5f5f5; }
+html[data-mode="dark"] .auth-brand-copy small { color: #bdbdbd; }
+html[data-mode="dark"] .auth-brand-mark { color: #e5e5e5; background: #3a3a3a; }
+html[data-mode="dark"] .auth-icon-button { color: #e5e5e5; border-color: #505050; background: #282828; }
+html[data-mode="dark"] .auth-icon-button:hover { border-color: #e5e5e5; background: #363636; }
 @media (max-width: 560px) {
   .resident-content-heading { position: relative; align-items: flex-start; padding-top: 54px; }
   .resident-account-control { position: absolute; top: 0; right: 0; }
