@@ -160,7 +160,11 @@ Untuk Nginx Proxy Manager, buka Proxy Host → **Advanced** lalu isi:
 
 | Field | Value |
 | --- | --- |
-| Custom Nginx Configuration | `client_max_body_size 32m;` |
+| Custom Nginx Configuration | `client_max_body_size 96m;` |
+
+Nilai ini harus sama atau lebih besar dari `MAX_BODY_BYTES` di `Kifayah.py`
+(96 MB). Kalau Nginx lebih kecil, proxy membalas 413 lebih dulu dan aplikasi
+tidak pernah menerima file yang diunggah.
 
 Untuk Caddy, tidak perlu disetel karena Caddy tidak membatasi ukuran badan.
 
