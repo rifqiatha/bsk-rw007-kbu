@@ -427,14 +427,9 @@ function updateImportSummary() {
   const duplicateNote = duplicateTotal
     ? `; ${duplicateTotal} suspected duplikat (${duplicateCount} dicentang)`
     : "";
-  const problemCounts = new Map();
-  for (const row of selectedRows) {
-    for (const problem of importRowProblems(row)) {
-      problemCounts.set(problem, (problemCounts.get(problem) || 0) + 1);
-    }
-  }
-  const problemNote = problemCounts.size
-    ? `; ${[...problemCounts.entries()].map(([problem, count]) => `${problem} (${count} baris)`).join(", ")}`
+  const problemGroups = collectImportProblemGroups(selectedRows);
+  const problemNote = problemGroups.length
+    ? `; ${problemGroups.map((group) => `${group.problem} (${group.count} baris)`).join(", ")}`
     : "";
   document.querySelector("#import-summary").textContent = importRows.length
     ? `${importRows.length} baris ditemukan. ${selectedRows.length} akan disalin${duplicateNote}${problemNote ? `. Catatan: ${problemNote}` : "."}`
@@ -443,13 +438,56 @@ function updateImportSummary() {
   if (detail) {
     const list = detail.querySelector("ul");
     list.replaceChildren();
-    for (const [problem, count] of problemCounts) {
+    for (const group of problemGroups) {
       const item = document.createElement("li");
-      item.textContent = `${count} baris: ${problem}`;
+      item.textContent = `${group.count} baris: ${group.problem}`;
+      // Daftar baris tiap masalah, dikelompokkan per file supaya pengelola
+      // bisa langsung membuka file sumber dan menemukan barisnya.
+      const files = new Map();
+      for (const entry of group.rows) {
+        if (!files.has(entry.file)) files.set(entry.file, []);
+        files.get(entry.file).push(entry);
+      }
+      const detailList = document.createElement("ul");
+      detailList.className = "import-problem-files";
+      for (const [file, entries] of files) {
+        const fileItem = document.createElement("li");
+        const names = entries.map((entry) => `#${entry.row} ${entry.name}`);
+        // Daftar baris dipadatkan supaya 200+ baris tidak blushing fills the page.
+        fileItem.textContent = `${file}: ${formatImportRowList(names)}`;
+        detailList.append(fileItem);
+      }
+      item.append(detailList);
       list.append(item);
     }
-    detail.hidden = !problemCounts.size;
+    detail.hidden = !problemGroups.length;
   }
+}
+
+// Daftar baris dipadatkan jadi rentang agar mudah dibaca: "baris 5, 8-12, 20".
+function formatImportRowList(names, limit = 40) {
+  if (names.length <= limit) return names.join(", ");
+  const shown = names.slice(0, limit);
+  return `${shown.join(", ")}, …dan ${names.length - limit} baris lain`;
+}
+
+// Kumpulkan masalah per baris lengkap dengan nama file dan nomor baris di file.
+function collectImportProblemGroups(rows) {
+  const groups = new Map();
+  rows.forEach((row, index) => {
+    const entry = {
+      file: row.source_file || "(tanpa nama file)",
+      row: row.source_row || index + 1,
+      name: String(row.full_name ?? "").trim() || "(tanpa nama)",
+    };
+    for (const problem of importRowProblems(row)) {
+      if (!groups.has(problem)) groups.set(problem, { problem, count: 0, rows: [] });
+      const group = groups.get(problem);
+      group.count += 1;
+      group.rows.push(entry);
+    }
+  });
+  return [...groups.values()];
 }
 
 document.querySelector("#import-preview-previous")?.addEventListener("click", () => {
@@ -1592,7 +1630,7 @@ async function withProcessing(operation, message) {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261010-08";
+const EXPECTED_BACKEND_BUILD = "20261010-09";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
@@ -5172,6 +5210,10 @@ document.querySelector("#import-commit").addEventListener("click", async () => {
     const cleanRow = {};
     for (const [field] of currentImportFields()) cleanRow[field] = row[field] ?? "";
     if (row.source_file) cleanRow.source_file = row.source_file;
+    // Nomor baris asli di file sumber ikut dikirim supaya isu yang tercatat
+    // di Tinjauan Data bisa menunjuk baris yang tepat.
+    if (row.source_sheet) cleanRow.source_sheet = row.source_sheet;
+    if (row.source_row) cleanRow.source_row = row.source_row;
     cleanRow.rt = cleanRow.rt === "" ? "" : Number(cleanRow.rt);
     cleanRow.rw = cleanRow.rw === "" ? "" : Number(cleanRow.rw);
     return cleanRow;

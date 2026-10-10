@@ -300,7 +300,7 @@ def _is_repeated_header_row(values, reference=None):
 	return recognized * 2 >= len(filled)
 
 
-def _records_without_header(matrix, warnings):
+def _records_without_header(matrix, warnings, sheet_name=""):
 	"""Impor file yang judul kolomnya tidak bisa dibaca.
 
 	Baris kop (judul lembaga, baris kosong di awal) dilewati, lalu kolom
@@ -327,7 +327,7 @@ def _records_without_header(matrix, warnings):
 	results = []
 	# Tanpa tebakan kolom, seluruh kolom dilewati dan hanya upaya terakhir di
 	# bawah yang dipakai. Jadi file tidak langsung ditolak.
-	for values in ([] if name_column is None else matrix[data_start:]):
+	for offset, values in enumerate([] if name_column is None else matrix[data_start:]):
 		if name_column >= len(values) or not _looks_like_name(values[name_column]):
 			continue
 		# Baris judul kolom tidak ikut diimpor sebagai data warga.
@@ -336,13 +336,15 @@ def _records_without_header(matrix, warnings):
 		source = {"full_name": values[name_column]}
 		record = _normalize_record(source, warnings)
 		if record["full_name"]:
+			record["source_row"] = data_start + offset + 1
+			record["source_sheet"] = sheet_name
 			results.append(record)
 	if not results:
 		# Upaya terakhir: tidak ada satu kolom pun yang layak ditebak. Alih-alih
 		# menolak seluruh file (dulu muncul sebagai "Tidak ditemukan tabel dengan
 		# kolom Nama"), nama diambil dari sel teks pertama yang terbaca sebagai
 		# nama pada tiap baris. Hasilnya tetap masuk pratinjau untuk diperiksa.
-		results = _records_from_name_like_cells(matrix, data_start, reference, warnings)
+		results = _records_from_name_like_cells(matrix, data_start, reference, warnings, sheet_name)
 		if not results:
 			return []
 		warnings.add(
@@ -357,10 +359,10 @@ def _records_without_header(matrix, warnings):
 	return results
 
 
-def _records_from_name_like_cells(matrix, data_start, reference, warnings):
+def _records_from_name_like_cells(matrix, data_start, reference, warnings, sheet_name=""):
 	"""Ambil nama sel per baris ketika tidak ada kolom nama yang bisa ditebak."""
 	results = []
-	for values in matrix[data_start:]:
+	for offset, values in enumerate(matrix[data_start:]):
 		if not any(_text(value) for value in values):
 			continue
 		if _is_repeated_header_row(values, reference):
@@ -370,11 +372,13 @@ def _records_from_name_like_cells(matrix, data_start, reference, warnings):
 			continue
 		record = _normalize_record({"full_name": candidate}, warnings)
 		if record["full_name"]:
+			record["source_row"] = data_start + offset + 1
+			record["source_sheet"] = sheet_name
 			results.append(record)
 	return results
 
 
-def _header_row_to_records(matrix, warnings, datemode=None):
+def _header_row_to_records(matrix, warnings, datemode=None, sheet_name=""):
 	for row_index, row in enumerate(matrix[:MAX_HEADER_SCAN_ROWS]):
 		if sum(1 for value in row if _text(value)) < 2:
 			continue  # lewati baris kosong atau baris judul kop
@@ -396,7 +400,7 @@ def _header_row_to_records(matrix, warnings, datemode=None):
 		if next_row is not None and any(_field_for_header(value) for value in next_row):
 			data_start = row_index + 2
 		results = []
-		for values in matrix[data_start:]:
+		for offset, values in enumerate(matrix[data_start:]):
 			if not any(_text(value) for value in values):
 				continue
 			source = {}
@@ -405,10 +409,15 @@ def _header_row_to_records(matrix, warnings, datemode=None):
 					source[field] = values[column_index]
 			record = _normalize_record(source, warnings)
 			if record["full_name"]:
+				# Nomor baris asli (1-based, sama dengan yang terlihat di Excel)
+				# disimpan supaya pengelola bisa menemukan baris yang bermasalah
+				# tanpa menghitung manual.
+				record["source_row"] = data_start + offset + 1
+				record["source_sheet"] = sheet_name
 				results.append(record)
 		if results:
 			return results
-	return _records_without_header(matrix, warnings)
+	return _records_without_header(matrix, warnings, sheet_name=sheet_name)
 
 
 
@@ -431,7 +440,7 @@ def _parse_xlsx(content, warnings):
 	results = []
 	for worksheet in workbook.worksheets:
 		matrix = [list(row) for row in worksheet.iter_rows(values_only=True)]
-		results.extend(_header_row_to_records(matrix, warnings))
+		results.extend(_header_row_to_records(matrix, warnings, sheet_name=worksheet.title))
 	return results
 
 
@@ -454,7 +463,7 @@ def _parse_xls(content, warnings):
 				else:
 					row.append(cell.value)
 			matrix.append(row)
-		results.extend(_header_row_to_records(matrix, warnings, workbook.datemode))
+		results.extend(_header_row_to_records(matrix, warnings, workbook.datemode, worksheet.name))
 	return results
 
 
@@ -553,9 +562,9 @@ def _parse_docx(content, warnings):
 
 	document = Document(io.BytesIO(content))
 	results = []
-	for table in document.tables:
+	for table_index, table in enumerate(document.tables, start=1):
 		matrix = [[cell.text.strip() for cell in row.cells] for row in table.rows]
-		results.extend(_header_row_to_records(matrix, warnings))
+		results.extend(_header_row_to_records(matrix, warnings, sheet_name=f"Tabel {table_index}"))
 	if results:
 		return results
 	text = "\n".join(paragraph.text for paragraph in document.paragraphs if paragraph.text.strip())
@@ -585,12 +594,12 @@ def _parse_pdf(content, warnings):
 	except Exception as error:
 		raise ImportFormatError(f"PDF tidak dapat dibuka: {error}") from error
 	last_header_fields = None
-	for page in document:
+	for page_number, page in enumerate(document, start=1):
 		page_results = []
 		try:
 			for table in page.find_tables().tables:
 				matrix = table.extract()
-				found = _header_row_to_records(matrix, warnings)
+				found = _header_row_to_records(matrix, warnings, sheet_name=f"Halaman {page_number}")
 				if found:
 					page_header = [_field_for_header(v) for v in matrix[0]] if matrix else []
 					if "full_name" in page_header:

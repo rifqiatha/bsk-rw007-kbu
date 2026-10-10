@@ -38,7 +38,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261010-08"
+APP_BUILD = "20261010-09"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -729,8 +729,13 @@ def validate_import_row(payload, settings):
 
 
 def import_row_meta(row, index):
-	"""Keterangan asal baris (file sumber dan urutan) untuk laporan hasil impor."""
-	"""Keterangan asal baris (file sumber dan urutan) untuk laporan hasil impor."""
+	"""Keterangan asal baris untuk laporan hasil impor.
+
+	Besides the file name, the row number as it appears in the source file and
+	the sheet/page it came from are also recorded. This way a note such as
+	"RT 11 is outside 1-10" can be traced back to the exact row without the
+	manager having to count rows manually.
+	"""
 	meta = {"row_index": index}
 	if isinstance(row, dict):
 		name = row.get("source_file")
@@ -739,6 +744,19 @@ def import_row_meta(row, index):
 		person = row.get("full_name")
 		if isinstance(person, str):
 			meta["full_name"] = person.strip()[:120]
+		# source_sheet dan source_row dikirim peramban supaya Tinjauan Data
+		# bisa menulis "file: sheet: baris".
+		parts = []
+		sheet = row.get("source_sheet")
+		if isinstance(sheet, str) and sheet.strip():
+			parts.append(sheet.strip()[:80])
+		source_row = row.get("source_row")
+		if isinstance(source_row, int) and source_row > 0:
+			parts.append(f"baris {source_row}")
+		if parts:
+			# source_file + keterangan baris disimpan sebagai satu label
+			# supaya kolom di database tidak perlu ditambah.
+			meta["source_file"] = f"{meta.get('source_file', '')} ({', '.join(parts)})".strip()[:180]
 	return meta
 
 
