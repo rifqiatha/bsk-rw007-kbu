@@ -1630,7 +1630,7 @@ async function withProcessing(operation, message) {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261010-11";
+const EXPECTED_BACKEND_BUILD = "20261010-12";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
@@ -5158,14 +5158,6 @@ document.querySelector("#import-cancel").addEventListener("click", () => {
   document.querySelector("#import-form").reset();
   importDestinationSelect.disabled = false;
 });
-// "Salin Semua Langsung" mencentang semua baris lalu memakai alur commit
-// yang sama, supaya hasilnya persis seperti impor manual.
-document.querySelector("#import-commit-all")?.addEventListener("click", () => {
-  setAllImportRowsSelected(true);
-  updateImportSummary();
-  document.querySelector("#import-commit").click();
-});
-
 document.querySelector("#import-commit").addEventListener("click", async () => {
   const errorElement = document.querySelector("#import-commit-error");
   const resultElement = document.querySelector("#import-result");
