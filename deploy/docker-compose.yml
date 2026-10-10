@@ -14,8 +14,25 @@ services:
     ports:
       - "127.0.0.1:8081:8000"
     volumes:
-      # Sinkronisasi otomatis ke folder www Nginx CasaOS
+      # Folder data persisten (database dan foto warga).
       - "/DATA/AppData/nginx/config/www:/app/persist"
+
+      # Kode langsung diambil dari folder repo di host. Dulu kode ikut
+      # di-copy ke dalam image saat build, sehingga setiap perubahan harus
+      # `docker compose build` (5-10 menit). Dengan mount di bawah, `git pull`
+      # atau `git reset --hard` di host langsung berlaku setelah container
+      # direstart, tanpa build sama sekali.
+      #
+      # KIFAYAH_DIR menunjuk folder repo. Bila repo dipindah, set variabel ini
+      # di deploy/.env atau environment container, contoh:
+      #   KIFAYAH_DIR=/opt/kifayah docker compose up -d --force-recreate
+      #
+      # Hanya berkas yang berubah dan tidak sering ditulis yang dipasang.
+      # Bila nanti ada modul python atau folder web baru, tambahkan di sini
+      # supaya ikut ter-mount dan tidak perlu build ulang.
+      - "${KIFAYAH_DIR:-/DATA/AppData/nginx/config/www}/Kifayah.py:/app/Kifayah.py:ro"
+      - "${KIFAYAH_DIR:-/DATA/AppData/nginx/config/www}/importers.py:/app/importers.py:ro"
+      - "${KIFAYAH_DIR:-/DATA/AppData/nginx/config/www}/web:/app/web:ro"
     healthcheck:
       test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/', timeout=5).status == 200 else 1)"]
       interval: 30s

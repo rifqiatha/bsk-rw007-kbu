@@ -170,6 +170,38 @@ Untuk Caddy, tidak perlu disetel karena Caddy tidak membatasi ukuran badan.
 
 Setelah selesai, uji dengan mengimpor beberapa file sekaligus.
 
+## 5c. Kode langsung dari folder repo, tanpa build ulang
+
+`deploy/docker-compose.yml` memasang `Kifayah.py`, `importers.py`, dan folder
+`web/` dari folder repo ke dalam container. Efeknya `git reset --hard` di host
+langsung berlaku begitu container direstart — **tanpa** `docker compose build`
+yang memakan 5–10 menit.
+
+Cara memperbarui sekarang cukup:
+
+```bash
+cd /DATA/AppData/nginx/config/www
+git reset --hard origin/main
+cd deploy && docker compose up -d --force-recreate
+```
+
+Bila folder repo tidak di `/DATA/AppData/nginx/config/www`, set `KIFAYAH_DIR`:
+
+```bash
+cd /opt/kifayah/deploy
+KIFAYAH_DIR=/opt/kifayah docker compose up -d --force-recreate
+```
+
+Build image tetap diperlukan hanya bila `requirements.txt` berubah:
+
+```bash
+KIFAYAH_REBUILD=1 sh /DATA/AppData/nginx/config/www/deploy/auto-update.sh
+```
+
+Bila nanti ada modul `.py` atau folder web baru yang perlu ikut ter-mount,
+tambahkan barisnya di `volumes:` pada `deploy/docker-compose.yml` supaya tidak
+lupa saat build ulang.
+
 ## 5b. Lokasi repo tidak selalu `/opt/kifayah`
 
 Pada CasaOS, repo sering diletakkan di `/DATA/AppData/nginx/config/www`

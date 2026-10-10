@@ -79,12 +79,29 @@ fi
 
 cd "$COMPOSE_DIR"
 
-# Build tanpa cache. Cache Docker bisa mengembalikan image lama sehingga
-# container terlihat sudah restart, padahal kodenya belum berubah.
-if docker compose build --no-cache && docker compose up -d --force-recreate; then
+# docker-compose.yml memasang kode dari folder repo. Folder itu harus sama
+# dengan APP_DIR; kalau tidak, KIFAYAH_DIR diteruskan supaya docker compose
+# tidak memakai lokasi bawaan yang keliru.
+KIFAYAH_DIR="${KIFAYAH_DIR:-$APP_DIR}"
+export KIFAYAH_DIR
+
+# Kode diambil dari folder repo lewat volume mount (lihat docker-compose.yml),
+# jadi build image tidak perlu diulang. Build hanya perlu saat requirements.txt
+# berubah, yaitu ketika KIFAYAH_REBUILD=1.
+if [ "${KIFAYAH_REBUILD:-0}" = "1" ]; then
+    log "KIFAYAH_REBUILD=1: membangun ulang image sebelum restart."
+    if ! docker compose build --no-cache >>"$LOG" 2>&1; then
+        log "GAGAL: build image gagal."
+        exit 1
+    fi
+fi
+
+# --force-recreate wajib karena volume mount baru hanya berlaku pada container
+# yang benar-benar dibuat ulang, bukan saat restart biasa.
+if docker compose up -d --force-recreate >>"$LOG" 2>&1; then
     log "Sukses: container dijalankan ulang pada $(git -C "$APP_DIR" rev-parse --short HEAD)."
 else
-    log "GAGAL: build atau restart container gagal."
+    log "GAGAL: container gagal dijalankan ulang."
     exit 1
 fi
 
