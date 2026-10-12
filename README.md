@@ -10,7 +10,7 @@ Rancangan mengikuti User-Centered Design berdasarkan wawancara warga RT 005 dan 
 
 Pain point utama: status pembayaran sulit diperiksa mandiri; bukti masih bergantung pada kartu; informasi program mudah terlewat; validasi dan pembaruan data dilakukan manual; data peserta, keuangan, dan kematian belum terpusat; kemampuan digital warga beragam.
 
-Website menyediakan arsip data kematian serta dashboard Warga dan Pengelola yang terpisah. Warga membuka **Masuk** di kanan atas, lalu memilih daftar akun; username dibuat dari nama (nama yang sama mendapat akhiran angka) dan warga memilih password sendiri. Dashboard warga memuat **Pembayaran Iuran** (periode, nominal, metode/tanggal, dan bukti JPG/PNG/WebP/PDF maksimal 5 MB), **Informasi Program**, **Data Kematian**, dan **Data Keuangan**. Admin dapat memverifikasi pembayaran, memperbarui informasi program, dan mencatat pemasukan/pengeluaran yang dibagikan kepada warga. Catatan keuangan bersifat ringkasan publik bagi akun warga; jangan masukkan data pribadi atau nomor rekening. Besaran iuran mengikuti ketentuan BSK dan diisi warga; aplikasi tidak menentukan nominal.
+Website menyediakan arsip data kematian serta dashboard Warga dan Pengelola yang terpisah. Warga membuka **Masuk** di kanan atas, lalu memilih daftar akun; username dibuat dari nama (nama yang sama mendapat akhiran angka) dan warga memilih password sendiri. Dashboard warga memuat **Pembayaran Iuran** (periode, nominal, metode/tanggal, dan bukti opsional JPG/PNG/WebP/PDF maksimal 5 MB), **Informasi Program**, **Data Kematian**, dan **Data Keuangan**. Admin dapat memverifikasi pembayaran, memperbarui informasi program, dan mencatat pemasukan/pengeluaran yang dibagikan kepada warga. Catatan keuangan bersifat ringkasan publik bagi akun warga; jangan masukkan data pribadi atau nomor rekening. Besaran iuran mengikuti ketentuan BSK dan diisi warga; aplikasi tidak menentukan nominal.
 
 ## Peta Kode
 
@@ -76,6 +76,21 @@ sh deploy/auto-update.sh
 ```
 
 Kasus "halaman sudah baru tapi fitur masih pesan lama" hampir selalu berarti container belum dibangun ulang dengan kode terbaru, bukan kerusakan pada file impor.
+
+## Iuran, bukti pembayaran, dan pemasukan
+
+Setoran iuran memakai satu tabel, yaitu `contribution_payments`, yang juga jadi sumber data menu **Warga dan Setoran** dan halaman **Periksa Bukti Pembayaran**. Tidak ada lagi tabel pembayaran terpisah, jadi nama, RT/RW, periode, dan nominal di kedua tempat selalu sama.
+
+Kolom tambahan pada tabel setoran: `method`, `source` (`admin` atau `warga`), `proof_file`, `status`, `admin_note`, dan `reviewed_at`. Data lama dari tabel `resident_payments` dimigrasikan sekali saat server pertama kali dijalankan dengan versi ini; migrasi dijaga `NOT EXISTS` sehingga aman dijalankan berulang tanpa menggandakan setoran pada periode yang sama.
+
+Aturan yang berlaku:
+
+- **Bukti pembayaran bersifat opsional.** Setoran tanpa bukti tetap sah dan tetap bisa diverifikasi. Bila bukti dikirim, format dan ukurannya diperiksa dari tanda tangan isi file, bukan nama ekstensi.
+- Warga melampirkan bukti saat mengirim setoran, boleh melalui kamera ponsel atau pemilih berkas. Bukti kosong berarti mengirim setoran tanpa bukti.
+- Admin dan Super Admin dapat melampirkan atau mengganti bukti pada setoran mana pun lewat tombol **Lampirkan Bukti** atau **Ganti Bukti**, baik dari halaman verifikasi maupun dari riwayat setoran pada menu **Warga dan Setoran**. Pengiriman kosong pada endpoint `/api/admin/contribution-payments/<id>/proof` membuang bukti lama.
+- Bukti dibaca lewat `/media/contribution-proof/<id>`. Warga hanya boleh melihat bukti atas setorannya sendiri; pengelola butuh izin `payments`.
+- Setoran yang dikirim warga berstatus **Menunggu Verifikasi** dan belum masukhitungan. Setelah Approve, statusnya **Terverifikasi** dan nominalnya langsung masuk sebagai **pemasukan** di Data Keuangan. Penolakan wajib disertai catatan.
+- `sync_contribution_income` hanya menghitung setoran **Terverifikasi**. Setoran yang ditolak atau masih menunggu tidak memengaruhi Data Keuangan, dan baris pemasukan otomatis untuk periode yang tidak lagi punya setoran ikut terhapus.
 
 ## Masuk
 

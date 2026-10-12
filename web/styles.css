@@ -65,6 +65,15 @@
 .admin-payment-card { display: grid; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
 .admin-payment-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .admin-payment-card > p { margin: 0; color: var(--muted); font-size: 13px; }
+/* Kartu catatan keuangan: judul dan nominal sebaris, lalu satu baris kaki
+   berisi lencana otomatis, tombol rincian, dan hapus. Baris kaki dipisah
+   garis tipis supaya jelas bukan bagian dari judul. */
+.finance-amount-income { color: var(--green); font-variant-numeric: tabular-nums; }
+.finance-amount-expense { color: var(--rust); font-variant-numeric: tabular-nums; }
+.finance-entry-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line); }
+.finance-auto-badge { display: inline-flex; align-items: center; min-height: 26px; padding: 0 11px; border-radius: var(--radius-pill); color: var(--muted); background: var(--surface-soft); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 600; letter-spacing: .02em; }
+.finance-drill-button { min-height: 36px; padding: 0 14px; font-size: calc((12px) * var(--site-font-scale, 1)); }
+.finance-remove-button { margin-left: auto; padding: 6px 2px; white-space: nowrap; }
 .admin-payment-note { width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--radius-control); color: var(--ink); background: var(--surface-soft); }
 .admin-payment-actions { display: flex; gap: 12px; align-items: center; }
 .admin-payment-actions .primary-button { width: auto; min-width: 120px; min-height: 42px; }
@@ -265,6 +274,7 @@ h2 { margin-bottom: 0; font-family: var(--site-font-display); font-size: calc((c
 .toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
 .search-box { display: flex; flex: 1; align-items: center; gap: 11px; min-width: 0; height: 50px; padding: 0 16px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); background: var(--surface); transition: border-color var(--tp-dur) var(--tp-ease), box-shadow var(--tp-dur) var(--tp-ease); }
 .search-box svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.7; stroke-linecap: round; }
+
 .search-box input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: calc((15px) * var(--site-font-scale, 1)); }
 .search-box input { width: 100%; min-width: 0; border: 0 !important; outline: 0 !important; border-radius: 0 !important; background: transparent !important; color: var(--ink); -webkit-text-fill-color: var(--ink); }
 .search-box input::placeholder { color: var(--muted); }
@@ -301,15 +311,22 @@ kbd { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
 .record-table .record-detail-trigger { margin: 0; font-size: calc((15px) * var(--site-font-scale, 1)); }
 .record-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 14px; }
 .record-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 0; }
-.record-pagination .action-button { width: 44px; min-width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: calc((18px) * var(--site-font-scale, 1)); line-height: 1; }
+/* Tombol navigasi halaman berlabel teks ("Sebelumnya" / "Berikutnya").
+   Aturan lingkaran 44px hanya muat untuk tombol panah, sehingga teks ini
+   meluber keluar dan bertabrakan dengan pil nomor halaman. Lebarnya
+   sekarang mengikuti isi, dengan tinggi sama seperti pil nomor. */
+.record-pagination .action-button { min-width: 0; height: 40px; padding: 0 16px; border-radius: var(--radius-pill); font-size: calc((13px) * var(--site-font-scale, 1)); line-height: 1; white-space: nowrap; }
 .record-pagination .action-button:disabled { cursor: default; opacity: .4; }
-.record-page-numbers { display: flex; align-items: center; gap: 6px; }
+.record-page-numbers { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
 .record-page-number { width: 40px; height: 40px; padding: 0; border: var(--tp-bw) solid var(--line); border-radius: 50%; color: var(--muted); background: var(--surface); font-family: var(--site-font-mono); font-size: calc((13px) * var(--site-font-scale, 1)); transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease), border-color var(--tp-dur) var(--tp-ease), transform var(--tp-dur) var(--tp-ease); }
 .record-page-number:hover { border-color: var(--green); color: var(--green); background: var(--green-soft); }
 .record-page-number[aria-current="true"] { border-color: var(--action); color: var(--on-action); background: var(--action); font-weight: 700; }
 .record-page-number:disabled { opacity: .4; cursor: default; }
 .record-page-number:disabled:hover { border-color: var(--line); color: var(--muted); background: var(--surface); }
 .record-page-ellipsis { width: 26px; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); text-align: center; }
+/* Titik tiga kini tombol lompat ke halaman pertama atau terakhir. */
+button.record-page-ellipsis { padding: 0; border: 0; background: transparent; font-family: inherit; line-height: 1; cursor: pointer; transition: color var(--tp-dur) var(--tp-ease); }
+button.record-page-ellipsis:hover, button.record-page-ellipsis:focus-visible { color: var(--green); }
 .record-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 18px 3px; border-bottom: var(--tp-bw) solid var(--line); animation: arrive calc(var(--tp-dur) * 2) var(--tp-ease) both; }
 .record-card:has(.record-portrait) { grid-template-columns: 56px minmax(0, 1fr) auto; }
 .record-portrait { grid-column: 1; width: 52px; height: 52px; border-radius: 50%; object-fit: cover; filter: var(--tp-img-filter); }
@@ -380,7 +397,10 @@ kbd { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
 .contacts-section { position: relative; isolation: isolate; display: grid; min-width: 0; align-content: start; max-width: 1180px; margin: 0 auto; padding: 32px 0; }
 .contacts-section::before { content: ""; position: absolute; z-index: -1; inset-block: 0; left: 50%; width: 100vw; transform: translateX(-50%); background: var(--news-band); }
 .contacts-hint { margin: 0 0 22px; color: var(--muted); font-size: calc((15px) * var(--site-font-scale, 1)); line-height: 1.65; }
-.contacts-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 18px; }
+/* align-items:start mencegah kartu ikutdiregangkan mengikuti kartu
+   tertinggi di baris yang sama. Tanpa ini, kartu dengan satu pengurus
+   menyisakan ruang kosong besar di bawah isinya. */
+.contacts-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); align-items: start; gap: 18px; }
 .contact-card { display: grid; min-width: 0; align-content: start; gap: 12px; padding: 6px 20px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); background: color-mix(in srgb, var(--surface-soft) 42%, var(--surface)); box-shadow: var(--shadow-soft); transition: border-color var(--tp-dur) var(--tp-ease), transform var(--tp-dur) var(--tp-ease), box-shadow var(--tp-dur) var(--tp-ease); }
 .contact-card:hover { border-color: var(--green); box-shadow: var(--shadow-hover); transform: translateY(-3px); }
 .contact-card-toggle { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border: 0; color: var(--ink); background: transparent; text-align: left; cursor: pointer; }
@@ -390,13 +410,22 @@ kbd { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
 .contact-card-chevron { color: var(--green); font-size: calc((20px) * var(--site-font-scale, 1)); line-height: 1; transition: transform var(--tp-dur) var(--tp-ease); }
 .contact-card-toggle[aria-expanded="true"] .contact-card-chevron { transform: rotate(90deg); }
 .contact-card-detail { display: grid; min-width: 0; gap: 10px; padding: 0 0 16px; border-top: var(--tp-bw) solid var(--line); }
-.contact-row { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px; padding-top: 10px; }
+/* align-items:flex-end炙把 nomor HP disejajarkan dengan baris NAMA, bukan
+   di tengah blok. Dengan align-items:center, nomor turun tepat di antara
+   jabatan dan nama sehingga terlihat meleset. */
+/* align-items:flex-end membuat nomor HP disejajarkan dengan baris NAMA,
+   bukan di tengah blok. Dengan align-items:center, nomor turun tepat di
+   antara jabatan dan nama sehingga terlihat meleset. */
+.contact-row { display: flex; min-width: 0; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 14px; padding-top: 12px; }
 .contact-row-copy { display: grid; min-width: 0; gap: 3px; }
 .contact-unit { margin: 0; color: var(--green); font-family: var(--site-font-display); font-size: calc((20px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
 .contact-name { margin: 0; color: var(--ink); font-size: calc((16px) * var(--site-font-scale, 1)); font-weight: 600; overflow-wrap: anywhere; }
 .contact-position { margin: 0; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); }
-.contact-phone { color: var(--ink); font-family: var(--site-font-mono); font-size: calc((14px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); text-decoration: none; overflow-wrap: anywhere; }
-.contact-phone:hover { color: var(--green); text-decoration: underline; text-underline-offset: 3px; }
+/* Nomor HP dibuat seperti tombol kecil supaya jelas bisa diklik, dan
+   tidak pernah terpotong di tengah digit. */
+.contact-phone { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; max-width: 100%; padding: 0 13px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); color: var(--ink); background: var(--surface); font-family: var(--site-font-mono); font-size: calc((13px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); text-decoration: none; white-space: nowrap; transition: color var(--tp-dur) var(--tp-ease), border-color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
+.contact-phone svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.contact-phone:hover { border-color: var(--green); color: var(--green); background: var(--green-soft); }
 .contact-phone:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
 .dialog.news-detail-dialog { width: min(1100px, calc(100% - 64px)); }
 .news-detail-content { display: grid; gap: 14px; }
@@ -433,8 +462,34 @@ kbd { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
 .typography-preview-copy[data-typography-preview="intro"] { text-align: var(--intro-text-align, left); }
 .typography-preview-copy[data-typography-preview="news"] { text-align: var(--news-text-align, left); }
 .typography-preview-copy[data-typography-preview="directory"] { text-align: var(--directory-text-align, left); }
-.news-image-preview { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); }
-.news-image-preview img { width: 72px; height: 48px; border-radius: var(--radius-control); object-fit: cover; filter: var(--tp-img-filter); }
+/* Aksi form pengaturan: tombol simpan dan tombol hapus sebaris, rata kanan.
+
+   Sebelumnya keduanya berdiri sebagai anak .form-stack yang display:grid, dan
+   .primary-button memakai width:100% sehingga tombol simpan memenuhi seluruh
+   lebar form, sementara tombol hapus jatuh ke baris berikutnya dan ikut
+   ter-center. Sekarang keduanya dibungkus satu baris dengan lebar sesuai isi. */
+.settings-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 14px; }
+.settings-actions .primary-button { width: auto; min-width: 170px; }
+.settings-actions .text-button { padding: 6px 4px; white-space: nowrap; }
+
+/* Pratinjau foto berita.
+
+   Dua keadaan: belum ada foto (garis putus-putus, isi di tengah) dan foto
+   sudah ada (kartu dengan gambar di kiri dan keterangan di kanan). Tombol
+   hapus duduk di bawah kartu, rata kiri, bukan melayang sendiri. */
+.news-image-field { display: grid; gap: 10px; justify-items: start; }
+.news-image-preview { display: block; width: 100%; }
+.news-image-preview.is-empty { border: var(--tp-bw) dashed var(--line); border-radius: var(--radius-control); background: var(--surface-soft); }
+.news-image-empty { display: block; padding: 20px 16px; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 500; text-align: center; }
+.news-image-frame { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 14px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); }
+.news-image-frame img { width: 104px; height: 68px; border-radius: 8px; object-fit: cover; filter: var(--tp-img-filter); }
+.news-image-caption { display: grid; gap: 3px; min-width: 0; }
+.news-image-caption strong { color: var(--ink); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 600; }
+.news-image-caption span { color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 500; overflow-wrap: anywhere; }
+.news-image-remove { display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); color: var(--rust); background: transparent; font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 600; transition: color var(--tp-dur) var(--tp-ease), border-color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
+.news-image-remove:hover { border-color: var(--rust); background: color-mix(in srgb, var(--rust) 10%, transparent); }
+.news-image-remove[hidden] { display: none; }
+@media (max-width: 480px) { .news-image-frame { grid-template-columns: minmax(0, 1fr); } .news-image-frame img { width: 100%; height: auto; aspect-ratio: 16 / 9; } }
 .admin-news-image { display: block; width: min(100%, 360px); max-height: 190px; border-radius: var(--radius-card); object-fit: cover; filter: var(--tp-img-filter); }
 .footer { width: min(calc(100% - 64px), 1116px); display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 0 auto; padding: 14px 24px; border: 0; border-radius: 0; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); letter-spacing: .35px; text-align: center; }
 .footer b { padding: 0 3px; color: var(--line); }
@@ -494,11 +549,17 @@ kbd { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
 .user-form-grid input[type="file"] { width: 100%; min-width: 0; min-height: 48px; padding: 9px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); color: var(--muted); background: var(--surface-soft); font-size: calc((13px) * var(--site-font-scale, 1)); }
 .user-identity-column { display: grid; min-width: 0; align-content: start; gap: 10px; }
 .user-password-default { margin: 0; overflow-wrap: anywhere; }
-.permission-fieldset { display: grid; gap: 10px; margin: 0; padding: 16px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); background: var(--surface-soft); }
-.permission-fieldset legend { padding: 0 6px; color: var(--green); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+/* Fieldset izin TIDAK memakai kotak sendiri. Section admin sudah memberi
+   garis pemisah di bagian atasnya, sehingga border fieldset ini muncul
+   sebagai garis kedua yang sejajar dan terlihat seperti garis ganda.
+   Label kelompok tetap ada sebagai teks biasa. */
+.permission-fieldset { display: grid; min-width: 0; gap: 12px; margin: 0; padding: 0; border: 0; background: transparent; }
+.permission-fieldset legend { float: none; width: 100%; max-width: 100%; padding: 0 0 2px; color: var(--green); font-family: inherit; font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 700; letter-spacing: .01em; text-transform: none; overflow-wrap: anywhere; }
 .permission-fieldset .form-hint { margin: 0; }
-.permission-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; }
-.permission-grid label { display: flex; align-items: center; gap: 9px; color: var(--ink); font-size: calc((14px) * var(--site-font-scale, 1)); }
+/* min-width:0 wajib: sebagai flex container, teks di dalam label punya
+   min-width:auto sehingga tidak mau menyusut dan meluber keluar kolom. */
+.permission-grid { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; }
+.permission-grid label { display: flex; align-items: center; gap: 9px; min-width: 0; flex-wrap: wrap; color: var(--ink); font-size: calc((14px) * var(--site-font-scale, 1)); overflow-wrap: anywhere; }
 .permission-grid input { width: 17px; height: 17px; accent-color: var(--green); }
 .user-photo-preview { display: flex; width: 100%; min-height: 0; align-items: flex-start; gap: 10px; margin-top: -2px; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 400; line-height: 1.45; }
 .user-photo-preview img { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; filter: var(--tp-img-filter); }
@@ -546,6 +607,8 @@ kbd { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
 .admin-page:not(.admin-authenticated) #admin-dialog .form-error,
 .admin-page:not(.admin-authenticated) #admin-dialog .form-hint { font-size: calc((12px) * var(--site-font-scale, 1)); }
 .dialog-top { display: flex; justify-content: space-between; align-items: start; margin-bottom: 18px; }
+/* Judul dialog dengan tombol aksi di kanan, mis. Cetak Formulir. */
+.dialog-top-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .dialog-top .eyebrow { margin-bottom: 6px; }
 .news-detail-dialog .dialog-top { align-items: center; }
 .news-detail-dialog .dialog-top .eyebrow { margin: 0; font-size: calc((13px) * var(--site-font-scale, 1)); letter-spacing: .18em; }
@@ -596,6 +659,11 @@ input, textarea, #detail-record-select, #permission-user-select, select[name="ro
 html[data-mode="dark"] .admin-profile-avatar { overflow: hidden; color: transparent; background: transparent; }
 html[data-mode="dark"] #admin-profile-initials { display: none; }
 html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: block; }
+/* Logo utama maupun kedua memakai "contain" supaya gambar tidak diregangkan
+   saat kotak render tidak sama dengan rasio gambar aslinya. Sebelumnya
+   object-fit hanya berlaku untuk logo kedua dan untuk logo utama ber kelas
+   BSK, sehingga logo utama biasa ikut gepeng. */
+#brand-icon,
 #brand-icon-secondary,
 #brand-icon.brand-icon-bsk { object-fit: contain; background: transparent; }
 /* Logo BSK tetap ditampilkan utuh (contain) di atas scrim, bukan di-crop
@@ -620,13 +688,15 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .admin-profile-menu-account small { color: #555; font-size: calc((12px) * var(--site-font-scale, 1)); }
 .admin-profile-menu-item { display: flex; min-width: 0; min-height: 42px; align-items: center; padding: 9px 10px; border: 0; border-radius: var(--radius-control); color: #222; background: transparent; font-size: calc((13px) * var(--site-font-scale, 1)); text-align: left; cursor: pointer; }
 .admin-profile-menu-item:hover { background: #e5e5e5; }
-.admin-task-nav { display: grid; gap: 3px; margin: 2px 0 10px 14px; padding: 0 0 0 10px; border-left: var(--tp-bw) solid var(--line); }
+/* Garis vertikal pemandu di sub menu dihapus supaya sidebar terlihat bersih.
+   Indentasi tetap dipertahankan agar hierarki menu masih terbaca. */
+.admin-task-nav { display: grid; gap: 3px; margin: 2px 0 10px 8px; padding: 0; }
 .admin-task-nav > * { animation: admin-task-reveal calc(var(--tp-dur) * 1.8) var(--tp-ease) both; }
 .admin-task-nav > *:nth-child(2) { animation-delay: calc(var(--tp-stagger) * .5); }
 .admin-task-nav > *:nth-child(3) { animation-delay: calc(var(--tp-stagger) * 1); }
 .admin-task-nav > *:nth-child(4) { animation-delay: calc(var(--tp-stagger) * 1.5); }
 .admin-task-nav > *:nth-child(5) { animation-delay: calc(var(--tp-stagger) * 2); }
-.admin-task-group { min-width: 0; }
+.admin-task-heading { margin: 6px 0 2px; color: var(--muted); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }.admin-task-group { min-width: 0; }
 .admin-task-group summary,
 .admin-task-link { display: flex; min-width: 0; min-height: 38px; align-items: center; gap: 7px; padding: 8px 10px; border-radius: var(--radius-control); color: var(--muted); font-size: calc((12.5px) * var(--site-font-scale, 1)); line-height: 1.35; text-align: left; text-decoration: none; overflow-wrap: anywhere; cursor: pointer; }
 .admin-task-group summary { color: var(--ink); font-weight: 400; list-style: none; transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
@@ -637,7 +707,7 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .admin-task-link:hover,
 .admin-task-link:focus-visible { color: var(--green); background: var(--green-soft); outline: none; }
 .admin-task-link.is-active { color: var(--green); background: var(--green-soft); box-shadow: inset 2px 0 0 var(--green); font-weight: 600; }
-.admin-task-links { display: grid; gap: 2px; margin: 2px 0 6px 12px; padding-left: 8px; border-left: var(--tp-bw) solid var(--line); animation: admin-task-reveal calc(var(--tp-dur) * 1.4) var(--tp-ease) both; }
+.admin-task-links { display: grid; gap: 2px; margin: 2px 0 6px 6px; padding-left: 4px; animation: admin-task-reveal calc(var(--tp-dur) * 1.4) var(--tp-ease) both; }
 .admin-task-links > * { animation: admin-task-reveal calc(var(--tp-dur) * 1.5) var(--tp-ease) both; }
 .admin-task-links > *:nth-child(2) { animation-delay: calc(var(--tp-stagger) * .4); }
 .admin-task-links > *:nth-child(3) { animation-delay: calc(var(--tp-stagger) * .8); }
@@ -704,6 +774,19 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .check-row input { width: 17px; height: 17px; flex: none; margin: 1px 0 0; accent-color: var(--green); }
 .form-hint { margin: -5px 0 0; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); line-height: 1.6; }
 .form-error { min-height: 0; margin: -5px 0; color: var(--rust); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 500; }
+/* Pesan galat di dalam dialog gambar tanda tangan.
+   .form-error memakai margin negatif sehingga elemen yang hanya berisi teks
+   punya tinggi 0 dan pesannya tidak terlihat sama sekali. Di sini margin
+   dibuat normal dan pesan disembunyikan lewat display, bukan lewat
+   ketiadaan teks, supaya tetap punya ruang saat isinya muncul. */
+.signature-pad-error { display: none; margin: 10px 0 0; padding: 9px 12px; border: var(--tp-bw) solid var(--rust); border-radius: var(--radius-control); background: var(--rust-soft, var(--green-soft)); color: var(--rust); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 600; line-height: 1.45; }
+.signature-pad-error.is-visible { display: block; }
+/* Baris status tanda tangan: pesan di kiri, tombol hapus di kanan.
+   Tanpa ini tombol hapus jatuh ke baris sendiri dan form jadi jarang. */
+.signature-status-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.signature-status-row .form-hint { margin: 0; flex: 1 1 auto; min-width: 0; }
+.signature-status-row .signature-delete-button[hidden] { display: none; }
+.signature-status-row .signature-delete-button { flex: none; padding: 0; }
 .form-success { margin: 10px 0 0; color: var(--green); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 600; }
 .primary-button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 50px; padding: 0 22px; border: 0; border-radius: var(--radius-pill); color: var(--on-action); background: var(--action); font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 600; letter-spacing: .01em; box-shadow: var(--shadow-soft); transition: background-color var(--tp-dur) var(--tp-ease), box-shadow var(--tp-dur) var(--tp-ease), transform var(--tp-dur) var(--tp-ease); }
 .primary-button:hover { background: color-mix(in srgb, var(--action) 88%, var(--tp-ink)); box-shadow: var(--shadow-hover); transform: translateY(-2px); }
@@ -765,8 +848,12 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 
 dialog:not([open]) { display: none !important; }
 
-
-#contribution-print-dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(1200px, 95vw); max-height: 92vh; overflow-y: auto; }
+/* Dialog pratinjau dipusatkan manual. .print-preview-panel memberi margin
+   vertikal yang menimpa margin:auto bawaan dialog, jadi tanpa aturan ini
+   dialog menempel di kiri atas. Berlaku untuk semua dialog pratinjau, bukan
+   hanya satu per satu. */
+dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; transform: translate(-50%, -50%); max-height: 92vh; overflow-y: auto; }
+#contribution-print-dialog { width: min(1200px, 95vw); }
 .print-preview-panel .print-table { display: table; width: 100%; border-collapse: collapse; font-size: calc((13px) * var(--site-font-scale, 1)); table-layout: fixed; }
 .print-preview-panel .print-table th, .print-preview-panel .print-table td { padding: 9px 10px; border: var(--tp-bw) solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word; }
 .print-preview-panel .print-table th { color: var(--green); background: var(--green-soft); font-weight: 700; }
@@ -780,7 +867,7 @@ dialog:not([open]) { display: none !important; }
 .manage-list small { display: block; margin-top: 4px; color: var(--muted); font-size: calc((12.5px) * var(--site-font-scale, 1)); }
 .manage-list .manage-item-audit { color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11.5px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); }
 .admin-record-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 14px; }
-.admin-record-pagination .action-button { width: 44px; min-width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: calc((18px) * var(--site-font-scale, 1)); line-height: 1; }
+.admin-record-pagination .action-button { min-width: 0; height: 40px; padding: 0 16px; border-radius: var(--radius-pill); font-size: calc((13px) * var(--site-font-scale, 1)); line-height: 1; white-space: nowrap; }
 .admin-record-pagination .action-button:disabled { cursor: default; opacity: .4; }
 .admin-record-pagination .record-page-number { transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease), border-color var(--tp-dur) var(--tp-ease), transform var(--tp-dur) var(--tp-ease); }
 
@@ -844,6 +931,13 @@ dialog:not([open]) { display: none !important; }
 .admin-section > label { display: grid; gap: 8px; color: var(--muted); font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 600; }
 .admin-section > label select, .admin-section input:not([type="checkbox"]), .admin-section input[type="file"] { width: 100%; min-height: 48px; padding: 11px 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); color: var(--ink); background: var(--surface-soft); font-size: calc((14px) * var(--site-font-scale, 1)); }
 .admin-section .form-stack { margin-top: 8px; }
+/* Hak Akses adalah sub-section dari "Data Pengguna" dan berada di dalamnya,
+   bukan section terpisah. Karena keduanya memakai .admin-section yang selalu
+   membawa border-top, dua garis sejajar muncul. Aturan ini sengaja diletakkan
+   SETELAH .admin-section: spesifisitasnya sama, jadi urutan yang menentukan.
+   Sub-section ini karena itu tidak memakai garis pemisah dan tidak memakai
+   padding atas, hanya jarak agar tidak menempel ke section induknya. */
+.admin-section.permission-admin-section { margin-top: 30px; padding-top: 0; border-top: 0; }
 .contribution-management { gap: 17px; }
 .contribution-page-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; }
 .contribution-page-heading h2 { margin: 0; color: var(--ink); font-family: var(--site-font-display); font-size: calc((24px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
@@ -894,6 +988,14 @@ dialog:not([open]) { display: none !important; }
 .contribution-relationship-badge:not(.is-head) { background: var(--surface-soft); color: var(--ink); border: var(--tp-bw) solid var(--ink); }
 :root[data-mode="dark"] .contribution-relationship-badge.is-head { background: var(--green); color: #171717; }
 .contribution-relationship-badge:hover { transform: none; box-shadow: none; }
+/* Tanda warga yang sudah wafat. Warna netral supaya tidak tertukar dengan
+   lencana "Kepala Kel" yang memakai hijau solid. */
+.contribution-deceased-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; margin-left: 8px; background: var(--surface-soft); border: var(--tp-bw) solid var(--line); color: var(--muted); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 600; justify-self: start; align-self: center; cursor: default; }
+.contribution-deceased-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex: none; }
+.contribution-resident-card.is-deceased { border-left: 3px solid var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .contribution-resident-card.is-deceased .contribution-resident-avatar { filter: grayscale(1); opacity: .75; }
+}
 .contribution-resident-actions .delete-resident-btn { min-width: 80px; }
 .contribution-resident-details { border-top: var(--tp-bw) solid var(--line); }
 .contribution-resident-details > summary { display: flex; min-height: 38px; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0 0; color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); cursor: pointer; list-style: none; }
@@ -916,6 +1018,18 @@ dialog:not([open]) { display: none !important; }
 .contribution-payment-history > li > small { grid-column: 1 / -1; color: var(--muted); }
 .contribution-payment-history > li > a { color: var(--green); font-size: calc((12px) * var(--site-font-scale, 1)); }
 .family-dialog-body { padding: 12px 0; }
+/* Pemilih kepala keluarga dari data warga iuran.
+   Memakai pola label + input biasa seperti field lain di formulir, bukan
+   kelas .search-box yang biasanya untuk susunan ikon dan input. */
+.registration-family-picker .form-hint { margin: 0; }
+.registration-family-results { display: grid; gap: 8px; margin-top: 12px; max-height: 320px; overflow-y: auto; padding-right: 2px; }
+.registration-family-option { display: grid; gap: 3px; width: 100%; padding: 12px 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface); text-align: left; font: inherit; cursor: pointer; transition: border-color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
+.registration-family-option strong { color: var(--ink); font-size: calc((15px) * var(--site-font-scale, 1)); }
+.registration-family-option span { color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); }
+.registration-family-option small { color: var(--muted); font-size: calc((11.5px) * var(--site-font-scale, 1)); line-height: 1.45; overflow-wrap: anywhere; }
+.registration-family-option:hover,
+.registration-family-option:focus-visible { border-color: var(--green); background: var(--green-soft); outline: none; }
+
 .family-table { width: 100%; border-collapse: collapse; font-size: calc((13px) * var(--site-font-scale, 1)); }
 .family-table th, .family-table td { border: var(--tp-bw) solid var(--line); padding: 8px; text-align: left; }
 .family-table th { background: var(--surface-soft); font-weight: 650; }
@@ -982,7 +1096,15 @@ dialog:not([open]) { display: none !important; }
 .position-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: color-mix(in srgb, var(--surface-soft) 42%, var(--surface)); }
 .position-order { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; color: var(--green); background: var(--green-soft); font-family: var(--site-font-mono); font-size: calc((12px) * var(--site-font-scale, 1)); }
 .position-name { color: var(--ink); font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 600; overflow-wrap: anywhere; }
-.position-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; align-self: end; }
+/* Form jabatan: kolom nama hanya setengah lebar, sisa dipakai tombol.
+   "Batal" dan "Simpan Jabatan" tetap satu baris dan rata bawah dengan
+   kolom input. Tombol simpan tidak lagi memakai width:100% milik
+   .primary-button, karena itu membuatnya memenuhi kolom dan terdorong. */
+.position-form-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: end; }
+.position-form-actions { display: flex; align-items: center; gap: 12px; }
+.position-form-actions .primary-button { width: auto; min-width: 150px; }
+.position-form-actions .text-button { padding: 6px 4px; white-space: nowrap; }
+@media (max-width: 700px) { .position-form-row { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) { .position-item { grid-template-columns: auto minmax(0, 1fr); } .position-item .admin-news-actions { grid-column: 1 / -1; justify-content: flex-start; } }
 .admin-news-image { display: block; width: 56px; height: 42px; border-radius: var(--radius-control); object-fit: cover; filter: var(--tp-img-filter); }
 .admin-news-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
@@ -1251,7 +1373,7 @@ dialog:not([open]) { display: none !important; }
   .admin-news-image { width: 44px; height: 38px; }
   .admin-news-actions { grid-column: 1 / -1; justify-content: flex-start; }
   .admin-nav { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 0; padding: 0 0 10px; overflow: visible; border-bottom: var(--tp-bw) solid var(--line); }
-  .admin-task-nav { grid-template-columns: minmax(0, 1fr); margin-left: 14px; padding-right: 0; }
+  .admin-task-nav { grid-template-columns: minmax(0, 1fr); margin-left: 8px; padding-right: 0; }
   .admin-task-group { grid-column: auto; }
   .admin-task-links { grid-template-columns: minmax(0, 1fr); }
   .admin-profile { margin-top: 14px; padding-top: 12px; border-top: var(--tp-bw) solid var(--line); }
@@ -1273,6 +1395,12 @@ dialog:not([open]) { display: none !important; }
   .contribution-resident-card, .contribution-summary article, .contribution-resident-details-body { animation: none; }
 }
 @media (max-width: 520px) {
+  /* Di layar sempit penomoran halaman dipusatkan penuh dan jaraknya dirapatkan
+     supaya barisnya tidak melebar melewati tepi layar. */
+  .record-page-numbers { justify-content: center; gap: 4px; width: 100%; }
+  .record-page-number { width: 36px; height: 36px; font-size: calc((12px) * var(--site-font-scale, 1)); }
+  .record-page-ellipsis { width: 20px; font-size: calc((12px) * var(--site-font-scale, 1)); }
+  button.record-page-ellipsis { width: 20px; }
   .contribution-summary { grid-template-columns: minmax(0, 1fr); }
   .contribution-summary article { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
   .contribution-summary article strong { grid-column: 2; grid-row: 1 / span 2; }
@@ -1326,6 +1454,9 @@ dialog:not([open]) { display: none !important; }
   .brand-logo-group:has(#brand-icon-secondary[hidden]) #brand-icon { max-width: 26px; }
 }
 
+.contribution-payers-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.contribution-payers-filters .search-box { flex: 1 1 180px; }
+
 /* CETAK */
 @page { size: A4 landscape; margin: 12mm; }
 @media print {
@@ -1333,8 +1464,10 @@ dialog:not([open]) { display: none !important; }
   body .topbar, body .dialog-top, body .admin-nav,
   body #admin-view-records > form, body .edit-record-form, body .manage-heading, body .manage-toolbar,
   body #manage-list, body .manage-actions, body .export-warning, body .print-preview-header,
+  body .contribution-payers-filters,
   body .admin-view:not(#admin-view-records) { display: none !important; }
-  body #contribution-print-dialog, body #contact-print-dialog { position: static; inset: auto; margin: 0; width: 100%; max-width: none; max-height: none; overflow: visible; }
+  body #contribution-print-dialog, body #contact-print-dialog, body #finance-contribution-dialog,
+  body #contribution-payers-dialog { position: static; inset: auto; transform: none; margin: 0; width: 100%; max-width: none; max-height: none; overflow: visible; }
   body #admin-dialog[open] { position: static; inset: auto; width: 100%; max-width: none; max-height: none; margin: 0; padding: 0; overflow: visible; clip-path: none; border: 0; background: #fff; box-shadow: none; }
   body .admin-workspace, body .admin-views { display: block; }
   body #admin-view-records { display: block !important; }
@@ -1354,7 +1487,62 @@ body #contact-print-table tr.contact-print-unit[data-page-break="true"] { break-
 body #contact-print-table tr.contact-print-unit th { color: #171717 !important; background: #fff !important; padding-top: 10px; text-align: left; font-size: 11pt; }
 body #contact-print-table tr.contact-print-unit:first-child th { padding-top: 4px; }
 body #contact-print-table { counter-reset: none; }
-body #contact-print-table thead { display: table-header-group; }
+  body #contact-print-table thead { display: table-header-group; }
+  body #contribution-payers-table { display: table !important; width: 100%; border-collapse: collapse; color: #171717; font-size: 9.5pt; background: #fff; table-layout: fixed; }
+  body #contribution-payers-table th,
+  body #contribution-payers-table td { padding: 4px 5px; border: 1px solid #444; text-align: left; vertical-align: top; background: transparent; overflow-wrap: anywhere; word-break: break-word; }
+  body #contribution-payers-table th { color: #174D3C !important; background: #e2e2e2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body #contribution-payers-table thead { display: table-header-group; }
+
+  /* Formulir pendaftaran dicetak dari dalam dialog. Kelas is-printing-registration
+   * hanya dipasang sesaat selama window.print() berjalan, sehingga cetakan
+   * daftar warga, kontak, dan iuran tidak ikut tersembunyi. */
+  body.is-printing-registration > *:not(.registration-print-sheet) { display: none !important; }
+  /* Lebar isi mengikuti area cetak A4 portrait (210mm - 2x10mm margin). */
+  body.is-printing-registration .registration-print-sheet { display: block !important; width: 190mm; max-width: 100%; margin: 0 auto; color: #171717; background: #fff; font-family: Arial, Helvetica, sans-serif; }
+  body .registration-print-sheet .registration-print-logo { width: 58px; height: 58px; }
+  body .registration-print-sheet .registration-print-letterhead-text h2 { color: #171717; font-size: calc(var(--export-title-size, 21) * 0.75pt); letter-spacing: 0; }
+  body .registration-print-sheet .registration-print-letterhead-text p { color: #171717; font-size: calc(var(--export-line-size, 13) * 0.75pt); font-weight: 700; }
+  body .registration-print-sheet .registration-print-letterhead-contact { margin: 2px 0 0; color: #171717; font-size: calc(var(--export-contact-size, 10) * 0.75pt); white-space: nowrap; }
+  body .registration-print-sheet .registration-print-form-title { margin: 14px 0 12px; color: #171717; font-size: 11pt; }
+  body .registration-print-sheet .registration-print-fields { width: 100%; color: #171717; font-size: 9pt; }
+  /* Kolom label dilebarkan sampai label terpanjang ("TEMPAT & TANGGAL
+   * LAHIR") tetap satu baris. Kalau membungkus, setiap baris jadi dua
+   * kali tinggi dan ruang vertikal yang dibutuhkan blok tanda tangan
+   * ikut terpakai. */
+  body .registration-print-sheet .registration-print-fields th { width: 46mm; color: #171717; font-size: 9pt; padding: 2px 6px 2px 0; white-space: nowrap; }
+  body .registration-print-sheet .registration-print-fields td { padding: 2px 0; }
+  body .registration-print-sheet .registration-print-members { display: table !important; width: 100%; margin-top: 12px; border-collapse: collapse; color: #171717; font-size: 8pt; background: #fff; table-layout: fixed; }
+  body .registration-print-sheet .registration-print-members th,
+  body .registration-print-sheet .registration-print-members td { height: 22px; padding: 2px 4px; border: 1.2pt solid #000; text-align: left; vertical-align: middle; overflow-wrap: anywhere; word-break: break-word; }
+  /* Kepala kolom dan kolom pendek dibuat rata tengah supaya tabel
+   * terbaca simetris, sisanya rata kiri mengikuti isinya. */
+  body .registration-print-sheet .registration-print-members th { text-align: center; }
+  body .registration-print-sheet .registration-print-members th:first-child,
+  body .registration-print-sheet .registration-print-members td:first-child,
+  body .registration-print-sheet .registration-print-members th:nth-child(6),
+  body .registration-print-sheet .registration-print-members td:nth-child(6),
+  body .registration-print-sheet .registration-print-members th:nth-child(7),
+  body .registration-print-sheet .registration-print-members td:nth-child(7) { text-align: center; }
+  body .registration-print-sheet .registration-print-members th { color: #171717 !important; background: #e4e4e4 !important; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body .registration-print-sheet .registration-print-members thead { display: table-header-group; }
+  body .registration-print-sheet .registration-print-agreement { margin: 10px 0 0; color: #171717; font-size: 8.5pt; }
+  body .registration-print-sheet .registration-print-signatures { margin-top: 12px; break-inside: avoid; page-break-inside: avoid; }
+  body .registration-print-sheet .registration-print-place-date { margin: 0 0 3px; color: #171717; font-size: 9pt; }
+  body .registration-print-sheet .registration-print-top-grid { margin-top: 3px; gap: 18px; }
+  body .registration-print-sheet .registration-print-approval { margin-top: 12px; }
+  body .registration-print-sheet .registration-print-approval-note { margin: 0 0 4px; color: #171717; font-size: 8.5pt; }
+  body .registration-print-sheet .registration-print-approval-grid { gap: 12px; }
+  body .registration-print-sheet .registration-print-sig-label { color: #171717; font-size: 8pt; }
+  body .registration-print-sheet .registration-print-sig-name { color: #171717; font-size: 8.5pt; }
+  body .registration-print-sheet .registration-print-sig-preview { min-height: 40px; margin: 3px 0; }
+  body .registration-print-sheet .registration-print-sig-preview img { max-height: 40px; }
+  /* Cegah blok besar terbelah antar halaman. */
+  body .registration-print-sheet .registration-print-fields tr,
+  body .registration-print-sheet .registration-print-members tr,
+  body .registration-print-sheet .registration-print-agreement,
+  body .registration-print-sheet .registration-print-signatures,
+  body .registration-print-sheet .registration-print-sig-cell { break-inside: avoid; page-break-inside: avoid; }
 }
 
 /* MODE MALAM: stoneware gelap */
@@ -1504,14 +1692,134 @@ body.site-font-italic.target-body p, body.site-font-italic.target-body li, body.
 .registration-table-scroll { overflow-x: auto; }
 .registration-agreement-box { padding: 11px 13px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); white-space: pre-line; }
 .registration-signature-block, .registration-review-block { display: grid; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
-.registration-signature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
-.registration-signature-cell { display: grid; gap: 7px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); }
-.registration-signature-cell strong { font-size: calc((13px) * var(--site-font-scale, 1)); }
+/* Sheet cetak formulir. Di layar disembunyikan penuh; isinya dibangun
+ * ulang setiap kali tombol Cetak Formulir ditekan. Semua kelas di bawah
+ * hanya dipakai sheet ini, jadi cetakan menu lain tidak tersentuh. */
+.registration-print-sheet { display: none; }
+/* Logo mengapit satu blok teks (judul + kontak). align-items: center
+ * membuat logo terpusat vertikal terhadap seluruh blok teks, jadi ukuran
+ * logo besar tidak menyisakan celah kosong di bawah judul. */
+.registration-print-letterhead { display: flex; align-items: center; justify-content: center; column-gap: 20px; }
+.registration-print-letterhead-body { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 0 1 auto; min-width: 0; text-align: center; }
+.registration-print-logo { width: 74px; height: 74px; flex: none; object-fit: contain; }
+.registration-print-letterhead-text { flex: 0 1 auto; min-width: 0; text-align: center; }
+.registration-print-letterhead-text h2 { margin: 0; font-size: calc((var(--export-title-size, 21) * 1px) * var(--site-font-scale, 1)); letter-spacing: .02em; }
+.registration-print-letterhead-text p { margin: 2px 0 0; font-size: calc((var(--export-line-size, 13) * 1px) * var(--site-font-scale, 1)); font-weight: 600; }
+/* Baris kontak mengalir tepat di bawah judul dalam satu blok teks,
+ * jaraknya ke judul tinggal gap 2px dan posisinya tidak terpengaruh
+ * oleh ukuran logo. white-space: nowrap menjaga kontak tetap satu
+ * baris; ukurannya bisa diatur dari panel admin. */
+.registration-print-letterhead-contact { margin: 0; text-align: center; font-size: calc((var(--export-contact-size, 10) * 1px) * var(--site-font-scale, 1)); white-space: nowrap; }
+.registration-print-rule { margin-top: 3px; border-top: 3px double currentColor; }
+.registration-print-form-title { margin: 18px 0 16px; font-size: calc((15px) * var(--site-font-scale, 1)); text-align: center; letter-spacing: .02em; }
+.registration-print-fields { width: 100%; border-collapse: collapse; font-size: calc((12px) * var(--site-font-scale, 1)); }
+/* Label tidak dibungkus ke baris kedua, supaya label terpanjang
+ * "TEMPAT & TANGGAL LAHIR" tetap muat dalam satu baris. */
+.registration-print-fields th { width: 150px; padding: 2px 0; text-align: left; vertical-align: top; font-weight: 400; color: var(--ink); white-space: nowrap; }
+.registration-print-fields td { padding: 2px 0; vertical-align: top; overflow-wrap: anywhere; }
+.registration-print-colon { width: 12px; padding-left: 2px !important; }
+.registration-print-choices { display: flex; flex-wrap: wrap; gap: 18px; }
+.registration-print-rt { display: inline-block; min-width: 70px; }
+.registration-print-rw { display: inline-block; }
+.registration-print-agreement { margin: 12px 0 0; font-size: calc((11px) * var(--site-font-scale, 1)); }
+.registration-print-agreement p { margin: 0 0 4px; }
+.registration-print-agreement ol { margin: 0 0 0 22px; padding: 0; }
+/* Panel pengaturan cetakan yang muncul di dalam dialog Tinjau
+ * Pendaftaran: tempat, tanggal, dan ukuran huruf blok tanda tangan. */
+.registration-print-settings { margin-top: 14px; padding: 12px 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); }
+.registration-print-settings > .form-hint { margin: 0 0 8px; }
+.registration-print-settings-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.registration-print-settings-row label { display: grid; gap: 4px; font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 600; }
+.registration-print-settings-row input { width: 100%; min-height: 40px; padding: 0 12px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface); color: var(--ink); font: inherit; }
+.registration-print-size-field { grid-template-columns: auto 1fr; align-items: center; gap: 8px !important; }
+.registration-print-size-field input { grid-column: 1; }
+.registration-print-size-field .form-hint { grid-column: 2; margin: 0; font-weight: 400; }
+.registration-print-settings-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+
+/* Wadah tunggal untuk seluruh blok tanda tangan, agar tidak terbelah antar
+ * halaman. Isi dua bagian: atas (Ketua RT + maker) dan bawah (tiga jabatan). */
+.registration-print-signatures { break-inside: avoid; page-break-inside: avoid; margin-top: 12px; }
+.registration-print-place-date { margin: 0 0 4px; text-align: center; font-weight: 700; font-size: calc((11px) * var(--site-font-scale, 1)); }
+.registration-print-top-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-top: 4px; }
+.registration-print-approval { margin-top: 16px; }
+.registration-print-approval-note { margin: 0 0 6px; text-align: center; font-weight: 700; font-size: calc((11px) * var(--site-font-scale, 1)); }
+.registration-print-approval-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+/* Satu sel tanda tangan: jabatan rata tengah, ruang gambar, nama dalam kurung
+ * bergaris bawah seperti tanda tangan basah di kertas. */
+.registration-print-sig-cell { display: grid; justify-items: center; align-content: start; text-align: center; }
+.registration-print-sig-label { font-size: calc((11px) * var(--site-font-scale, 1)); }
+.registration-print-sig-preview { display: grid; place-items: center; width: 100%; min-height: 48px; margin: 4px 0; }
+.registration-print-sig-preview img { max-width: 100%; max-height: 48px; object-fit: contain; }
+.registration-print-sig-name { font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 700; text-decoration: underline; }
+.registration-edit-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; padding: 12px 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface-sunken, var(--green-soft)); }
+.registration-edit-bar .form-hint { margin: 0; flex: 1 1 240px; }
+.registration-edit-form { margin-top: 14px; padding: 14px; border: var(--tp-bw) solid var(--green); border-radius: var(--radius-control); background: var(--surface); }
+.registration-edit-single { margin: 0; }
+/* Label di blok ini bukan anak .form-stack, jadi tanpa aturan sendiri teks
+   label dan textarea akan berjajar menyamping. Di sini label diletakkan di
+   atas input, sama seperti field lain di formulir. */
+.registration-signature-block label,
+.registration-review-block label { display: grid; gap: 8px; color: var(--muted); font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 600; }
+.registration-signature-block input,
+.registration-signature-block select,
+.registration-signature-block textarea,
+.registration-review-block input,
+.registration-review-block select,
+.registration-review-block textarea { width: 100%; min-height: 46px; padding: 11px 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface); color: var(--ink); font-family: inherit; font-size: calc((14px) * var(--site-font-scale, 1)); }
+.registration-review-block textarea { min-height: 84px; resize: vertical; }
+.registration-review-block .form-hint { margin: 0; }
+.registration-signature-block > h3,
+.registration-review-block > h3 { margin: 0; color: var(--ink); font-size: calc((16px) * var(--site-font-scale, 1)); }
+.registration-signature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); gap: 14px; }
+.registration-signature-cell { display: grid; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); align-content: start; }
+/* Jabatan ditulis sebagai label kecil agar hierarki jelas: jabatan, lalu
+   nama, lalu gambar, lalu aksi. */
+.registration-signature-cell strong { color: var(--muted); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
 .registration-signature-cell input { width: 100%; min-height: 50px; padding: 0 16px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); font: inherit; transition: border-color var(--tp-dur) var(--tp-ease); }
+.registration-signature-cell input:focus-visible { border-color: var(--green); outline: 2px solid var(--green-soft); outline-offset: 1px; }
 .registration-signature-preview { display: grid; place-items: center; min-height: 76px; padding: 8px; border: var(--tp-bw) dashed var(--line); border-radius: var(--radius-control); background: #ffffff; }
 .registration-signature-preview img { max-width: 100%; max-height: 76px; object-fit: contain; }
 .registration-signature-preview span { color: var(--muted); font-size: calc((11px) * var(--site-font-scale, 1)); }
-.registration-signature-actions { display: flex; align-items: center; gap: 8px; }
+/* Susunan aksi tanda tangan.
+
+   Aksi utama mengambil satu baris penuh, lalu "Simpan Nama" dan "Hapus"
+   berbagi baris pendukung. Versi lama membungkus ketiga tombol menjadi baris
+   penuh karena labelnya panjang sementara selnya sempit, sehingga tombol terlihat
+   menumpuk tidak rapi dan "Hapus" menggantung di kiri bawah. */
+.registration-signature-actions { display: grid; gap: 8px; padding-top: 2px; }
+.registration-signature-secondary { display: flex; align-items: center; gap: 10px; }
+.registration-signature-actions svg { flex: none; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.signature-draw { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 18px; border: 0; border-radius: var(--radius-pill); color: var(--on-action); background: var(--action); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 600; letter-spacing: .01em; box-shadow: var(--shadow-soft); transition: background-color var(--tp-dur) var(--tp-ease), box-shadow var(--tp-dur) var(--tp-ease), transform var(--tp-dur) var(--tp-ease); }
+.signature-draw:hover { background: color-mix(in srgb, var(--action) 88%, var(--tp-ink)); box-shadow: var(--shadow-hover); transform: translateY(-2px); }
+.signature-draw svg { width: 18px; height: 18px; }
+.registration-signature-actions .signature-action { flex: 1 1 auto; min-width: 0; min-height: 40px; gap: 7px; padding: 0 14px; white-space: nowrap; }
+.signature-clear { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 34px; padding: 0 12px; border: var(--tp-bw) solid transparent; border-radius: var(--radius-pill); color: var(--rust); background: transparent; font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 600; white-space: nowrap; transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease), border-color var(--tp-dur) var(--tp-ease); }
+.signature-clear:hover { border-color: currentColor; background: color-mix(in srgb, var(--rust) 10%, transparent); }
+.signature-clear svg { width: 15px; height: 15px; }
+/* Tombol disembunyikan lewat properti hidden. Aturan display di atas menimpa
+   perilaku bawaan itu, jadi harus ditegaskan kembali di sini. */
+.signature-clear[hidden] { display: none; }
+.registration-signature-actions .action-button:focus-visible, .signature-draw:focus-visible, .signature-clear:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+/* Bukti pembayaran pada kartu verifikasi dan riwayat setoran. Bukti boleh
+   tidak ada, jadi state kosong memakai lencana pelan, bukan tombol matikan. */
+.admin-payment-proof,
+.contribution-payment-proof { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.admin-payment-proof .action-button,
+.contribution-payment-proof .action-button { min-height: 38px; padding: 0 14px; font-size: calc((12px) * var(--site-font-scale, 1)); }
+.admin-payment-no-proof,
+.contribution-payment-no-proof,
+.resident-payment-no-proof { color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); font-style: italic; }
+.admin-payment-proof-hint { margin: 2px 0 0; color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); }
+.payment-proof-optional { color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 500; }
+/* Label form memakai display:grid, jadi teks label dan tanda "(Opsional)"
+   akan menjadi dua baris terpisah. Keduanya dibungkus satu elemen flex supaya
+   tetap satu baris di samping input. */
+.field-label-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+/* Tautan bukti lama saat menyunting setoran: muncul tepat di bawah kolom
+   berkas supaya jelas berkas itu sudah ada, bukan sekadarplaceholder. */
+.contribution-payment-current-proof { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--green); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 600; }
+.contribution-payment-current-proof:hover { text-decoration: underline; text-underline-offset: 3px; }
+.payment-proof-field .form-hint { margin: -2px 0 0; }
 .registration-card-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 760px) {
   .registration-member-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

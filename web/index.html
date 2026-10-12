@@ -9,10 +9,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   <link id="dynamic-favicon" rel="icon" href="/favicon.ico">
+  <!-- Logo diambil lebih awal supaya tidak baru tampil setelah app.js dan
+       /api/settings selesai. Kalau pengaturan kosong, permintaan ini 404 dan
+       diabaikan. -->
+  <link rel="preload" as="image" href="/media/site-icon">
   <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/styles.css?v=20261009-06">
-  <script src="/app.js?v=20261010-15" defer></script>
-  <script src="/registration.js?v=20261010-14" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=20261012-38">
+  <script src="/app.js?v=20261012-38" defer></script>
+  <script src="/registration.js?v=20261011-27" defer></script>
   <script type="module" src="/reveal.js"></script>
 </head>
 <body>
@@ -22,9 +26,13 @@
       <span class="brand-mark" aria-hidden="true">
         <span id="brand-mark-text">K</span>
         <span id="brand-logo-group" class="brand-logo-group" hidden>
-          <img id="brand-icon" alt="">
+          <!-- src ditulis langsung supaya browser mulai mengunduh logo
+               bersamaan dengan app.js dan /api/settings. Kalau src baru diisi
+               oleh JavaScript, logo baru muncul setelah dua permintaan
+               balladan selesai. -->
+          <img id="brand-icon" src="/media/site-icon" alt="">
           <span id="brand-logo-divider" class="brand-logo-divider" aria-hidden="true" hidden>|</span>
-          <img id="brand-icon-secondary" alt="">
+          <img id="brand-icon-secondary" src="/media/site-icon/2" alt="">
         </span>
       </span>
       <span class="brand-copy"><strong>Kifayah</strong><small id="brand-area">Warga Kota Bambu Utara</small></span>
@@ -156,7 +164,7 @@
       <div><p class="eyebrow">Ruang Pengelola</p><h2 id="dialog-title">Masuk Pengelola</h2></div>
       <div id="admin-header-account" class="admin-header-account" hidden>
         <button id="admin-profile-toggle" class="admin-profile-trigger" type="button" aria-expanded="false" aria-controls="admin-profile-menu" aria-label="Menu akun pengelola">
-          <span id="admin-profile-avatar" class="admin-profile-avatar" aria-hidden="true"><span id="admin-profile-initials">U</span><img class="theme-profile-logo" src="/assets/bsk-logo-light.png" alt=""></span>
+          <span id="admin-profile-avatar" class="admin-profile-avatar" aria-hidden="true"><span id="admin-profile-initials">U</span><img class="theme-profile-logo" src="/assets/bsk-logo-light.webp" alt=""></span>
           <span class="admin-profile-copy"><strong id="admin-profile-name">Pengguna</strong><small id="admin-profile-role">Pengelola</small></span>
           <span class="admin-profile-chevron" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
         </button>
@@ -250,31 +258,21 @@
         <aside class="admin-sidebar">
         <nav class="admin-nav" aria-label="Menu pengelolaan">
           <details class="admin-nav-group" data-admin-group="records">
-            <summary id="admin-tab-records" class="admin-tab active" aria-current="page" aria-expanded="false" data-admin-tab="records">Daftar Warga - Wafat</summary>
+            <summary id="admin-tab-records" class="admin-tab active" aria-current="page" aria-expanded="false" data-admin-tab="records">Daftar Warga</summary>
             <div id="admin-task-nav" class="admin-task-nav" aria-label="Tugas pada menu ini" hidden></div>
           </details>
-          <details class="admin-nav-group" data-admin-group="program" hidden>
-            <summary id="admin-tab-program" class="admin-tab" aria-expanded="false" data-admin-tab="program">Informasi Program</summary>
-          </details>
-          <details class="admin-nav-group" data-admin-group="finance" hidden>
-            <summary id="admin-tab-finance" class="admin-tab" aria-expanded="false" data-admin-tab="finance">Daftar Warga - Iuran</summary>
-          </details>
-          <details class="admin-nav-group" data-admin-group="registrations" hidden>
-            <summary id="admin-tab-registrations" class="admin-tab" aria-expanded="false" data-admin-tab="registrations">Pendaftaran BSK <span id="registration-tab-badge" class="issue-tab-badge" hidden>0</span></summary>
-          </details>
           <details class="admin-nav-group" data-admin-group="import">
-            <summary id="admin-tab-import" class="admin-tab" aria-expanded="false" data-admin-tab="import">Impor Data <span id="issue-tab-badge" class="issue-tab-badge" hidden>0</span></summary>
+            <summary id="admin-tab-import" class="admin-tab" aria-expanded="false" data-admin-tab="import">Impor Data <span id="issue-tab-badge" class="issue-tab-badge" hidden>0</span><span id="registration-tab-badge" class="issue-tab-badge" hidden>0</span></summary>
           </details>
           <details class="admin-nav-group" data-admin-group="news">
             <summary id="admin-tab-news" class="admin-tab" aria-expanded="false" data-admin-tab="news">Berita</summary>
           </details>
           <details class="admin-nav-group" data-admin-group="contacts" hidden>
-            <summary id="admin-tab-contacts" class="admin-tab" aria-expanded="false" data-admin-tab="contacts">Kontak RT / RW</summary>
+            <summary id="admin-tab-contacts" class="admin-tab" aria-expanded="false" data-admin-tab="contacts">RT &amp; RW</summary>
           </details>
           <details class="admin-nav-group" data-admin-group="media">
             <summary id="admin-tab-media" class="admin-tab" aria-expanded="false" data-admin-tab="media">Tampilan Situs</summary>
           </details>
-          
           <details class="admin-nav-group" data-admin-group="users" hidden>
             <summary id="admin-tab-users" class="admin-tab" aria-expanded="false" data-admin-tab="users">Akun &amp; Jabatan</summary>
           </details>
@@ -285,14 +283,14 @@
             <button id="admin-task-return" class="text-button" type="button">← Kembali Ke Menu</button>
             <h3 id="admin-task-focus-title"></h3>
           </div>
-          <section id="admin-view-payments" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-finance" tabindex="0" data-admin-panel="payments" hidden>
+          <section id="admin-view-payments" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="payments" hidden>
             <section id="admin-payments-section" class="admin-section" aria-labelledby="admin-payments-title">
               <h2 id="admin-payments-title">Verifikasi Iuran Warga</h2>
-              <p class="form-hint">Periksa periode, nominal, dan bukti pembayaran sebelum mengubah status.</p>
+              <p class="form-hint">Daftar ini memakai data yang sama dengan menu <strong>Warga dan Setoran</strong>. Periksa periode, nominal, dan bukti pembayaran sebelum mengubah status. Bukti pembayaran bersifat opsional: setoran tanpa bukti tetap bisa disetujui, dan pengelola bisa melampirkan atau mengganti bukti kapan saja.</p>
               <div id="admin-payments-list" class="admin-payments-list" aria-live="polite"></div>
             </section>
           </section>
-          <section id="admin-view-program" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-program" tabindex="0" data-admin-panel="program" hidden>
+          <section id="admin-view-program" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-media" tabindex="0" data-admin-panel="program" hidden>
             <section id="admin-program-section" class="admin-section" aria-labelledby="admin-program-title">
               <h2 id="admin-program-title">Informasi Program BSK</h2>
               <p class="form-hint">Tulisan ini akan dibaca warga di dashboard mereka.</p>
@@ -304,7 +302,7 @@
               </form>
             </section>
           </section>
-          <section id="admin-view-finance" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-finance" tabindex="0" data-admin-panel="finance" hidden>
+          <section id="admin-view-finance" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="finance" hidden>
             <section id="admin-finance-section" class="admin-section" aria-labelledby="admin-finance-title">
               <h2 id="admin-finance-title">Data Keuangan</h2>
               <p class="form-hint">Catatan di sini dibagikan kepada akun warga. Jangan masukkan NIK, nomor rekening pribadi, atau data sensitif.</p>
@@ -320,9 +318,23 @@
                 <button class="primary-button" type="submit">Tambah Catatan</button>
               </form>
               <div id="admin-finance-list" class="admin-payments-list" aria-live="polite"></div>
+              <dialog id="finance-contribution-dialog" class="print-preview-panel" style="max-width:900px;width:95vw;">
+                <div class="print-preview-header">
+                  <div><h3 id="finance-contribution-title">Rincian Iuran</h3><p id="finance-contribution-summary">Memuat…</p></div>
+                  <div class="print-preview-actions">
+                    <button id="finance-contribution-back" class="action-button" type="button">Tutup</button>
+                  </div>
+                </div>
+                <div class="print-preview-scroll">
+                  <table class="print-table">
+                    <thead><tr><th>No.</th><th>Nama Warga</th><th>RT/RW</th><th>Tanggal Setor</th><th>Nominal</th><th>Catatan</th></tr></thead>
+                    <tbody id="finance-contribution-body"></tbody>
+                  </table>
+                </div>
+              </dialog>
             </section>
           </section>
-          <section id="admin-view-contributions" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-finance" tabindex="0" data-admin-panel="contributions" hidden>
+          <section id="admin-view-contributions" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="contributions" hidden>
             <section id="contribution-residents-panel" class="admin-section contribution-management" aria-labelledby="contribution-residents-title">
               <div class="contribution-page-heading">
                 <div><p class="eyebrow">Data dan Setoran</p><h2 id="contribution-residents-title">Daftar Warga</h2></div>
@@ -331,8 +343,8 @@
               <p class="form-hint">Data iuran diperbarui dari pembayaran terverifikasi dan setoran yang dicatat admin. Nominal total serta jumlah bulan dihitung otomatis.</p>
               <div class="contribution-summary" aria-label="Ringkasan iuran">
                 <article><span>Warga Terdaftar</span><strong id="contribution-resident-count">0</strong></article>
-                <article><span>Sudah Iuran Bulan Ini</span><strong id="contribution-paid-count">0</strong></article>
-                <article><span>Total Setoran</span><strong id="contribution-total-amount">Rp0</strong></article>
+                <button id="contribution-paid-card" class="stat-card" type="button" title="Lihat daftar warga yang sudah iuran bulan ini" aria-label="Lihat daftar warga yang sudah iuran bulan ini"><span>Sudah Iuran Bulan Ini</span><strong id="contribution-paid-count">0</strong></button>
+                <button id="contribution-total-card" class="stat-card" type="button" title="Lihat rincian setoran setiap warga" aria-label="Lihat rincian setoran setiap warga"><span>Total Setoran</span><strong id="contribution-total-amount">Rp0</strong></button>
                 <button id="contribution-male-card" class="stat-card" type="button" aria-pressed="false" aria-label="Filter Laki-Laki"><span>Laki-Laki</span><strong id="contribution-male-count">0</strong></button>
                 <button id="contribution-female-card" class="stat-card" type="button" aria-pressed="false" aria-label="Filter Perempuan"><span>Perempuan</span><strong id="contribution-female-count">0</strong></button>
                 <button id="contribution-head-card" class="stat-card" type="button" aria-pressed="false" aria-label="Filter Kepala Keluarga"><span>Kepala Keluarga</span><strong id="contribution-head-count">0</strong></button>
@@ -354,6 +366,35 @@
                 <div id="contribution-residents-page-numbers" class="record-page-numbers" role="list" aria-label="Nomor halaman warga"></div>
                 <button id="contribution-residents-next" class="record-page-number" type="button" aria-label="Halaman berikutnya">›</button>
               </div>
+              <dialog id="contribution-payers-dialog" class="print-preview-panel" style="max-width:1000px;width:95vw;">
+                <div class="print-preview-header">
+                  <div><h3 id="contribution-payers-title">Rincian Setoran Setiap Warga</h3><p id="contribution-payers-summary"></p></div>
+                  <div class="print-preview-actions">
+                    <button id="contribution-payers-print" class="primary-button" type="button">Cetak Daftar <span aria-hidden="true">→</span></button>
+                    <button id="contribution-payers-back" class="action-button" type="button">Tutup</button>
+                  </div>
+                </div>
+                <div class="contribution-payers-filters">
+                  <label class="filter-select"><span>RT</span><select id="contribution-payers-rt"><option value="">Semua RT</option></select></label>
+                  <label class="filter-select"><span>RW</span><select id="contribution-payers-rw"><option value="">Semua RW</option></select></label>
+                  <label class="search-box"><span class="sr-only">Cari warga</span><input id="contribution-payers-search" type="search" placeholder="Cari nama warga" autocomplete="off"></label>
+                </div>
+                <div class="print-preview-banner">
+                  <img src="/media/export_logo/1" alt="Logo Kiri" class="print-banner-logo" onerror="this.style.display='none'">
+                  <div class="print-banner-text">
+                    <h2>DATA BADAN SOSIAL KEMATIAN (BSK)</h2>
+                    <p>RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA</p>
+                    <p>KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT</p>
+                  </div>
+                  <img src="/media/export_logo/2" alt="Logo Kanan" class="print-banner-logo" onerror="this.style.display='none'">
+                </div>
+                <div class="print-preview-scroll">
+                  <table id="contribution-payers-table" class="print-table">
+                    <thead><tr><th>No.</th><th>Nama Warga</th><th>RT</th><th>RW</th><th>Bulan Tercatat</th><th>Total Setoran</th><th>Terakhir Setor</th></tr></thead>
+                    <tbody id="contribution-payers-body"></tbody>
+                  </table>
+                </div>
+              </dialog>
             </section>
           </section>
           <!-- DATA WARGA: tambah, ubah, hapus, cetak, dan ekspor -->
@@ -544,7 +585,7 @@
             </div>
           </section>
           <!-- PENDAFTARAN BSK: antrean formulir warga dan penandatanganan satu sesi -->
-          <section id="admin-view-registrations" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-registrations" tabindex="0" data-admin-panel="registrations" hidden>
+          <section id="admin-view-registrations" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-import" tabindex="0" data-admin-panel="registrations" hidden>
             <section id="registrations-panel" class="admin-section" aria-labelledby="registrations-title">
               <div class="contribution-page-heading">
                 <div><p class="eyebrow">Formulir Warga</p><h2 id="registrations-title">Pendaftaran BSK</h2></div>
@@ -672,8 +713,11 @@
                 <label>Judul Berita<input name="title" maxlength="160" required placeholder="Judul Berita"></label>
                 <label>Headline Berita<input name="headline" maxlength="240" required placeholder="Ringkasan Singkat Untuk Halaman Utama"></label>
                 <label>Isi Berita<textarea name="body" maxlength="30000" rows="7" required placeholder="Tulis Isi Berita"></textarea></label>
-                <label>Foto Berita<input name="image" type="file" accept="image/png,image/jpeg,image/webp"><span class="news-image-preview" id="news-image-preview">Foto Opsional · PNG, JPG, WebP</span></label>
-                <button id="delete-news-image-button" class="text-button" type="button" hidden>Hapus Foto Berita</button>
+                <label><span class="field-label-row">Foto Berita <span class="payment-proof-optional">(Opsional)</span></span><input name="image" type="file" accept="image/png,image/jpeg,image/webp"></label>
+                <div class="news-image-field">
+                  <div class="news-image-preview is-empty" id="news-image-preview"><span class="news-image-empty">Belum ada foto dipilih. PNG, JPG, atau WebP.</span></div>
+                  <button id="delete-news-image-button" class="news-image-remove" type="button" hidden>Hapus Foto Berita</button>
+                </div>
                 <div class="field-row">
                   <label>Nama Penulis<input name="author" maxlength="100" required></label>
                   <label>Tanggal &amp; Jam Berita Diunggah<input name="uploaded_at" type="datetime-local" required></label>
@@ -764,11 +808,11 @@
                 <div class="news-admin-heading"><h3>Struktur Jabatan</h3><p class="form-hint">Urutan dari atas adalah peringkat tertinggi. Jabatan lain tersedia lewat opsi <strong>Jabatan Lainnya</strong> pada form kontak.</p></div>
                 <form id="position-form" class="form-stack">
                   <input name="title_id" type="hidden">
-                  <div class="field-row">
+                  <div class="position-form-row">
                     <label>Nama Jabatan<input name="title" maxlength="100" required placeholder="Contoh: Ketua RT"></label>
                     <div class="position-form-actions">
-                      <button id="position-submit" class="primary-button" type="submit">Tambah Jabatan <span aria-hidden="true">&rarr;</span></button>
                       <button id="position-cancel-edit" class="text-button" type="button" hidden>Batal</button>
+                      <button id="position-submit" class="primary-button" type="submit">Tambah Jabatan <span aria-hidden="true">&rarr;</span></button>
                     </div>
                   </div>
                   <p class="form-error" id="position-error" role="alert"></p>
@@ -779,7 +823,7 @@
             </section>
           </section>
           <!-- RT/RW: jumlah wilayah dan pilihan bernomor tiga digit -->
-          <section id="admin-view-area" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="area" hidden>
+          <section id="admin-view-area" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-contacts" tabindex="0" data-admin-panel="area" hidden>
             <form id="settings-form" class="settings-form">
               <div class="settings-title"><h3>Jumlah RT Dan RW</h3></div>
               <div class="field-row">
@@ -945,8 +989,8 @@
                 <p class="form-hint">Teks lokasi tampil di footer dan menjadi tautan langsung ke Google Maps.</p>
                 <p id="footer-settings-error" class="form-error" role="alert"></p>
                 <p id="footer-settings-result" class="form-success" role="status" hidden></p>
-                <button class="primary-button" type="submit">Simpan Footer <span aria-hidden="true">→</span></button>
-                <button id="clear-footer-settings-button" class="text-button" type="button">Hapus Teks Footer Dan Lokasi</button>
+                <div class="settings-actions"><button class="primary-button" type="submit">Simpan Footer <span aria-hidden="true">→</span></button>
+                <button id="clear-footer-settings-button" class="text-button" type="button">Hapus Teks Footer Dan Lokasi</button></div>
               </form>
               <form id="donation-settings-form" class="form-stack">
                 <h3>Dana Apresiasi</h3>
@@ -969,8 +1013,8 @@
                 <label>Link Bank / QRIS<input name="donation_bank_link" type="url" maxlength="500" placeholder="https://..."></label>
                 <p class="form-hint">Informasi ini hanya ditampilkan kepada warga saat mereka memilih Dana Apresiasi. Pastikan datanya benar sebelum dipublikasikan.</p>
                 <p id="donation-settings-error" class="form-error" role="alert"></p>
-                <button class="primary-button" type="submit">Simpan Dana Apresiasi <span aria-hidden="true">→</span></button>
-                <button id="clear-donation-settings-button" class="text-button" type="button">Hapus Teks Dana Apresiasi</button>
+                <div class="settings-actions"><button class="primary-button" type="submit">Simpan Dana Apresiasi <span aria-hidden="true">→</span></button>
+                <button id="clear-donation-settings-button" class="text-button" type="button">Hapus Teks Dana Apresiasi</button></div>
               </form>
               <section id="export-letterhead-section" class="export-letterhead-section" aria-labelledby="export-letterhead-title">
                 <h3 id="export-letterhead-title">Kop Ekspor</h3>
@@ -980,15 +1024,15 @@
                     <label>Logo Sebelah Kiri<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required></label>
                     <p id="export-logo-1-status" class="form-hint"></p>
                     <p id="export-logo-1-error" class="form-error" role="alert"></p>
-                    <button class="primary-button" type="submit">Simpan Logo Kiri <span aria-hidden="true">→</span></button>
-                    <button id="delete-export-logo-1-button" class="text-button" type="button" hidden>Hapus Logo Kiri</button>
+                    <div class="settings-actions"><button class="primary-button" type="submit">Simpan Logo Kiri <span aria-hidden="true">→</span></button>
+                    <button id="delete-export-logo-1-button" class="text-button" type="button" hidden>Hapus Logo Kiri</button></div>
                   </form>
                   <form id="export-logo-2-form" class="form-stack">
                     <label>Logo Sebelah Kanan<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required></label>
                     <p id="export-logo-2-status" class="form-hint"></p>
                     <p id="export-logo-2-error" class="form-error" role="alert"></p>
-                    <button class="primary-button" type="submit">Simpan Logo Kanan <span aria-hidden="true">→</span></button>
-                    <button id="delete-export-logo-2-button" class="text-button" type="button" hidden>Hapus Logo Kanan</button>
+                    <div class="settings-actions"><button class="primary-button" type="submit">Simpan Logo Kanan <span aria-hidden="true">→</span></button>
+                    <button id="delete-export-logo-2-button" class="text-button" type="button" hidden>Hapus Logo Kanan</button></div>
                   </form>
                 </div>
                 <form id="export-header-form" class="form-stack">
@@ -997,9 +1041,20 @@
                     <label>Baris Kedua<input name="export_header_line_2" maxlength="160"></label>
                     <label>Baris Ketiga<input name="export_header_line_3" maxlength="160"></label>
                   </div>
+                  <label>Baris Keempat (Sekretariat / Kontak)<input name="export_header_line_4" maxlength="160"></label>
+                  <div class="field-row">
+                    <label>Ukuran Logo Kiri (px)<input name="export_logo_1_size" type="number" min="20" max="200" step="1" value="74"></label>
+                    <label>Ukuran Logo Kanan (px)<input name="export_logo_2_size" type="number" min="20" max="200" step="1" value="74"></label>
+                  </div>
+                  <label>Ukuran Font Judul (px)<input name="export_header_title_size" type="number" min="8" max="60" step="1" value="21"></label>
+                  <div class="field-row">
+                    <label>Ukuran Font Baris (px)<input name="export_header_line_size" type="number" min="8" max="60" step="1" value="13"></label>
+                    <label>Ukuran Font Kontak (px)<input name="export_header_contact_size" type="number" min="8" max="60" step="1" value="10"></label>
+                  </div>
+                  <label>Baris Alamat Formulir<textarea name="export_address_lines" rows="3" maxlength="400" placeholder="Satu baris per baris: kelurahan, kecamatan, kota"></textarea><span class="form-hint">Dipakai pada blok ALAMAT RUMAH di formulir pendaftaran. Tulis satu baris per baris.</span></label>
                   <p id="export-header-error" class="form-error" role="alert"></p>
-                  <button class="primary-button" type="submit">Simpan Teks Kop <span aria-hidden="true">→</span></button>
-                  <button id="clear-export-header-button" class="text-button" type="button">Hapus Teks Kop</button>
+                  <div class="settings-actions"><button class="primary-button" type="submit">Simpan Teks Kop <span aria-hidden="true">→</span></button>
+                  <button id="clear-export-header-button" class="text-button" type="button">Hapus Teks Kop</button></div>
                 </form>
                   <form id="signature-settings-form" class="form-stack">
                     <h3 id="signature-settings-title">Tanda Tangan Digital</h3>
@@ -1017,6 +1072,7 @@
                     </fieldset>
                     <label>Tempat Tanggal Tanda Tangan<input name="signature_place" maxlength="120" placeholder="Contoh: JAKARTA"></label>
                     <label>Tanggal Tanda Tangan<input name="signature_date" maxlength="120" placeholder="Contoh: 30 JANUARI 2026"></label>
+                    <p class="form-hint">Tempat dan tanggal ini juga dipakai pada baris "JAKARTA, ... 20.." di formulir pendaftaran yang dicetak dari menu Impor Data. Kosongkan tanggal bila ingin memakai tanggal hari ini saat pencetakan.</p>
                     <label>Label Penandaikatangan<input name="signature_note" maxlength="120" placeholder="Contoh: Mengetahui,"></label>
                     <label>Label YANG MEMBUAT<input name="signature_label_maker" maxlength="120"></label>
                     <label>Label KETUA RT<input name="signature_label_rt" maxlength="120" placeholder="Contoh: KETUA RT {unit}"></label>
@@ -1026,25 +1082,40 @@
                     <label>Label KETUA BSK<input name="signature_label_bsk" maxlength="120"></label>
                     <label>Nama yang membuat<input name="signature_maker_name" maxlength="120"></label>
                     <label>Gambar Tanda Tangan Maker<input name="signature_maker" type="file" accept="image/png,image/jpeg,image/webp"></label>
-                    <p id="signature-maker-status" class="form-hint"></p>
+                    <div class="signature-status-row">
+                      <p id="signature-maker-status" class="form-hint"></p>
+                      <button type="button" class="text-button signature-delete-button" data-role="maker" hidden>Hapus Tanda Tangan</button>
+                    </div>
                 <button type="button" class="action-button signature-draw-button" data-role="maker">Tanda Tangan Langsung - Maker</button>
                     <label>Simpan Tanda Tangan Ketua RT Untuk<select name="signature_rt_unit" id="signature-rt-unit-select"></select></label>
                     <p class="form-hint">Tiap RT punya tanda tangannya sendiri. Pilih "Semua RT" memakai nama Ketua RT umum, atau pilih satu RT untuk menyimpannya khusus wilayah tersebut.</p>
                     <label>Nama Ketua RT<input name="signature_rt_name" maxlength="120"></label>
                     <label>Gambar Tanda Tangan Ketua RT<input name="signature_rt" type="file" accept="image/png,image/jpeg,image/webp"></label>
-                    <p id="signature-rt-status" class="form-hint"></p>
+                    <div class="signature-status-row">
+                      <p id="signature-rt-status" class="form-hint"></p>
+                      <button type="button" class="text-button signature-delete-button" data-role="rt" hidden>Hapus Tanda Tangan</button>
+                    </div>
                 <button type="button" class="action-button signature-draw-button" data-role="rt">Tanda Tangan Langsung - Ketua RT</button>
                     <label>Nama LMK RW<input name="signature_lmk_name" maxlength="120"></label>
                     <label>Gambar Tanda Tangan LMK RW<input name="signature_lmk" type="file" accept="image/png,image/jpeg,image/webp"></label>
-                    <p id="signature-lmk-status" class="form-hint"></p>
+                    <div class="signature-status-row">
+                      <p id="signature-lmk-status" class="form-hint"></p>
+                      <button type="button" class="text-button signature-delete-button" data-role="lmk" hidden>Hapus Tanda Tangan</button>
+                    </div>
                 <button type="button" class="action-button signature-draw-button" data-role="lmk">Tanda Tangan Langsung - LMK</button>
                     <label>Nama Ketua RW<input name="signature_rw_name" maxlength="120"></label>
                     <label>Gambar Tanda Tangan Ketua RW<input name="signature_rw" type="file" accept="image/png,image/jpeg,image/webp"></label>
-                    <p id="signature-rw-status" class="form-hint"></p>
+                    <div class="signature-status-row">
+                      <p id="signature-rw-status" class="form-hint"></p>
+                      <button type="button" class="text-button signature-delete-button" data-role="rw" hidden>Hapus Tanda Tangan</button>
+                    </div>
                 <button type="button" class="action-button signature-draw-button" data-role="rw">Tanda Tangan Langsung - Ketua RW</button>
                     <label>Nama Ketua BSK<input name="signature_bsk_name" maxlength="120"></label>
                     <label>Gambar Tanda Tangan Ketua BSK<input name="signature_bsk" type="file" accept="image/png,image/jpeg,image/webp"></label>
-                    <p id="signature-bsk-status" class="form-hint"></p>
+                    <div class="signature-status-row">
+                      <p id="signature-bsk-status" class="form-hint"></p>
+                      <button type="button" class="text-button signature-delete-button" data-role="bsk" hidden>Hapus Tanda Tangan</button>
+                    </div>
                 <button type="button" class="action-button signature-draw-button" data-role="bsk">Tanda Tangan Langsung - Ketua BSK</button>
                     <p id="signature-error" class="form-error" role="alert"></p>
                     <button class="primary-button" type="submit">Simpan Tanda Tangan <span aria-hidden="true">→</span></button>
@@ -1123,7 +1194,7 @@
                   <label><input type="checkbox" data-admin-permission="registration">Pendaftaran BSK</label>
                 </div>
                 <p id="permission-editor-error" class="form-error" role="alert"></p>
-                <button id="permission-editor-save" class="primary-button" type="button">Simpan Hak Akses <span aria-hidden="true">→</span></button>
+                <div class="settings-actions"><button id="permission-editor-save" class="primary-button" type="button">Simpan Hak Akses <span aria-hidden="true">→</span></button></div>
               </fieldset>
             </section>
             </section>
@@ -1141,17 +1212,50 @@
     <div id="mobile-task-content"></div>
   </dialog>
   <dialog id="registration-dialog" class="dialog registration-dialog" aria-labelledby="registration-dialog-title">
-    <div class="dialog-top"><div><p class="eyebrow">Formulir Pendaftaran</p><h2 id="registration-dialog-title">Tinjau Pendaftaran</h2></div><button id="registration-dialog-close" class="icon-button" type="button" aria-label="Tutup formulir">×</button></div>
+    <div class="dialog-top"><div><p class="eyebrow">Formulir Pendaftaran</p><h2 id="registration-dialog-title">Tinjau Pendaftaran</h2></div><div class="dialog-top-actions"><button id="registration-print-button" class="action-button" type="button">Cetak Formulir</button><button id="registration-dialog-close" class="icon-button" type="button" aria-label="Tutup formulir">×</button></div></div>
     <div id="registration-dialog-body" class="registration-dialog-body"></div>
+    <div class="registration-print-settings">
+      <p class="form-hint">Tempat, tanggal, dan ukuran huruf pada blok tanda tangan. Berlaku untuk semua formulir yang dicetak.</p>
+      <div class="registration-print-settings-row">
+        <label>Tempat<input id="registration-print-place" type="text" maxlength="120" placeholder="JAKARTA"></label>
+        <label>Tanggal<input id="registration-print-date" type="text" maxlength="120" placeholder="11 OKTOBER 2026"></label>
+        <label class="registration-print-size-field">Ukuran Huruf<input id="registration-print-size" type="number" min="7" max="24" step="0.5" inputmode="decimal"><span class="form-hint">pt</span></label>
+      </div>
+      <div class="registration-print-settings-actions">
+        <button id="registration-print-settings-save" class="action-button" type="button">Simpan</button>
+        <span id="registration-print-settings-status" class="form-hint" role="status"></span>
+      </div>
+    </div>
+    <div class="registration-edit-bar">
+      <p class="form-hint">Kalau ada yang salah ketik, perbaiki di sini. Perubahan tidak merusak tanda tangan yang sudah ada.</p>
+      <button id="registration-edit-toggle" class="action-button" type="button">Edit Data</button>
+    </div>
+    <form id="registration-edit-form" class="form-stack registration-edit-form" hidden>
+      <fieldset class="registration-step">
+        <legend>Data Kepala Keluarga</legend>
+        <div id="registration-edit-fields"></div>
+      </fieldset>
+      <fieldset class="registration-step">
+        <legend>Anggota Keluarga</legend>
+        <p class="form-hint" data-kk-note>Isi Nomor Kartu Keluarga pada data kepala keluarga; nomor itu otomatis dipakai semua anggota.</p>
+        <div id="registration-edit-member-rows" class="registration-member-rows"></div>
+        <button id="registration-edit-member-add" class="action-button" type="button">Tambah Anggota</button>
+      </fieldset>
+      <p id="registration-edit-error" class="form-error" role="alert"></p>
+      <div class="contribution-dialog-actions">
+        <button id="registration-edit-cancel" class="action-button" type="button">Batal</button>
+        <button class="primary-button" type="submit">Simpan Perubahan <span aria-hidden="true">→</span></button>
+      </div>
+    </form>
     <div class="registration-signature-block">
       <h3>Tanda tangan di tempat</h3>
-      <p class="form-hint">Lima jabatan ini menandatangani formulir yang sama dalam satu sesi. Pilih jabatan, isi nama, lalu tekan Tanda Tangan Langsung atau pakai gambar yang sudah tersimpan.</p>
+      <p class="form-hint">Lima jabatan ini menandatangani formulir yang sama dalam satu sesi. Pilih jabatan, isi nama, lalu tekan Tanda Tangan Langsung. Sudah punya gambar? Tekan Simpan Nama bila hanya nama yang berubah, atau Hapus untuk membuang gambar lalu menggambar ulang. Bagian ini tetap bisa diubah walaupun formulir sudah disetujui.</p>
       <div id="registration-signature-grid" class="registration-signature-grid"></div>
       <p id="registration-signature-error" class="form-error" role="alert"></p>
     </div>
     <div class="registration-review-block">
       <h3>Keputusan</h3>
-      <label>Catatan untuk warga<textarea id="registration-review-note" maxlength="500" rows="2" placeholder="Wajib diisi bila formulir ditolak"></textarea></label>
+      <label class="registration-field">Catatan Untuk Warga<textarea id="registration-review-note" maxlength="500" rows="3" placeholder="Wajib diisi bila formulir ditolak"></textarea><span class="form-hint">Tuliskan alasan penolakan dengan jelas supaya warga tahu apa yang perlu diperbaiki.</span></label>
       <p id="registration-review-error" class="form-error" role="alert"></p>
       <div class="contribution-dialog-actions">
         <button id="registration-reject" class="action-button" type="button">Tolak Formulir</button>
@@ -1163,6 +1267,12 @@
     <div class="dialog-top"><div><p class="eyebrow">Pencatatan Manual</p><h2 id="registration-create-title">Catat Formulir Pendaftaran</h2></div><button id="registration-create-close" class="icon-button" type="button" aria-label="Tutup formulir">×</button></div>
     <p class="form-hint">Gunakan ini ketika warga mengisi formulir di kertas dan tidak mengirim sendiri lewat website.</p>
     <form id="registration-create-form" class="form-stack">
+      <fieldset class="registration-step registration-family-picker">
+        <legend>Ambil dari Data Warga Iuran</legend>
+        <p class="form-hint">Ketik nama atau NIK kepala keluarga untuk mengisi data kepala dan anggota sekaligus. Kosongkan bila warga ini belum ada di daftar iuran, lalu isi manual seperti biasa.</p>
+        <label>Cari Kepala Keluarga<input id="registration-family-search" type="search" maxlength="60" autocomplete="off" placeholder="Contoh: Gerry Sarosi atau 3171010205820010"></label>
+        <div id="registration-family-results" class="registration-family-results" aria-live="polite" hidden></div>
+      </fieldset>
       <div class="field-row">
         <label>Nama Kepala Keluarga<input name="head_name" maxlength="120" required></label>
         <label>Jenis Kelamin<select name="gender" required><option value="">Pilih</option><option value="L">L — Laki-laki</option><option value="P">P — Perempuan</option></select></label>
@@ -1235,6 +1345,7 @@
       <label>Tanggal Pembayaran<input name="paid_at" type="date" required></label>
       <label>Nominal Setoran<input name="amount" type="number" min="1" step="1" required></label>
       <label>Catatan (Opsional)<textarea name="note" maxlength="500" rows="2"></textarea></label>
+      <label class="payment-proof-field"><span class="field-label-row">Bukti Transfer <span class="payment-proof-optional">(Opsional)</span></span><input name="proof" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"><span class="form-hint" id="contribution-payment-proof-hint">Boleh langsung ambil foto layar atau pilih berkas. JPG, PNG, WebP, atau PDF. Maksimal 5 MB. Tidak wajib diisi.</span></label>
       <p id="contribution-payment-error" class="form-error" role="alert"></p>
       <div class="contribution-dialog-actions"><button id="contribution-payment-cancel" class="action-button" type="button">Batal</button><button class="primary-button" type="submit">Simpan Iuran <span aria-hidden="true">→</span></button></div>
     </form>
@@ -1295,6 +1406,10 @@
       </select>
     </label>
     <canvas id="signature-pad-canvas" width="720" height="260" style="width:100%;height:200px;border:1px solid var(--line);border-radius:8px;background:#ffffff"></canvas>
+    <!-- Pesan galat harus tinggal DI DALAM dialog ini. Kalau ditulis ke
+         #signature-error di form pengaturan, pesannya tertutup di balik
+         modal dan pengguna mengira tombolnya tidak berfungsi. -->
+    <p id="signature-pad-error" class="signature-pad-error" role="alert"></p>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button id="signature-pad-clear" class="action-button" type="button">Bersihkan</button>
       <button id="signature-pad-save" class="primary-button" type="button">Pakai Tanda Tangan <span aria-hidden="true">→</span></button>
@@ -1320,6 +1435,7 @@
       </table>
     </div>
   </dialog>
+  <section id="registration-print-sheet" class="registration-print-sheet" aria-hidden="true"></section>
   <dialog id="contribution-history-dialog" class="dialog" aria-labelledby="contribution-history-title">
     <div class="dialog-top"><div><p class="eyebrow">Iuran Warga</p><h2 id="contribution-history-title">Riwayat Iuran</h2></div><button id="contribution-history-close" class="icon-button" type="button" aria-label="Tutup riwayat iuran">×</button></div>
     <div id="contribution-history-body" class="contribution-history-body"></div>

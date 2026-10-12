@@ -12,7 +12,7 @@ import sqlite3
 import sys
 import threading
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from html import escape
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,7 +37,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261010-15"
+APP_BUILD = "20261012-38"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -46,6 +46,36 @@ IMAGE_TYPES = {
 	"image/webp": (".webp", b"RIFF"),
 }
 VIDEO_TYPES = {"video/mp4": ".mp4", "video/webm": ".webm"}
+PAYMENT_PROOF_TYPES = {
+	"image/png": (".png", lambda data: data.startswith(b"\x89PNG\r\n\x1a\n")),
+	"image/jpeg": (".jpg", lambda data: data.startswith(b"\xff\xd8\xff")),
+	"image/webp": (".webp", lambda data: data.startswith(b"RIFF") and data[8:12] == b"WEBP"),
+	"application/pdf": (".pdf", lambda data: data.startswith(b"%PDF-")),
+}
+
+
+def save_payment_proof(encoded, content_type, prefix):
+	"""Simpan bukti pembayaran dan kembalikan nama filenya.
+
+	Bukti bersifat opsional, jadi pengiriman kosong tidak dianggap salah.
+	Format dan ukuran baru diperiksa kalau memang ada file yang dikirim.
+	Validasi memakai tanda tangan isi file, bukan nama ekstensinya.
+	"""
+	if not encoded and not content_type:
+		return ""
+	if content_type not in PAYMENT_PROOF_TYPES or not isinstance(encoded, str) or len(encoded) > 7_000_000:
+		raise ValueError("Unggah bukti JPG, PNG, WebP, atau PDF hingga 5 MB.")
+	try:
+		proof = base64.b64decode(encoded, validate=True)
+	except (ValueError, binascii.Error):
+		raise ValueError("File bukti pembayaran tidak valid.")
+	extension, check_signature = PAYMENT_PROOF_TYPES[content_type]
+	if not proof or len(proof) > MAX_PAYMENT_PROOF_SIZE or not check_signature(proof):
+		raise ValueError("File bukti pembayaran tidak valid atau melebihi 5 MB.")
+	filename = f"{prefix}-{secrets.token_hex(16)}{extension}"
+	UPLOAD_DIR.mkdir(exist_ok=True)
+	(UPLOAD_DIR / filename).write_bytes(proof)
+	return filename
 FONT_PRESETS = {"kifayah", "modern", "classic", "arial", "times", "georgia", "verdana", "tahoma", "trebuchet", "segoe"}
 TEXT_ALIGNMENTS = {"left", "center", "justify"}
 ROLE_LEVELS = {"Warga": 0, "Staff": 1, "Admin": 2, "Super Admin": 3}
@@ -256,6 +286,14 @@ def _initialize_database(connection):
 	}.items():
 		if name not in contribution_columns:
 			connection.execute(f"ALTER TABLE contribution_residents ADD COLUMN {name} {definition}")
+	# NIK dipakai untuk menyambungkan warga iuran dengan data warga wafat,
+	# jadi kedua tabel perlu indeks supaya penggabungan tetap cepat.
+	connection.execute(
+		"CREATE INDEX IF NOT EXISTS idx_contribution_residents_nik ON contribution_residents(national_id_number)"
+	)
+	connection.execute(
+		"CREATE INDEX IF NOT EXISTS idx_records_nik ON records(national_id_number)"
+	)
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS contribution_payments (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -268,9 +306,41 @@ def _initialize_database(connection):
 			FOREIGN KEY(resident_id) REFERENCES contribution_residents(id) ON DELETE CASCADE
 		)"""
 	)
+	# STRUKTUR SETORAN: bukti pembayaran, status verifikasi, dan sumber ikut
+	# pindah ke tabel setoran supaya "Warga dan Setoran" menjadi satu-satunya
+	# sumber kebenaran. Sebelumnya bukti hidup di tabel resident_payments yang
+	# terpisah, sehingga halaman verifikasi tidak nyambung dengan data warga.
+	contribution_payment_columns = {
+		row["name"] for row in connection.execute("PRAGMA table_info(contribution_payments)")
+	}
+	for name, definition in {
+		"method": "TEXT NOT NULL DEFAULT ''",
+		"source": "TEXT NOT NULL DEFAULT 'admin'",
+		"proof_file": "TEXT NOT NULL DEFAULT ''",
+		"status": "TEXT NOT NULL DEFAULT 'Terverifikasi'",
+		"admin_note": "TEXT NOT NULL DEFAULT ''",
+		"reviewed_at": "TEXT NOT NULL DEFAULT ''",
+	}.items():
+		if name not in contribution_payment_columns:
+			connection.execute(f"ALTER TABLE contribution_payments ADD COLUMN {name} {definition}")
 	connection.execute(
 		"INSERT OR IGNORE INTO contribution_residents (account_id, full_name) "
 		"SELECT id, display_name FROM admin_users WHERE role = 'Warga'"
+	)
+	# PINDAH KE TABEL SETORAN: bawa pengajuan warga yang sudah tersimpan ke
+	# contribution_payments lewat akunnya. NOT EXISTS membuat migrasi ini aman
+	# dijalankan berkali-kali tanpa menggandakan setoran pada periode yang sama.
+	connection.execute(
+		"""INSERT INTO contribution_payments
+			(resident_id, period, amount, paid_at, note, method, source, proof_file, status, admin_note, reviewed_at)
+		   SELECT r.id, p.period, p.amount, p.paid_at, '', p.method, 'warga',
+		          p.proof_file, p.status, p.admin_note, p.reviewed_at
+		   FROM resident_payments p
+		   JOIN contribution_residents r ON r.account_id = p.user_id
+		   WHERE NOT EXISTS (
+		       SELECT 1 FROM contribution_payments c
+		       WHERE c.resident_id = r.id AND c.period = p.period
+		   )"""
 	)
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS area_contacts (
@@ -312,6 +382,20 @@ def _initialize_database(connection):
 			expense INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)"""
+	)
+	# Baris pemasukan yang dibuat otomatis dari setoran warga. source diisi
+	# "contributions" dan source_period menyimpan periodenya, sehingga total
+	# iuran selalu bisa dihitung ulang dari tabel setoran sebagai sumber
+	# kebenaran. Kolom kosong berarti catatan yang diketik manual.
+	finance_columns = {row["name"] for row in connection.execute("PRAGMA table_info(finance_entries)")}
+	for name, definition in {
+		"source": "TEXT NOT NULL DEFAULT ''",
+		"source_period": "TEXT NOT NULL DEFAULT ''",
+	}.items():
+		if name not in finance_columns:
+			connection.execute(f"ALTER TABLE finance_entries ADD COLUMN {name} {definition}")
+	connection.execute(
+		"CREATE INDEX IF NOT EXISTS idx_finance_entries_source ON finance_entries(source, source_period)"
 	)
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS data_issues (
@@ -439,9 +523,13 @@ def _initialize_database(connection):
 			("maintenance_enabled", "0"), ("maintenance_starts_at", ""), ("maintenance_ends_at", ""),
 			("maintenance_message", "Kami sedang melakukan perbaikan agar layanan lebih baik."),
 			("export_logo_1", ""), ("export_logo_2", ""),
+			("export_logo_1_size", 74), ("export_logo_2_size", 74),
+			("export_header_title_size", 21), ("export_header_line_size", 13), ("export_header_contact_size", 10),
 			("export_header_title", "DATA BADAN SOSIAL KEMATIAN (BSK)"),
 			("export_header_line_2", "RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA"),
 			("export_header_line_3", "KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT"),
+			("export_header_line_4", "SEKRETARIAT : Jl. Cempaka Bawah RT. 012 RW. 07  Tlp : 0856 1190 900  Email : rw07kel.ubu@gmail.com"),
+			("export_address_lines", "KELURAHAN KOTA BAMBU UTARA\nKECAMATAN PALMERAH\nKOTA ADMINISTRASI JAKARTA BARAT"),
 			("signature_date", ""), ("signature_maker_name", ""), ("signature_rt_name", ""),
 			("signature_lmk_name", ""), ("signature_rw_name", ""), ("signature_bsk_name", ""),
 			("signature_maker", ""), ("signature_rt", ""), ("signature_lmk", ""),
@@ -514,6 +602,76 @@ def _initialize_database(connection):
 			(json.dumps(sorted(configured)), row["id"]),
 		)
 	connection.commit()
+
+
+# Sumber penanda untuk baris pemasukan yang dihitung dari setoran warga.
+CONTRIBUTION_SOURCE = "contributions"
+MONTH_NAMES = ("Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember")
+
+
+def contribution_period_label(period):
+	"""'2026-10' -> 'Oktober 2026'. Teks kosong kalau periodenya rusak."""
+	match = re.fullmatch(r"(\d{4})-(0[1-9]|1[0-2])", str(period or ""))
+	if not match:
+		return ""
+	return f"{MONTH_NAMES[int(match.group(2)) - 1]} {match.group(1)}"
+
+
+def contribution_period_end(period):
+	"""Tanggal terakhir sebuah periode, dipakai sebagai tanggal masuknya baris."""
+	try:
+		year, month = (int(part) for part in str(period).split("-"))
+		# Hari pertama bulan berikutnya, lalu mundur satu hari.
+		first_of_next = date(year + month // 12, month % 12 + 1, 1)
+		return (first_of_next - timedelta(days=1)).isoformat()
+	except (ValueError, TypeError):
+		return date.today().isoformat()
+
+
+def sync_contribution_income(connection):
+	"""Samakan baris pemasukan iuran dengan data setoran warga.
+
+	Setoran adalah sumber kebenaran: satu baris pemasukan dibuat per periode
+	dari total setoran pada periode itu. Baris otomatis yang periodenya sudah
+	tidak punya setoran dihapus, jadi_total selalu sama dengan daftar warga.
+	Setoran yang dikirim warga lewat akun ikut dihitung setelah diverifikasi,
+	supaya iuran yang benar-benar sudah diterima masuk ke pemasukan Data
+	Keuangan. Setoran yang masih menunggu verifikasi atau ditolak tidak
+	dihitung, dan setoran tanpa bukti tetap sah karena bukti bersifat opsional.
+	"""
+	totals = {
+		row["period"]: (int(row["total"] or 0), int(row["jumlah"] or 0))
+		for row in connection.execute(
+			"SELECT period, SUM(amount) AS total, COUNT(*) AS jumlah FROM contribution_payments "
+			"WHERE status = 'Terverifikasi' GROUP BY period"
+		)
+	}
+	existing = {
+		row["source_period"]: row["id"]
+		for row in connection.execute(
+			"SELECT id, source_period FROM finance_entries WHERE source = ?", (CONTRIBUTION_SOURCE,)
+		)
+	}
+	for period, entry_id in existing.items():
+		if period not in totals:
+			connection.execute("DELETE FROM finance_entries WHERE id = ?", (entry_id,))
+	for period, (total, jumlah) in totals.items():
+		label = contribution_period_label(period)
+		title = f"Iuran Warga {label}" if label else "Iuran Warga"
+		description = f"{jumlah} warga"
+		if period in existing:
+			# entry_date tidak disentuh supaya tanggal yang diketik manual tetap
+			# dipakai; judul, keterangan, dan nominal mengikuti data setoran.
+			connection.execute(
+				"UPDATE finance_entries SET title = ?, description = ?, income = ?, expense = 0 WHERE id = ?",
+				(title, description, total, existing[period]),
+			)
+		else:
+			connection.execute(
+				"INSERT INTO finance_entries (entry_date, title, description, income, expense, source, source_period) "
+				"VALUES (?, ?, ?, ?, 0, ?, ?)",
+				(contribution_period_end(period), title, description, total, CONTRIBUTION_SOURCE, period),
+			)
 
 
 def get_settings(connection):
@@ -1592,7 +1750,15 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		self.send_header("Accept-Ranges", "bytes")
 		# Video boleh disimpan browser agar tidak diunduh ulang tiap pergantian slide.
 		self.send_header("Last-Modified", last_modified)
-		self.send_header("Cache-Control", "public, max-age=0, must-revalidate" if is_video else "no-store")
+		# Untuk gambar dipakai "no-cache", bukan "no-store". Browser tetap
+		# menyimpan file lalu memvalidasinya lewat If-Modified-Since, sehingga
+		# permintaan berikutnya dijawab 304 tanpa mengirim ulang isi file.
+		# Dengan "no-store" file tidak pernah tersimpan sama sekali, jadi logo
+		# selalu diunduh ulang tiap kali halaman dibuka.
+		self.send_header(
+			"Cache-Control",
+			"public, max-age=0, must-revalidate" if is_video else "no-cache",
+		)
 		self.send_header("X-Content-Type-Options", "nosniff")
 		self.end_headers()
 		remaining = content_length
@@ -1611,6 +1777,38 @@ class KifayahHandler(BaseHTTPRequestHandler):
 
 	def send_stored_image(self, filename):
 		return self.send_stored_media(filename)
+
+	def inject_brand_bootstrap(self, body):
+		"""Sisipkan data logo ke HTML sebelum dikirim ke peramban.
+
+		Logo di bagian atas situs disembunyikan sampai app.js selesai
+		mengambil /api/settings. Selama itu/logo hanya terlihat sebagai huruf
+		"K" saja. Data logo yang sudah diketahui server disisipkan lebih dulu
+		sehingga peramban bisa menampilkannya begitu halaman terurai, tanpa
+		menunggu permintaan ke server.
+		"""
+		try:
+			with connect_database() as connection:
+				settings = get_settings(connection)
+		except sqlite3.Error:
+			return body
+		first = str(settings.get("site_icon", "") or "")
+		second = str(settings.get("site_icon_2", "") or "")
+		payload = {
+			"siteIconReady": bool(first) and (UPLOAD_DIR / Path(first).name).is_file(),
+			"siteIcon2Ready": bool(second) and (UPLOAD_DIR / Path(second).name).is_file(),
+			"iconZoom1": settings.get("icon_zoom_1", 100),
+			"iconZoom2": settings.get("icon_zoom_2", 100),
+			"brandArea": settings.get("footer_area", ""),
+		}
+		# json.dumps menghasilkan hanya karakter ASCII karena ensure_ascii=True,
+		# jadi aman disisipkan tanpa penanganan encoding tambahan.
+		script = f'<script id="brand-bootstrap">window.__kifayahBrand={json.dumps(payload)};</script>'
+		marker = b"</head>"
+		index = body.find(marker)
+		if index < 0:
+			return body
+		return body[:index] + script.encode("ascii") + body[index:]
 
 	def handle_media_upload(self):
 		try:
@@ -1840,6 +2038,70 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			return
 		self.send_json(status_code, {"registration": registration, "saved": True})
 
+	def handle_registration_family_search(self):
+		"""Cari kepala keluarga dari data warga iuran untuk diisi ke formulir.
+
+		Hanya untuk pengelola. Data warga iuran memuat NIK, nomor kartu keluarga,
+		dan alamat, jadi jalur ini tidak pernah dibuka untuk akun warga biasa.
+		"""
+		if not self.require_admin("Admin"):
+			return
+		query = self.query_param("q", "").strip()
+		if len(query) < 2:
+			self.send_json(400, {"error": "Ketik minimal 2 huruf atau angka untuk mencari."})
+			return
+		needle = f"%{query}%"
+		with connect_database() as connection:
+			rows = connection.execute(
+				"SELECT id, full_name, national_id_number, family_card_number, rt, rw, address, "
+				"birthplace, birth_date, religion, gender, residence_status, phone, relationship "
+				"FROM contribution_residents WHERE active = 1 AND ("
+				"  full_name LIKE ? OR national_id_number LIKE ? OR family_card_number LIKE ?"
+				") ORDER BY "
+				"  CASE WHEN UPPER(COALESCE(relationship, '')) LIKE '%KEPALA%' THEN 0 ELSE 1 END, "
+				"  full_name COLLATE NOCASE LIMIT 25",
+				(needle, needle, needle),
+			).fetchall()
+			families = []
+			for row in rows:
+				family_card = str(row["family_card_number"] or "")
+				members = []
+				if family_card:
+					members = [
+						{
+							"full_name": member["full_name"] or "",
+							"national_id_number": member["national_id_number"] or "",
+							"birthplace": member["birthplace"] or "",
+							"birth_date": member["birth_date"] or "",
+							"gender": member["gender"] or "",
+							"relationship": member["relationship"] or "",
+						}
+						for member in connection.execute(
+							"SELECT full_name, national_id_number, birthplace, birth_date, gender, relationship "
+							"FROM contribution_residents WHERE active = 1 AND family_card_number = ? AND id <> ? "
+							"ORDER BY full_name COLLATE NOCASE",
+							(family_card, row["id"]),
+						)
+					]
+				families.append({
+					"resident_id": row["id"],
+					"full_name": row["full_name"] or "",
+					"national_id_number": row["national_id_number"] or "",
+					"family_card_number": family_card,
+					"rt": str(int(row["rt"])) if str(row["rt"] or "").isdigit() else "",
+					"rw": str(int(row["rw"])) if str(row["rw"] or "").isdigit() else "",
+					"address": row["address"] or "",
+					"birthplace": row["birthplace"] or "",
+					"birth_date": row["birth_date"] or "",
+					"religion": row["religion"] or "",
+					"gender": row["gender"] or "",
+					"residence_status": row["residence_status"] or "",
+					"phone": row["phone"] or "",
+					"relationship": row["relationship"] or "",
+					"members": members,
+				})
+		self.send_json(200, {"families": families, "count": len(families)})
+
 	def handle_registration_create(self):
 		"""Admin mencatat formulir untuk warga yang mengisi di tempat."""
 		if not self.require_admin("Admin"):
@@ -1902,6 +2164,26 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				raise ValueError("Pilih formulir dengan benar.")
 			if role not in REGISTRATION_SIGNATURE_ROLES:
 				raise ValueError("Pilih jabatan penandatangan yang benar.")
+			if payload.get("name_only") is True:
+				# Menyimpan nama penandatangan tanpa menyentuh gambar. Dipakai
+				# saat jabatan berganti orang, jadi nama di cetakan ikut berubah
+				# tanpa perlu menggambar ulang tanda tangan yang sama.
+				if not isinstance(name, str) or not 2 <= len(" ".join(name.split())) <= 120:
+					raise ValueError("Nama penandatangan wajib diisi dan maksimal 120 karakter.")
+				with connect_database() as connection:
+					connection.execute(
+						"INSERT INTO bsk_registration_signatures (registration_id, role, name, image_file) "
+						"VALUES (?, ?, ?, '') "
+						"ON CONFLICT(registration_id, role) DO UPDATE SET name = excluded.name",
+						(registration_id, role, " ".join(name.split())),
+					)
+					connection.execute(
+						"UPDATE bsk_registrations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+						(registration_id,),
+					)
+					registration = registration_payload_for(connection, registration_id)
+				self.send_json(200, {"registration": registration, "saved": True})
+				return
 			if payload.get("clear") is True:
 				# Menghapus tanda tangan hanya untuk membetulkan satu jabatan,
 				# bukan untuk membatalkan persetujuan formulir.
@@ -2030,6 +2312,72 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				registration = registration_payload_for(connection, registration_id)
 		except (ValueError, TypeError, sqlite3.Error) as error:
 			self.send_json(400, {"error": str(error) or "Pendaftaran tidak dapat ditinjau."})
+			return
+		self.send_json(200, {"registration": registration, "saved": True})
+
+	def handle_registration_update(self):
+		"""Koreksi data satu formulir pendaftaran.
+
+		Formulir yang belum disetujui masih bebas diperbaiki karena datanya
+		belum masuk ke daftar warga. Setelah disetujui, data sudah disalin
+		ke tabel warga sehingga perubahan di sini tidak akan ikut ke sana.
+		"""
+		if not self.require_admin("Admin"):
+			return
+		try:
+			payload = self.read_json()
+			registration_id = payload.get("registration_id")
+			if type(registration_id) is not int:
+				raise ValueError("Pilih formulir dengan benar.")
+			members = payload.get("members", [])
+			if not isinstance(members, list) or len(members) > MAX_REGISTRATION_MEMBERS:
+				raise ValueError("Daftar anggota keluarga tidak valid.")
+			with connect_database() as connection:
+				existing = connection.execute(
+					"SELECT id, status FROM bsk_registrations WHERE id = ?", (registration_id,)
+				).fetchone()
+				if not existing:
+					self.send_json(404, {"error": "Pendaftaran tidak ditemukan."})
+					return
+				if existing["status"] == "Disetujui":
+					raise ValueError(
+						"Formulir ini sudah disetujui dan datanya sudah masuk ke daftar warga. "
+						"Koreksi dilakukan dari menu Data Warga agar kedua daftar tetap sama."
+					)
+				settings = get_settings(connection)
+				header = validate_registration_header(payload, settings)
+				validated_members = [
+					validate_registration_member(member, index) for index, member in enumerate(members)
+					if isinstance(member, dict) and str(member.get("full_name", "")).strip()
+				]
+				reject_duplicate_member_nik(header, validated_members)
+				connection.execute(
+					"UPDATE bsk_registrations SET head_name = ?, gender = ?, family_card_number = ?, "
+					"national_id_number = ?, birthplace = ?, birth_date = ?, religion = ?, residence_status = ?, "
+					"rt = ?, rw = ?, address = ?, job = ?, phone = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+					(
+						header["head_name"], header["gender"], header["family_card_number"], header["national_id_number"],
+						header["birthplace"], header["birth_date"], header["religion"], header["residence_status"],
+						header["rt"], header["rw"], header["address"], header["job"], header["phone"], registration_id,
+					),
+				)
+				# Tanda tangan tidak ikut terhapus karenaikat terikat pada
+				# formulir, bukan pada baris anggota.
+				connection.execute("DELETE FROM bsk_registration_members WHERE registration_id = ?", (registration_id,))
+				connection.executemany(
+					"INSERT INTO bsk_registration_members (registration_id, full_name, national_id_number, birthplace, "
+					"birth_date, gender, relationship, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+					[
+						(
+							registration_id, member["full_name"], member["national_id_number"], member["birthplace"],
+							member["birth_date"], member["gender"], member["relationship"], member["remark"],
+						)
+						for member in validated_members
+					],
+				)
+				registration = registration_payload_for(connection, registration_id)
+		except (ValueError, TypeError, sqlite3.Error) as error:
+			self.send_json(400, {"error": str(error) or "Pendaftaran tidak dapat diperbarui."})
 			return
 		self.send_json(200, {"registration": registration, "saved": True})
 
@@ -2251,6 +2599,37 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			self.send_json(500, {"error": "Foto tidak dapat disimpan di server."})
 		finally:
 			temporary_path.unlink(missing_ok=True)
+
+	def handle_contribution_proof_upload(self, payment_id):
+		"""Lampirkan atau ganti bukti pembayaran pada satu setoran.
+
+		Pengelola boleh melampirkan bukti saat mencatat setoran, dan bukti
+		tetap opsional: sending kosong berarti sekalian membuang bukti lama.
+		"""
+		if not self.require_admin("Admin"):
+			return
+		filename = ""
+		try:
+			payload = self.read_json()
+			content_type = payload.get("content_type", "")
+			encoded = payload.get("content_base64", "")
+			filename = save_payment_proof(encoded, content_type, f"payment-proof-{payment_id}")
+			with connect_database() as connection:
+				payment = connection.execute(
+					"SELECT proof_file FROM contribution_payments WHERE id = ?", (payment_id,)
+				).fetchone()
+				if not payment:
+					raise ValueError("Transaksi iuran tidak ditemukan.")
+				connection.execute(
+					"UPDATE contribution_payments SET proof_file = ? WHERE id = ?", (filename, payment_id)
+				)
+			if payment["proof_file"]:
+				(UPLOAD_DIR / payment["proof_file"]).unlink(missing_ok=True)
+			self.send_json(201, {"saved": True, "proof_url": f"/media/contribution-proof/{payment_id}" if filename else ""})
+		except (ValueError, TypeError, OSError, sqlite3.Error) as error:
+			if filename:
+				(UPLOAD_DIR / filename).unlink(missing_ok=True)
+			self.send_json(400 if isinstance(error, (ValueError, TypeError)) else 500, {"error": str(error) or "Bukti tidak dapat disimpan."})
 
 	def read_json(self):
 		try:
@@ -2486,31 +2865,88 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			if not self.require_admin("Admin"):
 				return
 			with connect_database() as connection:
-				rows = connection.execute("SELECT id, entry_date, title, description, income, expense FROM finance_entries ORDER BY entry_date DESC, id DESC").fetchall()
+				rows = connection.execute(
+					"SELECT id, entry_date, title, description, income, expense, source, source_period "
+					"FROM finance_entries ORDER BY entry_date DESC, id DESC"
+				).fetchall()
 			self.send_json(200, {"entries": [dict(row) for row in rows]})
+			return
+		if path == "/api/admin/finance/contributions":
+			# Rincian siapa saja yang sudah setor pada satu periode, untuk baris
+			# pemasukan iuran yang dibuat otomatis di Data Keuangan.
+			if not self.require_admin("Admin"):
+				return
+			period = self.query_param("period", "")
+			if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
+				self.send_json(400, {"error": "Pilih periode iuran yang valid."})
+				return
+			with connect_database() as connection:
+				rows = connection.execute(
+					"SELECT p.id, p.amount, p.paid_at, p.note, r.full_name, r.rt, r.rw "
+					"FROM contribution_payments p JOIN contribution_residents r ON r.id = p.resident_id "
+					"WHERE p.period = ? ORDER BY r.full_name COLLATE NOCASE",
+					(period,),
+				).fetchall()
+			entries = [dict(row) for row in rows]
+			self.send_json(200, {
+				"period": period,
+				"label": contribution_period_label(period),
+				"total": sum(row["amount"] for row in entries),
+				"count": len(entries),
+				"payments": entries,
+			})
 			return
 		if path == "/api/resident/payments":
 			if not self.require_resident():
 				return
 			with connect_database() as connection:
+				# Setoran warga kini dibaca dari tabel yang sama dengan menu
+				# "Warga dan Setoran", jadi dashboard warga dan panel pengelola
+				# tidak bisa menampilkan angka yang berbeda.
 				rows = connection.execute(
-					"SELECT id, period, amount, paid_at, method, status, admin_note, submitted_at, reviewed_at "
-					"FROM resident_payments WHERE user_id = ? ORDER BY period DESC, id DESC",
+					"SELECT p.id, p.period, p.amount, p.paid_at, p.method, p.status, p.admin_note, "
+					"p.proof_file, p.created_at FROM contribution_payments p "
+					"JOIN contribution_residents r ON r.id = p.resident_id "
+					"WHERE r.account_id = ? AND r.active = 1 ORDER BY p.period DESC, p.id DESC",
 					(self.current_resident["id"],),
 				).fetchall()
-			payments = [dict(row) | {"proof_url": f"/media/payment-proof/{row['id']}"} for row in rows]
+			payments = [
+				dict(row) | {"proof_url": f"/media/contribution-proof/{row['id']}" if row["proof_file"] else ""}
+				for row in rows
+			]
 			self.send_json(200, {"payments": payments})
 			return
 		if path == "/api/admin/payments":
 			if not self.require_admin("Admin"):
 				return
+			# Halaman verifikasi membaca tabel setoran yang sama dengan menu
+			# "Warga dan Setoran", jadi nama, RT, dan RW di sini selalu sesuai
+			# dengan data warga yang tercatat di sana.
+			status = self.query_param("status", "")
+			period = self.query_param("period", "")
+			filters, params = [], []
+			if status in ("Terverifikasi", "Ditolak", "Menunggu Verifikasi"):
+				filters.append("p.status = ?")
+				params.append(status)
+			if re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
+				filters.append("p.period = ?")
+				params.append(period)
+			where = f"WHERE {' AND '.join(filters)}" if filters else ""
 			with connect_database() as connection:
 				rows = connection.execute(
-					"SELECT p.id, p.period, p.amount, p.paid_at, p.method, p.status, p.admin_note, p.submitted_at, "
-					"u.display_name, u.username FROM resident_payments p JOIN admin_users u ON u.id = p.user_id "
-					"ORDER BY CASE p.status WHEN 'Menunggu Verifikasi' THEN 0 ELSE 1 END, p.submitted_at DESC"
+					"SELECT p.id, p.period, p.amount, p.paid_at, p.method, p.status, p.admin_note, "
+					"p.proof_file, p.created_at, p.source, "
+					"COALESCE(NULLIF(r.full_name, ''), u.display_name) AS display_name, r.rt, r.rw "
+					"FROM contribution_payments p "
+					"JOIN contribution_residents r ON r.id = p.resident_id "
+					"LEFT JOIN admin_users u ON u.id = r.account_id " + where + " "
+					"ORDER BY CASE p.status WHEN 'Menunggu Verifikasi' THEN 0 ELSE 1 END, p.paid_at DESC, p.id DESC",
+					params,
 				).fetchall()
-			payments = [dict(row) | {"proof_url": f"/media/payment-proof/{row['id']}"} for row in rows]
+			payments = [
+				dict(row) | {"proof_url": f"/media/contribution-proof/{row['id']}" if row["proof_file"] else ""}
+				for row in rows
+			]
 			self.send_json(200, {"payments": payments})
 			return
 		if path == "/api/admin/contribution-residents":
@@ -2522,33 +2958,43 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"SELECT id, display_name FROM admin_users WHERE role = 'Warga'"
 				)
 				residents = connection.execute(
-					"SELECT r.*, COALESCE(NULLIF(r.full_name, ''), u.display_name) AS display_name "
-					"FROM contribution_residents r LEFT JOIN admin_users u ON u.id = r.account_id "
+					# Warga iuran disambung ke data warga wafat lewat NIK. Hanya
+					# catatan wafat yang tanggalnya sudah diisi yang dianggap
+					# meninggal; tabel records ikut memuat warga yang masih hidup
+					# dan tanggalnya belum dilengkapi.
+					"SELECT r.*, COALESCE(NULLIF(r.full_name, ''), u.display_name) AS display_name, "
+					"wafat.date_of_death AS deceased_date, wafat.record_id AS deceased_record_id "
+					"FROM contribution_residents r "
+					"LEFT JOIN admin_users u ON u.id = r.account_id "
+					"LEFT JOIN ("
+					"  SELECT national_id_number, MAX(date_of_death) AS date_of_death, id AS record_id "
+					"  FROM records "
+					"  WHERE TRIM(COALESCE(national_id_number, '')) <> '' "
+					"    AND TRIM(COALESCE(date_of_death, '')) <> '' "
+					"  GROUP BY national_id_number"
+					") wafat ON wafat.national_id_number = r.national_id_number "
 					"WHERE r.active = 1 ORDER BY display_name COLLATE NOCASE"
 				).fetchall()
-				manual_payments = connection.execute(
-					"SELECT p.id, p.resident_id, p.period, p.amount, p.paid_at, p.note "
-					"FROM contribution_payments p ORDER BY p.paid_at DESC, p.id DESC"
-				).fetchall()
-				account_payments = connection.execute(
-					"SELECT r.id AS resident_id, p.id, p.period, p.amount, p.paid_at, p.status, "
-					"p.admin_note AS note FROM contribution_residents r "
-					"JOIN resident_payments p ON p.user_id = r.account_id "
-					"WHERE r.active = 1 ORDER BY p.paid_at DESC, p.id DESC"
+				all_payments = connection.execute(
+					"SELECT p.id, p.resident_id, p.period, p.amount, p.paid_at, p.note, p.method, "
+					"p.source, p.status, p.admin_note, p.proof_file FROM contribution_payments p "
+					"ORDER BY p.paid_at DESC, p.id DESC"
 				).fetchall()
 			by_resident = {row["id"]: [] for row in residents}
-			for payment in manual_payments:
-				by_resident[payment["resident_id"]].append({
+			for payment in all_payments:
+				entries = by_resident.get(payment["resident_id"])
+				# Setoran milik warga yang sudah tidak aktif tidak tampil di
+				# daftar, jadi dilewati tanpa membuat entri kosong.
+				if entries is None:
+					continue
+				from_resident = payment["source"] != "admin"
+				entries.append({
 					"id": payment["id"], "period": payment["period"], "amount": payment["amount"],
-					"paid_at": payment["paid_at"], "note": payment["note"], "status": "Terverifikasi",
-					"source": "admin", "editable": True, "deletable": True,
-				})
-			for payment in account_payments:
-				by_resident[payment["resident_id"]].append({
-					"id": payment["id"], "period": payment["period"], "amount": payment["amount"],
-					"paid_at": payment["paid_at"], "note": payment["note"], "status": payment["status"],
-					"source": "account", "editable": True, "deletable": False,
-					"proof_url": f"/media/payment-proof/{payment['id']}",
+					"paid_at": payment["paid_at"], "note": payment["note"], "method": payment["method"],
+					"status": payment["status"], "admin_note": payment["admin_note"],
+					"source": payment["source"],
+					"editable": True, "deletable": not from_resident,
+					"proof_url": f"/media/contribution-proof/{payment['id']}" if payment["proof_file"] else "",
 				})
 			result = []
 			current_period = date.today().strftime("%Y-%m")
@@ -2564,6 +3010,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"national_id_number": row["national_id_number"], "birthplace": row["birthplace"],
 					"religion": row["religion"], "gender": row["gender"],
 					"relationship": row["relationship"] if "relationship" in row.keys() else "", "phone": row["phone"] if "phone" in row.keys() else "", "residence_status": row["residence_status"] if "residence_status" in row.keys() else "",
+					# Status wafat diambil dari tabel records lewat NIK. Yang sudah
+					# meninggal tetap dihitung seperti biasa, hanya ditandai.
+					"deceased": bool(row["deceased_date"]),
+					"date_of_death": row["deceased_date"] or "",
+					"deceased_record_id": row["deceased_record_id"],
 					"photo_url": f"/media/contribution-resident/{row['id']}" if row["photo_file"] else "",
 					"payment_count": len(verified), "paid_months": len({item["period"] for item in verified}),
 					"total_paid": sum(item["amount"] for item in verified),
@@ -2615,7 +3066,14 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				result.append(article)
 			self.send_json(200, {"articles": result})
 			return
-		if path.startswith("/api/admin/registrations"):
+		if path == "/api/admin/registrations/family-search":
+			# Harus diperiksa sebelum Startswith di bawah, kalau tidak route ini
+			# tertangkap sebagai daftar formulir biasa.
+			return self.handle_registration_family_search()
+		if path == "/api/admin/registrations":
+			# Harus persis sama, bukan startswith. Dengan startswith, alamat
+			# "/api/admin/registrations/<id>" ikut tertangkap di sini dan
+			# route detail di bawahnya tidak pernah terjangkau.
 			if not self.require_admin("Admin"):
 				return
 			status_filter = self.query_param("status", "all")
@@ -2647,8 +3105,18 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			except ValueError:
 				self.send_json(400, {"error": "ID pendaftaran tidak valid."})
 				return
-			with connect_database() as connection:
-				registration = registration_payload_for(connection, registration_id)
+			# Pendaftaran yang sudah dihapus memberi galat dari
+			# registration_payload_for. Tanpa penanganan di sini, exception
+			# naik ke server dan koneksi ditutup tanpa balasan sama sekali.
+			try:
+				with connect_database() as connection:
+					registration = registration_payload_for(connection, registration_id)
+			except ValueError as error:
+				self.send_json(404, {"error": str(error) or "Pendaftaran tidak ditemukan."})
+				return
+			except sqlite3.Error as error:
+				self.send_json(400, {"error": str(error) or "Detail pendaftaran tidak dapat dimuat."})
+				return
 			self.send_json(200, {"registration": registration})
 			return
 		if path == "/api/resident/registrations":
@@ -3073,16 +3541,22 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					).fetchall()
 				else:
 					db_rows = connection.execute(
-						"SELECT * FROM contribution_residents WHERE active = 1 ORDER BY full_name COLLATE NOCASE"
+						# Sama seperti daftar di panel, warga disambung ke data wafat
+						# lewat NIK supaya daftar cetak ikut menandai yang meninggal.
+						"SELECT r.*, wafat.date_of_death AS deceased_date FROM contribution_residents r "
+						"LEFT JOIN ("
+						"  SELECT national_id_number, MAX(date_of_death) AS date_of_death FROM records "
+						"  WHERE TRIM(COALESCE(national_id_number, '')) <> '' "
+						"    AND TRIM(COALESCE(date_of_death, '')) <> '' "
+						"  GROUP BY national_id_number"
+						") wafat ON wafat.national_id_number = r.national_id_number "
+						"WHERE r.active = 1 ORDER BY r.full_name COLLATE NOCASE"
 					).fetchall()
 					current_period = date.today().strftime("%Y-%m")
 					paid_rows = connection.execute(
-						"SELECT resident_id FROM contribution_payments WHERE period = ? "
-						"UNION "
-						"SELECT r.id FROM contribution_residents r "
-						"JOIN resident_payments p ON p.user_id = r.account_id "
-						"WHERE p.period = ? AND p.status = 'Terverifikasi'",
-						(current_period, current_period),
+						"SELECT DISTINCT resident_id FROM contribution_payments "
+						"WHERE period = ? AND status = 'Terverifikasi'",
+						(current_period,),
 					).fetchall()
 					paid_ids = {row["resident_id"] for row in paid_rows}
 			headers = []
@@ -3171,7 +3645,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						continue
 					if status == "head" and "KEPALA" not in relationship:
 						continue
-					searchable = " ".join(filter(None, [row["full_name"], row["national_id_number"], row["address"], str(row["rt"]), str(row["rw"]), *rt_variants(row["rt"]), *rw_variants(row["rw"])])).lower()
+					searchable = " ".join(filter(None, [row["full_name"], row["national_id_number"], row["address"], str(row["rt"]), str(row["rw"]), *rt_variants(row["rt"]), *rw_variants(row["rw"]), "meninggal" if row["deceased_date"] else ""])).lower()
 					if search and search not in searchable:
 						continue
 					kept.append(row)
@@ -3197,7 +3671,12 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					if not contribution_groups or contribution_groups[-1][0] != label:
 						contribution_groups.append((label, []))
 					contribution_groups[-1][1].append([
-						row["full_name"] or "-", row["family_card_number"] or "-", row["national_id_number"] or "-",
+						# Tanda diletakkan di depan nama, bukan di belakang: nama
+						# panjang dipotong dari belakang, jadi tanda di belakang
+						# bisa ikut hilang. Tanda memakai huruf biasa karena font
+						# Helvetica tidak punya karakter seperti dagger.
+						(f"(Meninggal) {row['full_name'] or '-'}" if row["deceased_date"] else (row["full_name"] or "-")),
+						row["family_card_number"] or "-", row["national_id_number"] or "-",
 						f"RT {int(rt):03d}" if rt.isdigit() else "-", f"RW {int(rw):03d}" if rw.isdigit() else "-",
 						gender_label(row["gender"]), row["birthplace"] or "-", date_label(row["birth_date"]), row["religion"] or "-",
 						row["relationship"] if "relationship" in row.keys() and row["relationship"] else "-",
@@ -3205,6 +3684,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						row["residence_status"] if "residence_status" in row.keys() and row["residence_status"] else "-",
 					])
 				note = f"Filter pencarian: {search}" if search else "Semua warga iuran"
+				if any(row["deceased_date"] for row in kept):
+					note += " · (Meninggal) = warga yang telah meninggal"
 			# Semua jenis ekspor dikelompokkan per wilayah. Nomor kolom pertama
 			# dihitung ulang per kelompok, jadi selalu mulai dari 1.
 			if export_type == "contacts":
@@ -3216,19 +3697,53 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			doc = pymupdf.open()
 			helv_font = pymupdf.Font("helv")
 			bold_font = pymupdf.Font("hebo")
+			# Lebar tiap karakter diambil satu kali dari PyMuPDF, lalu teks
+			# diukur dengan lookup biasa. Font.text_length dipanggil ratusan
+			# ribu kali saat menyusun tabel dan pengukuran teks itu sendiri
+			# jauh lebih lama daripada penggambarannya.
+			glyph_widths = {}
+			for code_point in list(range(32, 127)) + list(range(160, 256)):
+				character = chr(code_point)
+				try:
+					glyph_widths[character] = helv_font.text_length(character, fontsize=1000.0)
+				except Exception:
+					pass
+			def text_width(text, fontsize):
+				"""Lebar teks Helvetica dari tabel lebar per karakter."""
+				total = 0.0
+				for character in text:
+					glyph_width = glyph_widths.get(character)
+					if glyph_width is None:
+						# Karakter di luar tabel, andalkan PyMuPDF.
+						return helv_font.text_length(text, fontsize=fontsize)
+					total += glyph_width
+				return total * fontsize / 1000.0
 			page_width, page_height = 842, 595
 			margin = 36
 			def new_page(document):
 				page = document.new_page(width=page_width, height=page_height)
 				page.draw_rect(pymupdf.Rect(0, 0, page_width, page_height), color=None, fill=(1, 1, 1))
 				return page
+			clipped_texts = {}
 			def truncate(text, width, fontsize):
-				text = str(text or "-")
-				if helv_font.text_length(text, fontsize=fontsize) <= width:
-					return text
-				while text and helv_font.text_length(text + "…", fontsize=fontsize) > width:
-					text = text[:-1]
-				return text + "…"
+				"""Potong teks supaya muat dalam lebar kolomnya.
+
+				Hasil pemotongan disimpan karena banyak sel memakai teks yang
+				sama, misalnya kolom RT/RW, gender, agama, dan status.
+				"""
+				key = (text, width, fontsize)
+				cached = clipped_texts.get(key)
+				if cached is not None:
+					return cached
+				original = str(text or "-")
+				if text_width(original, fontsize) <= width:
+					clipped_texts[key] = original
+					return original
+				while original and text_width(original + "…", fontsize) > width:
+					original = original[:-1]
+				result = original + "…"
+				clipped_texts[key] = result
+				return result
 			banner_top = 28
 			title_lines = [site.get("export_header_title", ""), site.get("export_header_line_2", ""), site.get("export_header_line_3", "")]
 			title_font_sizes = [13 if index == 0 else 10 for index in range(len(title_lines))]
@@ -3507,9 +4022,16 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			"site_font_style_target": settings.get("site_font_style_target", "all"),
 				"export_logo_1_ready": bool(settings.get("export_logo_1")),
 				"export_logo_2_ready": bool(settings.get("export_logo_2")),
+				"export_logo_1_size": int(settings.get("export_logo_1_size", 74) or 74),
+				"export_logo_2_size": int(settings.get("export_logo_2_size", 74) or 74),
+				"export_header_title_size": int(settings.get("export_header_title_size", 21) or 21),
+				"export_header_line_size": int(settings.get("export_header_line_size", 13) or 13),
+				"export_header_contact_size": int(settings.get("export_header_contact_size", 10) or 10),
 				"export_header_title": settings.get("export_header_title", ""),
 				"export_header_line_2": settings.get("export_header_line_2", ""),
 				"export_header_line_3": settings.get("export_header_line_3", ""),
+				"export_header_line_4": settings.get("export_header_line_4", ""),
+				"export_address_lines": settings.get("export_address_lines", ""),
 			"signature_date": settings.get("signature_date", ""),
 			"signature_maker_name": settings.get("signature_maker_name", ""),
 			"signature_rt_name": settings.get("signature_rt_name", ""),
@@ -3687,7 +4209,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				self.send_error(404)
 				return
 			return self.send_stored_image(article["image_file"])
-		if path.startswith("/media/payment-proof/"):
+		if path.startswith("/media/contribution-proof/"):
 			try:
 				payment_id = int(path.rsplit("/", 1)[1])
 			except ValueError:
@@ -3698,10 +4220,17 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				self.send_json(401, {"error": "Silakan masuk untuk melihat bukti pembayaran."})
 				return
 			with connect_database() as connection:
+				# Bukti kini menempel pada setoran, jadi kepemilikannya ikut
+				# mengikuti akun warga pada contribution_residents.
 				payment = connection.execute(
-					"SELECT user_id, proof_file FROM resident_payments WHERE id = ?", (payment_id,)
+					"SELECT r.account_id, p.proof_file FROM contribution_payments p "
+					"JOIN contribution_residents r ON r.id = p.resident_id WHERE p.id = ?",
+					(payment_id,),
 				).fetchone()
-			if not payment or (viewer["role"] == "Warga" and payment["user_id"] != viewer["id"]):
+			if not payment or not payment["proof_file"]:
+				self.send_error(404)
+				return
+			if viewer["role"] == "Warga" and payment["account_id"] != viewer["id"]:
 				self.send_error(404)
 				return
 			if viewer["role"] != "Warga" and "payments" not in viewer["permissions"]:
@@ -3743,6 +4272,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			".webp": "image/webp",
 		}.get(target.suffix, "application/octet-stream")
 		body = target.read_bytes()
+		if relative == "index.html":
+			body = self.inject_brand_bootstrap(body)
 		self.send_response(200)
 		self.send_header("Content-Type", content_type)
 		self.send_header("Content-Length", str(len(body)))
@@ -3826,9 +4357,23 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				return
 			self.send_json(status, {"id": result_id, "saved": True})
 			return
+		if path.startswith("/api/admin/contribution-payments/") and path.endswith("/proof"):
+			# Lampiran bukti: pengelola boleh melampirkan atau mengganti bukti
+			# pada setoran mana pun, dan pengiriman kosong berarti membuang bukti.
+			if not self.require_admin("Admin"):
+				return
+			try:
+				proof_id = int(path.rsplit("/", 2)[-2])
+			except ValueError:
+				self.send_json(400, {"error": "ID transaksi tidak valid."})
+				return
+			return self.handle_contribution_proof_upload(proof_id)
 		if path == "/api/admin/contribution-payments":
 			if not self.require_admin("Admin"):
 				return
+			# Di luar try supaya blok penanganan kesalahan tetap punya variabel ini
+			# ketika validasi gagal sebelum bukti sempat disimpan.
+			saved_proof = ""
 			try:
 				payload = self.read_json()
 				payment_source = payload.get("payment_source", "admin")
@@ -3852,44 +4397,66 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Nominal iuran harus lebih besar dari nol.")
 				if not isinstance(note, str) or len(note) > 500:
 					raise ValueError("Catatan iuran maksimal 500 karakter.")
+				# Bukti transfer ikut dikirim saat menambah setoran. Opsional:
+				# kosong berarti tidak ada bukti baru, dan bukti yang sudah
+				# terlampir pada setoran yang disunting tetap dipertahankan.
+				saved_proof = save_payment_proof(
+					payload.get("content_base64", ""), payload.get("content_type", ""), "contribution-proof"
+				)
+				previous_proof = ""
 				with connect_database() as connection:
 					resident = connection.execute(
 						"SELECT account_id FROM contribution_residents WHERE id = ? AND active = 1", (resident_id,)
 					).fetchone()
 					if not resident:
 						raise ValueError("Data warga tidak ditemukan.")
-					if payment_source == "account":
-						if not payment_id or not resident["account_id"]:
-							raise ValueError("Transaksi akun warga tidak dapat diedit.")
-						cursor = connection.execute(
-							"UPDATE resident_payments SET period = ?, amount = ?, paid_at = ? WHERE id = ? AND user_id = ?",
-							(period, amount, paid_at, payment_id, resident["account_id"]),
-						)
-						if cursor.rowcount == 0:
-							self.send_json(404, {"error": "Transaksi akun warga tidak ditemukan."})
-							return
-						result_id = payment_id
-						status = 200
-					elif payment_id:
-						cursor = connection.execute(
-							"UPDATE contribution_payments SET resident_id = ?, period = ?, amount = ?, paid_at = ?, note = ? "
-							"WHERE id = ?",
-							(resident_id, period, amount, paid_at, note.strip(), payment_id),
-						)
-						if cursor.rowcount == 0:
+					if payment_id:
+						# Sumber sudah tersimpan di kolom source pada baris itu,
+						# jadi tidak perlu mempercayai nilai dari peramban.
+						existing = connection.execute(
+							"SELECT source, proof_file FROM contribution_payments WHERE id = ?", (payment_id,)
+						).fetchone()
+						if not existing:
 							self.send_json(404, {"error": "Transaksi iuran tidak ditemukan atau tidak dapat diedit."})
+							if saved_proof:
+								(UPLOAD_DIR / saved_proof).unlink(missing_ok=True)
+								saved_proof = ""
 							return
+						if existing["source"] != "admin" and not resident["account_id"]:
+							raise ValueError("Transaksi yang dikirim warga tidak bisa dipindah ke warga tanpa akun.")
+						previous_proof = existing["proof_file"]
+						if saved_proof:
+							cursor = connection.execute(
+								"UPDATE contribution_payments SET resident_id = ?, period = ?, amount = ?, paid_at = ?, note = ?, proof_file = ? "
+								"WHERE id = ?",
+								(resident_id, period, amount, paid_at, note.strip(), saved_proof, payment_id),
+							)
+						else:
+							cursor = connection.execute(
+								"UPDATE contribution_payments SET resident_id = ?, period = ?, amount = ?, paid_at = ?, note = ? "
+								"WHERE id = ?",
+								(resident_id, period, amount, paid_at, note.strip(), payment_id),
+							)
 						result_id = payment_id
 						status = 200
 					else:
 						cursor = connection.execute(
-							"INSERT INTO contribution_payments (resident_id, period, amount, paid_at, note) VALUES (?, ?, ?, ?, ?)",
-							(resident_id, period, amount, paid_at, note.strip()),
+							"INSERT INTO contribution_payments (resident_id, period, amount, paid_at, note, proof_file) "
+							"VALUES (?, ?, ?, ?, ?, ?)",
+							(resident_id, period, amount, paid_at, note.strip(), saved_proof),
 						)
 						result_id = cursor.lastrowid
 						status = 201
-			except (ValueError, TypeError, sqlite3.Error) as error:
-				self.send_json(400, {"error": str(error) or "Transaksi iuran tidak dapat disimpan."})
+					sync_contribution_income(connection)
+				if previous_proof and saved_proof and previous_proof != saved_proof:
+					(UPLOAD_DIR / previous_proof).unlink(missing_ok=True)
+			except (ValueError, TypeError, OSError, sqlite3.Error) as error:
+				if saved_proof:
+					(UPLOAD_DIR / saved_proof).unlink(missing_ok=True)
+				self.send_json(
+					400 if isinstance(error, (ValueError, TypeError)) else 500,
+					{"error": str(error) or "Transaksi iuran tidak dapat disimpan."},
+				)
 				return
 			self.send_json(status, {"id": result_id, "saved": True})
 			return
@@ -3956,7 +4523,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		if path == "/api/resident/payments":
 			if not self.require_resident():
 				return
-			proof_path = None
+			filename = ""
 			try:
 				payload = self.read_json()
 				period = payload.get("period", "")
@@ -3974,34 +4541,29 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				date.fromisoformat(paid_at)
 				if method not in ("Transfer Bank", "E-Wallet", "Tunai"):
 					raise ValueError("Pilih metode pembayaran yang tersedia.")
-				proof_types = {
-					"image/png": (".png", lambda data: data.startswith(b"\x89PNG\r\n\x1a\n")),
-					"image/jpeg": (".jpg", lambda data: data.startswith(b"\xff\xd8\xff")),
-					"image/webp": (".webp", lambda data: data.startswith(b"RIFF") and data[8:12] == b"WEBP"),
-					"application/pdf": (".pdf", lambda data: data.startswith(b"%PDF-")),
-				}
-				if content_type not in proof_types or not isinstance(encoded, str) or len(encoded) > 7_000_000:
-					raise ValueError("Unggah bukti JPG, PNG, WebP, atau PDF hingga 5 MB.")
-				try:
-					proof = base64.b64decode(encoded, validate=True)
-				except (ValueError, binascii.Error):
-					raise ValueError("File bukti pembayaran tidak valid.")
-				extension, check_signature = proof_types[content_type]
-				if not proof or len(proof) > MAX_PAYMENT_PROOF_SIZE or not check_signature(proof):
-					raise ValueError("File bukti pembayaran tidak valid atau melebihi 5 MB.")
-				filename = f"payment-{self.current_resident['id']}-{secrets.token_hex(16)}{extension}"
-				UPLOAD_DIR.mkdir(exist_ok=True)
-				proof_path = UPLOAD_DIR / filename
-				proof_path.write_bytes(proof)
+				# Bukti opsional: warga tetap boleh mencatat setoran tanpa foto,
+				# jadi kosong di sini bukan kesalahan.
+				filename = save_payment_proof(encoded, content_type, f"payment-{self.current_resident['id']}")
 				with connect_database() as connection:
+					resident = connection.execute(
+						"SELECT id FROM contribution_residents WHERE account_id = ? AND active = 1",
+						(self.current_resident["id"],),
+					).fetchone()
+					if not resident:
+						raise ValueError("Data warga iuran belum terdaftar. Hubungi admin BSK.")
+					# Setoran warga langsung masuk ke tabel setoran yang sama
+					# dengan menu "Warga dan Setoran", lalu menunggu verifikasi
+					# pengelola sebelum dihitung sebagai pemasukan.
 					cursor = connection.execute(
-						"INSERT INTO resident_payments (user_id, period, amount, paid_at, method, proof_file) VALUES (?, ?, ?, ?, ?, ?)",
-						(self.current_resident["id"], period, amount, paid_at, method, filename),
+						"INSERT INTO contribution_payments "
+						"(resident_id, period, amount, paid_at, note, method, source, proof_file, status) "
+						"VALUES (?, ?, ?, ?, ?, ?, 'warga', ?, 'Menunggu Verifikasi')",
+						(resident["id"], period, amount, paid_at, method, method, filename),
 					)
-				payment_id = cursor.lastrowid
+					payment_id = cursor.lastrowid
 			except (ValueError, TypeError, OSError, sqlite3.Error) as error:
-				if proof_path:
-					proof_path.unlink(missing_ok=True)
+				if filename:
+					(UPLOAD_DIR / filename).unlink(missing_ok=True)
 				self.send_json(400 if isinstance(error, (ValueError, TypeError)) else 500, {"error": str(error) or "Pembayaran tidak dapat disimpan."})
 				return
 			self.send_json(201, {"id": payment_id, "status": "Menunggu Verifikasi"})
@@ -4019,13 +4581,17 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				if decision == "Ditolak" and not note.strip():
 					raise ValueError("Isi catatan alasan jika pembayaran ditolak.")
 				with connect_database() as connection:
+					# Setoran yang diverifikasi langsung masuk hitungan pemasukan
+					# Data Keuangan, jadi sinkronisasi dijalankan di sini.
 					cursor = connection.execute(
-						"UPDATE resident_payments SET status = ?, admin_note = ?, reviewed_at = ? WHERE id = ? AND status = 'Menunggu Verifikasi'",
+						"UPDATE contribution_payments SET status = ?, admin_note = ?, reviewed_at = ? "
+						"WHERE id = ? AND status = 'Menunggu Verifikasi'",
 						(decision, note.strip(), datetime.now(timezone.utc).isoformat(timespec="seconds"), payment_id),
 					)
-				if cursor.rowcount != 1:
-					self.send_json(404, {"error": "Pembayaran tidak ditemukan atau sudah diperiksa."})
-					return
+					if cursor.rowcount != 1:
+						self.send_json(404, {"error": "Setoran tidak ditemukan atau sudah diperiksa."})
+						return
+					sync_contribution_income(connection)
 			except (ValueError, TypeError, sqlite3.Error) as error:
 				self.send_json(400, {"error": str(error) or "Verifikasi tidak dapat disimpan."})
 				return
@@ -4081,6 +4647,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			return self.handle_registration_signature()
 		if path == "/api/admin/registrations/review":
 			return self.handle_registration_review()
+		if path == "/api/admin/registrations/update":
+			return self.handle_registration_update()
 		if path == "/api/admin/data-issues/resolve":
 			if not self.require_admin("Admin"):
 				return
@@ -4574,12 +5142,38 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				hero_background_scale = payload.get("hero_background_scale")
 				hero_image_position = payload.get("hero_image_position")
 				export_header_values = {}
-				for key in ("export_header_title", "export_header_line_2", "export_header_line_3"):
+				for key in ("export_header_title", "export_header_line_2", "export_header_line_3", "export_header_line_4"):
 					value = payload.get(key)
 					if value is not None:
 						if not isinstance(value, str) or len(value) > 160:
 							raise ValueError("Teks kop ekspor maksimal 160 karakter per baris.")
 						export_header_values[key] = value.strip()
+				# Ukuran logo kop dalam piksel; dibatasi supaya kop tidak
+				# pecah saat logo diperbesar melebihi lebar halaman.
+				logo_sizes = {}
+				for key in ("export_logo_1_size", "export_logo_2_size"):
+					value = payload.get(key)
+					if value is not None:
+						if type(value) is not int or not 20 <= value <= 200:
+							raise ValueError("Ukuran logo kop harus antara 20 dan 200 piksel.")
+						logo_sizes[key] = value
+				# Ukuran font kop dalam piksel (layar). Saat dicetak, nilai
+				# ini dikonversi ke poin lewat CSS (1 px = 0,75 pt).
+				font_sizes = {}
+				for key in ("export_header_title_size", "export_header_line_size", "export_header_contact_size"):
+					value = payload.get(key)
+					if value is not None:
+						if type(value) is not int or not 8 <= value <= 60:
+							raise ValueError("Ukuran font kop harus antara 8 dan 60 piksel.")
+						font_sizes[key] = value
+				# Baris alamat pada formulir cetak (kelurahan, kecamatan, kota)
+				# disimpan sebagai satu teks berbaris, jadiSuper Admin bisa
+				# menambah atau mengubah jumlahnya tanpa mengubah kode.
+				address_lines = payload.get("export_address_lines")
+				if address_lines is not None:
+					if not isinstance(address_lines, str) or len(address_lines) > 400:
+						raise ValueError("Baris alamat formulir maksimal 400 karakter.")
+					export_header_values["export_address_lines"] = address_lines.strip()
 				signature_values = {}
 				for key in (
 					"signature_date", "signature_maker_name", "signature_rt_name",
@@ -4653,6 +5247,18 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					connection.execute("UPDATE app_settings SET value = ? WHERE key = 'hero_image_position'", (hero_image_position,))
 				for key, value in export_header_values.items():
 					connection.execute("UPDATE app_settings SET value = ? WHERE key = ?", (value, key))
+				for key, value in logo_sizes.items():
+					connection.execute(
+						"INSERT INTO app_settings (key, value) VALUES (?, ?) "
+						"ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+						(key, value),
+					)
+				for key, value in font_sizes.items():
+					connection.execute(
+						"INSERT INTO app_settings (key, value) VALUES (?, ?) "
+						"ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+						(key, value),
+					)
 				for key, value in signature_values.items():
 					connection.execute(
 						"INSERT INTO app_settings (key, value) VALUES (?, ?) "
@@ -4919,15 +5525,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 							resident_ids[key] = existing_row["id"]
 					payment_keys = {
 						(row["resident_id"], row["period"])
-						for row in connection.execute("SELECT resident_id, period FROM contribution_payments")
+						for row in connection.execute("SELECT DISTINCT resident_id, period FROM contribution_payments")
 					}
-					payment_keys.update(
-						(row["resident_id"], row["period"])
-						for row in connection.execute(
-							"SELECT r.id AS resident_id, p.period FROM contribution_residents r "
-							"JOIN resident_payments p ON p.user_id = r.account_id WHERE r.active = 1"
-						)
-					)
 					created = 0
 					payments_created = 0
 					skipped = 0
@@ -4968,6 +5567,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						)
 						payment_keys.add(payment_key)
 						payments_created += 1
+				if payments_created:
+					sync_contribution_income(connection)
 				self.send_json(201, {"created": created, "payments_created": payments_created, "skipped_duplicates": skipped})
 				return
 			except (ValueError, TypeError) as error:
@@ -5030,15 +5631,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 								resident_ids[key] = existing_row["id"]
 						payment_keys = {
 							(row["resident_id"], row["period"])
-							for row in connection.execute("SELECT resident_id, period FROM contribution_payments")
+							for row in connection.execute("SELECT DISTINCT resident_id, period FROM contribution_payments")
 						}
-						payment_keys.update(
-							(row["resident_id"], row["period"])
-							for row in connection.execute(
-								"SELECT r.id AS resident_id, p.period FROM contribution_residents r "
-								"JOIN resident_payments p ON p.user_id = r.account_id WHERE r.active = 1"
-							)
-						)
 						created = 0
 						updated = 0
 						payments_created = 0
@@ -5125,6 +5719,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 							payment_keys.add(payment_key)
 							payments_created += 1
 							outcomes.append(dict(meta, outcome="payment_created", detail=True, reason="setoran baru dicatat"))
+					if payments_created or payments_updated:
+						sync_contribution_income(connection)
 					self.send_json(201, {
 						"created": created, "updated": updated,
 						"payments_created": payments_created, "payments_updated": payments_updated,
@@ -5310,6 +5906,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"SELECT photo_file FROM contribution_residents WHERE photo_file <> ''"
 				)]
 				connection.execute("DELETE FROM contribution_payments")
+				sync_contribution_income(connection)
 				connection.execute("DELETE FROM data_issues WHERE destination = 'contributions'")
 				removed = connection.execute("DELETE FROM contribution_residents").rowcount
 				for filename in photos:
@@ -5368,10 +5965,19 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				self.send_json(400, {"error": "ID transaksi tidak valid."})
 				return
 			with connect_database() as connection:
+				# Bukti ikut dibuang supaya folder uploads tidak menumpuk
+				# berkas yang tidak lagi dirujuk.
+				row = connection.execute(
+					"SELECT proof_file FROM contribution_payments WHERE id = ?", (payment_id,)
+				).fetchone()
 				cursor = connection.execute("DELETE FROM contribution_payments WHERE id = ?", (payment_id,))
+				if cursor.rowcount:
+					sync_contribution_income(connection)
 			if cursor.rowcount == 0:
 				self.send_json(404, {"error": "Transaksi iuran tidak ditemukan."})
 				return
+			if row and row["proof_file"]:
+				(UPLOAD_DIR / row["proof_file"]).unlink(missing_ok=True)
 			self.send_json(200, {"deleted": True})
 			return
 		if path.startswith("/api/admin/contribution-residents"):
@@ -5497,7 +6103,15 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					if remaining <= 1:
 						self.send_json(400, {"error": "Tidak dapat menghapus Super Admin aktif terakhir."})
 						return
-				proof_files = [row["proof_file"] for row in connection.execute("SELECT proof_file FROM resident_payments WHERE user_id = ?", (user_id,))]
+				proof_files = [
+					row["proof_file"]
+					for row in connection.execute(
+						"SELECT DISTINCT p.proof_file FROM contribution_payments p "
+						"JOIN contribution_residents r ON r.id = p.resident_id "
+						"WHERE r.account_id = ? AND TRIM(COALESCE(p.proof_file, '')) <> ''",
+						(user_id,),
+					)
+				]
 				connection.execute("DELETE FROM admin_users WHERE id = ?", (user_id,))
 				if target["photo_file"]:
 					(UPLOAD_DIR / target["photo_file"]).unlink(missing_ok=True)
@@ -5565,6 +6179,9 @@ def main():
 	ensure_port_free(int(os.environ.get("PORT", "8000")))
 	connect_database().close()
 	with connect_database() as connection:
+		# Setoran yang sudah ada sebelum fitur ini dibuat ikut menjadi baris
+		# pemasukan, jadi tidak perlu dicatat ulang satu per satu.
+		sync_contribution_income(connection)
 		initial_admin = connection.execute(
 			"SELECT username FROM admin_users WHERE role = 'Super Admin' AND force_password_change = 1 ORDER BY id LIMIT 1"
 		).fetchone()

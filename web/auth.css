@@ -71,6 +71,11 @@ h1 { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Sego
 .payment-form input, .payment-form select { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid #d0d0d0; border-radius: 10px; color: #171717; background: #e1e1e1; font: inherit; font-size: 13px; }
 .payment-proof-field, .payment-form .error-message, .payment-form .submit-button { grid-column: 1 / -1; }
 .payment-proof-field .form-hint { margin: -2px 0 0; }
+/* Label form memakai display:grid, jadi teks label dan tanda "(Opsional)"
+   akan menjadi dua baris terpisah. Keduanya dibungkus satu elemen flex supaya
+   tetap satu baris di samping input. */
+.field-label-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.payment-proof-optional { font-weight: 500; opacity: .75; }
 .payment-form .submit-button { min-height: 43px; }
 .payment-history-heading { margin-top: 18px; align-items: center; }
 .payment-history-heading h3 { font-size: 15px; }

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ededed">
   <title>Masuk | Kifayah</title>
-  <link rel="stylesheet" href="/auth.css?v=20261010-15">
-  <script src="/auth.js?v=20261010-15" defer></script>
+  <link rel="stylesheet" href="/auth.css?v=20261012-32">
+  <script src="/auth.js?v=20261012-32" defer></script>
 </head>
 <body>
   <!-- HEADER: samakan dengan panel /admin agar halaman masuk tidak kosong. -->
@@ -43,7 +43,7 @@
           <div><p class="eyebrow">Ruang Warga</p><h1>Dashboard Warga</h1><p>Halo, <strong id="dashboard-greeting"></strong>. Pilih layanan yang ingin dibuka.</p></div>
           <details class="resident-account-control">
             <summary class="resident-account-trigger" aria-label="Menu akun warga">
-              <span class="resident-account-avatar" aria-hidden="true"><span class="resident-account-initial">W</span><img class="theme-profile-logo" src="/assets/bsk-logo-light.png" alt=""></span>
+              <span class="resident-account-avatar" aria-hidden="true"><span class="resident-account-initial">W</span><img class="theme-profile-logo" src="/assets/bsk-logo-light.webp" alt=""></span>
               <span class="resident-account-details"><strong id="dashboard-name"></strong><small>Warga &middot; <span id="dashboard-username"></span></small></span>
               <span class="resident-account-chevron" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
             </summary>
@@ -63,9 +63,9 @@
               <label>Nominal dibayar<input name="amount" type="number" min="1" step="1" inputmode="numeric" required placeholder="Contoh: 10000"></label>
               <label>Tanggal pembayaran<input name="paid_at" type="date" required></label>
               <label>Metode pembayaran<select name="method" required><option value="">Pilih metode</option><option>Transfer Bank</option><option>E-Wallet</option><option>Tunai</option></select></label>
-              <label class="payment-proof-field">Bukti pembayaran<input name="proof" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" required><span class="form-hint">JPG, PNG, WebP, atau PDF. Maksimal 5 MB.</span></label>
+              <label class="payment-proof-field"><span class="field-label-row">Bukti pembayaran <span class="payment-proof-optional">(Opsional)</span></span><input name="proof" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"><span class="form-hint">Boleh langsung ambil foto atau pilih berkas. JPG, PNG, WebP, atau PDF. Maksimal 5 MB. Tidak wajib diisi.</span></label>
               <p id="payment-error" class="error-message" role="alert"></p>
-              <button class="submit-button" type="submit">Kirim Bukti Pembayaran</button>
+              <button class="submit-button" type="submit">Kirim Setoran</button>
             </form>
             <div class="payment-history-heading"><h3>Riwayat Pembayaran</h3><button id="payment-refresh" class="quiet-button" type="button">Perbarui</button></div>
             <div id="payment-history" class="payment-history" aria-live="polite"><p class="form-hint">Riwayat pembayaran akan tampil di sini.</p></div>

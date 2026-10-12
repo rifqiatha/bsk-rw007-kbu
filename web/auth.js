@@ -20,7 +20,7 @@ function authSurfaceIsDark(element) {
 function authUpdateProfileLogos(configuredUrl) {
   document.querySelectorAll(".theme-profile-logo").forEach((image) => {
     const host = image.closest(".resident-account-avatar, .resident-account-trigger") || image.parentElement || image;
-    image.src = configuredUrl || (authSurfaceIsDark(host) ? "/assets/bsk-logo-dark.png" : "/assets/bsk-logo-light.png");
+    image.src = configuredUrl || (authSurfaceIsDark(host) ? "/assets/bsk-logo-dark.webp" : "/assets/bsk-logo-light.webp");
   });
 }
 authUpdateProfileLogos(null);
@@ -206,12 +206,22 @@ async function loadResidentPayments() {
       const amount = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(item.amount);
       const detail = document.createElement("p");
       detail.textContent = `${amount} · ${item.paid_at} · ${item.method}`;
-      const proof = document.createElement("a");
-      proof.href = item.proof_url;
-      proof.target = "_blank";
-      proof.rel = "noopener";
-      proof.textContent = "Lihat bukti";
-      card.append(heading, detail, proof);
+      card.append(heading, detail);
+      /* Bukti opsional: kalau tidak ada berkas, tampilkan keterangan saja
+         supaya warga tidak mengira settornya gagal terkirim. */
+      if (item.proof_url) {
+        const proof = document.createElement("a");
+        proof.href = item.proof_url;
+        proof.target = "_blank";
+        proof.rel = "noopener";
+        proof.textContent = "Lihat bukti";
+        card.append(proof);
+      } else {
+        const noProof = document.createElement("span");
+        noProof.className = "resident-payment-no-proof";
+        noProof.textContent = "Tanpa bukti (opsional)";
+        card.append(noProof);
+      }
       if (item.admin_note) {
         const note = document.createElement("p");
         note.className = "payment-review-note";
@@ -353,21 +363,26 @@ document.querySelector("#payment-form").addEventListener("submit", async (event)
   const values = new FormData(form);
   const file = values.get("proof");
   error.textContent = "";
-  if (!(file instanceof File) || !file.size) {
-    error.textContent = "Pilih file bukti pembayaran terlebih dahulu.";
-    return;
-  }
-  if (file.size > 5 * 1024 * 1024) {
+  /* Bukti bersifat opsional. Bila ada berkas, tetap diperiksa ukuran dan
+     jenisnya; kalau kosong, setoran tetap dikirim tanpa bukti. */
+  const hasFile = file instanceof File && file.size > 0;
+  if (hasFile && file.size > 5 * 1024 * 1024) {
     error.textContent = "Ukuran file bukti maksimal 5 MB.";
     return;
   }
   submit.disabled = true;
   submit.textContent = "Mengirim…";
   try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let binary = "";
-    for (let offset = 0; offset < bytes.length; offset += 32_768) {
-      binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+    let contentType = "";
+    let contentBase64 = "";
+    if (hasFile) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 32_768) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+      }
+      contentType = file.type;
+      contentBase64 = btoa(binary);
     }
     const response = await fetch("/api/resident/payments", {
       method: "POST",
@@ -377,11 +392,11 @@ document.querySelector("#payment-form").addEventListener("submit", async (event)
         amount: Number(values.get("amount")),
         paid_at: values.get("paid_at"),
         method: values.get("method"),
-        content_type: file.type,
-        content_base64: btoa(binary),
+        content_type: contentType,
+        content_base64: contentBase64,
       }),
     });
-    const result = await readApiResponse(response, "Bukti pembayaran tidak dapat dikirim.");
+    await readApiResponse(response, "Setoran tidak dapat dikirim.");
     form.reset();
     const now = new Date();
     document.querySelector('#payment-form [name="paid_at"]').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -391,7 +406,7 @@ document.querySelector("#payment-form").addEventListener("submit", async (event)
     error.textContent = submissionError.message;
   } finally {
     submit.disabled = false;
-    submit.textContent = "Kirim Bukti Pembayaran";
+    submit.textContent = "Kirim Setoran";
   }
 });
 

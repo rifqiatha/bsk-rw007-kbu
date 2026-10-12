@@ -19,9 +19,23 @@ const settingsForm = document.querySelector("#settings-form");
 const records = [];
 let hasRenderedRecords = false;
 let settingsPayloadSignature = null;
-const settings = { rt_count: 1, rw_count: 7, icon_zoom_1: 100, icon_zoom_2: 100, hero_background_scale: 100, hero_image_position: "right", site_font_preset: "kifayah", site_font_scale: 100, site_font_style: "normal", site_font_style_target: "all", intro_text_alignment: "left", news_text_alignment: "left", directory_text_alignment: "left" };
+const settings = { rt_count: 1, rw_count: 7, icon_zoom_1: 100, icon_zoom_2: 100, hero_background_scale: 100, hero_image_position: "right", site_font_preset: "kifayah", site_font_scale: 100, site_font_style: "normal", site_font_style_target: "all", intro_text_alignment: "left", news_text_alignment: "left", directory_text_alignment: "left", export_header_title: "", export_header_line_2: "", export_header_line_3: "", export_header_line_4: "", export_address_lines: "", export_logo_1_size: 74, export_logo_2_size: 74, export_header_title_size: 21, export_header_line_size: 13, export_header_contact_size: 10, signature_place: "", signature_date: "" };
 let familyFilterKK = null;
 const siteIconAvailability = { 1: false, 2: false };
+// Data logo yang disisipkan server ke dalam HTML (lihat inject_brand_bootstrap
+// di Kifayah.py). Dipakai untuk menampilkan logo lebih awal, tanpa menunggu
+// /api/settings. Nilai asli tetap diambil ulang dari server setelahnya.
+const brandBootstrap = window.__kifayahBrand || null;
+if (brandBootstrap) {
+  siteIconAvailability[1] = Boolean(brandBootstrap.siteIconReady);
+  siteIconAvailability[2] = Boolean(brandBootstrap.siteIcon2Ready);
+  settings.icon_zoom_1 = brandBootstrap.iconZoom1;
+  settings.icon_zoom_2 = brandBootstrap.iconZoom2;
+  // applyIconZoom adalah deklarasi fungsi, jadi sudah tersedia di baris ini
+  // walau definisinya muncul lebih bawah.
+  applyIconZoom(1, Number(brandBootstrap.iconZoom1) || 0);
+  applyIconZoom(2, Number(brandBootstrap.iconZoom2) || 0);
+}
 const themeLogoAvailability = {
   logo1: { light: false, dark: false },
   logo2: { light: false, dark: false },
@@ -43,8 +57,8 @@ let originalContributionResidents = [];
 let contributionResidentsSignature = "";
 const heroImageElement = document.querySelector("#hero-image");
 const THEME_STORAGE_KEY = "kifayah-theme";
-const DARK_BSK_LOGO_URL = new URL("/assets/bsk-logo-dark.png", document.baseURI).href;
-const LIGHT_BSK_LOGO_URL = new URL("/assets/bsk-logo-light.png", document.baseURI).href;
+const DARK_BSK_LOGO_URL = new URL("/assets/bsk-logo-dark.webp", document.baseURI).href;
+const LIGHT_BSK_LOGO_URL = new URL("/assets/bsk-logo-light.webp", document.baseURI).href;
 function themedBskLogoUrl(target, theme) {
   if (themeLogoAvailability[target]?.[theme]) return `/media/theme-logo/${target}/${theme}`;
   if (target === "logo2" || target === "hero") return theme === "dark" ? DARK_BSK_LOGO_URL : LIGHT_BSK_LOGO_URL;
@@ -68,6 +82,49 @@ let tableSortKey = "";
 let tableSortDirection = "asc";
 let recordsPage = 0;
 const RECORDS_PAGE_SIZE = 10;
+
+/* Tampilkan tombol penomoran halaman secara ringkas, bukan satu tombol untuk
+   setiap halaman. Tanpa ini daftar warga wafat (2.338 entri, 10 per halaman)
+   menghasilkan 234 tombol dalam satu baris dan meluber keluar wadahnya.
+   Hanya tiga nomor yang ditampilkan: halaman sebelum, halaman sekarang, dan
+   halaman sesudahnya. Jauh ke awal atau ke akhir memakai titik tiga yang bisa
+   diklik, atau tombol panah di kedua ujung. */
+function pageWindow(pageCount, currentPage) {
+  if (pageCount <= 3) return Array.from({ length: pageCount }, (_, index) => index);
+  const start = Math.min(Math.max(currentPage - 1, 0), pageCount - 3);
+  return [start, start + 1, start + 2];
+}
+
+function renderPaginationNumbers(container, pageCount, currentPage, onSelect) {
+  container.replaceChildren();
+  const indexes = pageWindow(pageCount, currentPage);
+  let previous = -1;
+  for (const pageIndex of indexes) {
+    if (pageIndex - previous > 1) {
+      // Titik tiga bisa diklik untuk melompat ke awal atau akhir daftar, supaya
+      // halaman pertama tetap terjangkau walau tidak tampil sebagai tombol.
+      const isLeadingGap = previous === -1;
+      const jumpButton = document.createElement("button");
+      jumpButton.type = "button";
+      jumpButton.className = "record-page-ellipsis";
+      jumpButton.textContent = "...";
+      jumpButton.title = isLeadingGap ? "Ke halaman pertama" : "Ke halaman terakhir";
+      jumpButton.setAttribute("aria-label", jumpButton.title);
+      jumpButton.addEventListener("click", () => onSelect(isLeadingGap ? 0 : pageCount - 1));
+      container.append(jumpButton);
+    }
+    const pageButton = document.createElement("button");
+    pageButton.className = "record-page-number";
+    pageButton.type = "button";
+    pageButton.role = "listitem";
+    pageButton.textContent = String(pageIndex + 1);
+    pageButton.setAttribute("aria-label", `Buka halaman ${pageIndex + 1}`);
+    pageButton.setAttribute("aria-current", String(pageIndex === currentPage));
+    pageButton.addEventListener("click", () => onSelect(pageIndex));
+    container.append(pageButton);
+    previous = pageIndex;
+  }
+}
 let contributionStatusKey = "all";
 let adminRecordsPage = 0;
 let contributionResidentsPage = 0;
@@ -811,38 +868,10 @@ function render() {
     listElement.append(row);
   });
   const pageNumbers = document.querySelector("#records-page-numbers");
-  pageNumbers.replaceChildren();
-  const pageIndexes = [];
-  if (pageCount <= 7) {
-    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) pageIndexes.push(pageIndex);
-  } else {
-    pageIndexes.push(0, 1, 2, 3, 4);
-    if (recordsPage > 5 && recordsPage < pageCount - 6) pageIndexes.push(recordsPage - 1, recordsPage, recordsPage + 1);
-    pageIndexes.push(pageCount - 3, pageCount - 2, pageCount - 1);
-  }
-  let previousPageIndex = -1;
-  for (const pageIndex of [...new Set(pageIndexes)].sort((left, right) => left - right)) {
-    if (pageIndex - previousPageIndex > 1) {
-      const ellipsis = document.createElement("span");
-      ellipsis.className = "record-page-ellipsis";
-      ellipsis.textContent = "...";
-      ellipsis.setAttribute("aria-hidden", "true");
-      pageNumbers.append(ellipsis);
-    }
-    const pageButton = document.createElement("button");
-    pageButton.className = "record-page-number";
-    pageButton.type = "button";
-    pageButton.role = "listitem";
-    pageButton.textContent = String(pageIndex + 1);
-    pageButton.setAttribute("aria-label", `Buka halaman ${pageIndex + 1}`);
-    pageButton.setAttribute("aria-current", String(pageIndex === recordsPage));
-    pageButton.addEventListener("click", () => {
-      recordsPage = pageIndex;
-      render();
-    });
-    pageNumbers.append(pageButton);
-    previousPageIndex = pageIndex;
-  }
+  renderPaginationNumbers(pageNumbers, pageCount, recordsPage, (pageIndex) => {
+    recordsPage = pageIndex;
+    render();
+  });
   document.querySelector("#records-previous").disabled = recordsPage === 0;
   document.querySelector("#records-next").disabled = recordsPage >= pageCount - 1;
 }
@@ -1373,7 +1402,19 @@ function renderAreaContacts(contacts) {
       link.href = whatsappContactUrl(contact.phone);
       link.target = "_blank";
       link.rel = "noopener noreferrer";
-      link.textContent = contact.phone;
+      // Ikon WhatsApp membuat jelas bahwa nomor ini bisa diketuk, dan teks
+      //nya tetap angka saja supaya mudah dibaca dan disalin.
+      const whatsappIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      whatsappIcon.setAttribute("viewBox", "0 0 24 24");
+      whatsappIcon.setAttribute("aria-hidden", "true");
+      whatsappIcon.setAttribute("focusable", "false");
+      const bubble = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      bubble.setAttribute("d", "M20 11.9a8 8 0 0 1-11.9 7L4 20l1.2-3.9A8 8 0 1 1 20 11.9z");
+      const handset = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      handset.setAttribute("d", "M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.3 2 .8-.4 1.6c-2.6.5-8.7-3-9.7-7.9l1.6-.5.8 2z");
+      whatsappIcon.append(bubble, handset);
+      link.append(whatsappIcon, document.createTextNode(contact.phone));
+      link.setAttribute("aria-label", `Hubungi ${contact.contact_name} lewat WhatsApp`);
       item.append(copy, link);
       detail.append(item);
     });
@@ -1623,6 +1664,43 @@ async function withProcessing(operation, message) {
   }
 }
 
+// Unduh PDF.
+// Sebelumnya file dibuka dengan window.open(). Cara itu membuka tab kosong
+// yang berputar sampai server selesai, bisa diblokir popup blocker, dan
+// kesalahan seperti 403 hanya muncul sebagai JSON di tab baru. Di sini filenya
+// diambil sebagai blob sehingga ada indikator proses dan pesan error yang
+// jelas di halaman yang sedang dipakai.
+async function downloadPdf(params, filename, label = "Menyusun PDF...") {
+  const query = params.toString();
+  try {
+    await withProcessing(async () => {
+      const response = await fetch(`/api/admin/export/pdf?${query}`, { cache: "no-store" });
+      if (!response.ok) {
+        let message = `PDF gagal dibuat (HTTP ${response.status}).`;
+        try {
+          const payload = await response.json();
+          if (payload && payload.error) message = payload.error;
+        } catch {
+          // Respons bukan JSON, pakai pesan bawaan.
+        }
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      // Beri waktu peramban mulai mengunduh sebelum URL dicabut.
+      window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }, label);
+  } catch (error) {
+    window.alert(error.message || "PDF gagal dibuat.");
+  }
+}
+
 // Reverse proxy (nginx/Caddy) dapat menjawab dengan halaman HTML, bukan JSON.
 // Contohnya 413 Request Entity Too Large saat unggah melebihi client_max_body_size.
 // response.json() akan melempar SyntaxError dan menutupi penyebab aslinya, jadi
@@ -1630,7 +1708,7 @@ async function withProcessing(operation, message) {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261010-15";
+const EXPECTED_BACKEND_BUILD = "20261011-21";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
@@ -1687,11 +1765,17 @@ async function request(url, options = {}) {
     "/api/admin/import/commit": "Menyimpan data impor...",
     "/api/admin/maintenance": "Menyimpan jadwal maintenance...",
     "/api/admin/typography": "Menyimpan pengaturan font...",
+    "/api/settings": "Silahkan tunggu...",
   };
   if (url === "/api/admin/media" && options.method === "DELETE") {
     return withProcessing(sendRequest, "Menghapus media...");
   }
-  if (processingMessages[url]) return withProcessing(sendRequest, processingMessages[url]);
+  if (processingMessages[url] && options.method && options.method !== "GET") {
+    return withProcessing(sendRequest, processingMessages[url]);
+  }
+  if (options.method && options.method !== "GET") {
+    return withProcessing(sendRequest, "Silahkan tunggu...");
+  }
   return sendRequest();
 }
 
@@ -1871,6 +1955,21 @@ async function loadSettings() {
   settings.site_font_style_target = payload.site_font_style_target || "all";
   settings.intro_text_alignment = payload.intro_text_alignment || "left";
   settings.news_text_alignment = payload.news_text_alignment || "left";
+  // Kop surat dipakai juga oleh modul pendaftaran saat mencetak formulir.
+  settings.export_header_title = payload.export_header_title || "";
+  settings.export_header_line_2 = payload.export_header_line_2 || "";
+  settings.export_header_line_3 = payload.export_header_line_3 || "";
+  settings.export_header_line_4 = payload.export_header_line_4 || "";
+  settings.export_address_lines = payload.export_address_lines || "";
+  settings.export_logo_1_size = Math.min(200, Math.max(20, Number(payload.export_logo_1_size) || 74));
+  settings.export_logo_2_size = Math.min(200, Math.max(20, Number(payload.export_logo_2_size) || 74));
+  settings.export_header_title_size = Math.min(60, Math.max(8, Number(payload.export_header_title_size) || 21));
+  settings.export_header_line_size = Math.min(60, Math.max(8, Number(payload.export_header_line_size) || 13));
+  settings.export_header_contact_size = Math.min(60, Math.max(8, Number(payload.export_header_contact_size) || 10));
+  // Tempat dan tanggal tanda tangan ikut dipakai modul pendaftaran saat
+  // mencetak formulir, jadi kedua nilai ini perlu tersedia di settings.
+  settings.signature_place = payload.signature_place || "";
+  settings.signature_date = payload.signature_date || "";
   settings.directory_text_alignment = payload.directory_text_alignment || "left";
   const typographyForm = document.querySelector("#typography-form");
   if (typographyForm && typographyForm.dataset.dirty !== "true") {
@@ -1903,8 +2002,23 @@ async function loadSettings() {
   applySiteTypography(typographyPreview);
   const exportHeaderForm = document.querySelector("#export-header-form");
   if (exportHeaderForm && exportHeaderForm.dataset.dirty !== "true") {
-    for (const field of ["export_header_title", "export_header_line_2", "export_header_line_3"]) {
+    for (const field of ["export_header_title", "export_header_line_2", "export_header_line_3", "export_header_line_4", "export_address_lines"]) {
       exportHeaderForm.elements[field].value = payload[field] || "";
+    }
+    if (exportHeaderForm.elements.export_logo_1_size) {
+      exportHeaderForm.elements.export_logo_1_size.value = settings.export_logo_1_size;
+    }
+    if (exportHeaderForm.elements.export_logo_2_size) {
+      exportHeaderForm.elements.export_logo_2_size.value = settings.export_logo_2_size;
+    }
+    if (exportHeaderForm.elements.export_header_title_size) {
+      exportHeaderForm.elements.export_header_title_size.value = settings.export_header_title_size;
+    }
+    if (exportHeaderForm.elements.export_header_line_size) {
+      exportHeaderForm.elements.export_header_line_size.value = settings.export_header_line_size;
+    }
+    if (exportHeaderForm.elements.export_header_contact_size) {
+      exportHeaderForm.elements.export_header_contact_size.value = settings.export_header_contact_size;
     }
   }
   const footerSettingsForm = document.querySelector("#footer-settings-form");
@@ -1964,7 +2078,9 @@ async function loadSettings() {
   }
   for (const role of ["maker", "lmk", "rw", "bsk"]) {
     const status = document.querySelector(`#signature-${role}-status`);
-    if (status) status.textContent = payload[`signature_${role}_ready`] ? "Gambar tanda tangan tersimpan." : "Belum ada gambar tanda tangan.";
+    const hasImage = Boolean(payload[`signature_${role}_ready`]);
+    if (status) status.textContent = hasImage ? "Gambar tanda tangan tersimpan." : "Belum ada gambar tanda tangan.";
+    setSignatureDeleteButton(role, hasImage);
   }
   for (const slot of [1, 2]) {
     const zoom = settings[`icon_zoom_${slot}`];
@@ -2007,6 +2123,13 @@ async function loadSettings() {
   updateThemeLogoLocationControls();
   return true;
 }
+
+/* Modul pendaftaran menyimpan tempat dan tanggal tanda tangan dari dalam
+ * dialog, lalu memanggil fungsi ini agar objek settings di seluruh halaman
+ * ikut terbarui. Nilainya diambil ulang dari server, bukan menebak,
+ * supaya form tanda tangan di Pengaturan dan cetakan formulir tidak
+ * berbeda isi. */
+window.kifayahLoadSettings = loadSettings;
 
 function renderHeroPlaylistItems(items) {
   const list = document.querySelector("#hero-playlist-items");
@@ -2057,6 +2180,10 @@ function updateHeroPlaylist(items, hasFallbackImage) {
   const hasThemedHeroLogo = Boolean(themedHeroUrl);
   const signature = `${heroHasFallbackImage ? "fallback" : "no-fallback"}|${themedHeroUrl}|${themedSlideUrl}|${displayItems.map((item) => `${item.id}:${item.url}`).join("|")}`;
   visual.hidden = displayItems.length === 0 && !heroHasFallbackImage && !hasThemedHeroLogo;
+  // Di panel pengelola sampul ini tidak pernah terlihat. Tanpa pengecekan ini
+  // browser tetap mengunduh video playlist yang berukuran besar padahal tidak
+  // pernah diputar, sehingga halaman terasa berat setiap kali dimuat ulang.
+  if (isAdminPage) return;
   if (signature === heroPlaylistSignature) return;
   heroPlaylistSignature = signature;
   heroPlaylist = displayItems;
@@ -2116,7 +2243,9 @@ function showHeroSlide(index) {
     video.muted = true;
     video.autoplay = true;
     video.playsInline = true;
-    video.preload = "auto";
+    // "metadata" hanya mengambil informasi durasi. Dengan "auto" browser
+    // mengunduh video sebelum diputar, sehingga halaman terasa berat.
+    video.preload = "metadata";
     video.setAttribute("aria-label", item.name || "Video dokumentasi");
     heroVideo = video;
     slideshow.append(video);
@@ -2266,19 +2395,10 @@ function renderManageList() {
     list.append(item);
   }
   const pageNumbers = document.querySelector("#admin-records-page-numbers");
-  pageNumbers.replaceChildren();
-  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-    const pageButton = document.createElement("button");
-    pageButton.className = "record-page-number";
-    pageButton.type = "button";
-    pageButton.textContent = String(pageIndex + 1);
-    pageButton.setAttribute("aria-current", String(pageIndex === adminRecordsPage));
-    pageButton.addEventListener("click", () => {
-      adminRecordsPage = pageIndex;
-      renderManageList();
-    });
-    pageNumbers.append(pageButton);
-  }
+  renderPaginationNumbers(pageNumbers, pageCount, adminRecordsPage, (pageIndex) => {
+    adminRecordsPage = pageIndex;
+    renderManageList();
+  });
   document.querySelector("#admin-records-previous").disabled = adminRecordsPage === 0;
   document.querySelector("#admin-records-next").disabled = adminRecordsPage >= pageCount - 1;
   const printBody = document.querySelector("#print-records-body");
@@ -2556,13 +2676,10 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   const canManageRecords = permissions.has("records");
   document.querySelector('#record-form input[name="publish_address"]').closest("label").hidden = role === "Staff";
   document.querySelector("#staff-address-hint").hidden = role !== "Staff";
-  document.querySelector('[data-admin-group="registrations"]').hidden = !permissions.has("registration");
-  document.querySelector('[data-admin-group="import"]').hidden = !permissions.has("import");
+  document.querySelector('[data-admin-group="import"]').hidden = !permissions.has("import") && !permissions.has("registration");
   document.querySelector('[data-admin-group="news"]').hidden = !permissions.has("news");
-  document.querySelector('[data-admin-group="contacts"]').hidden = !permissions.has("contacts");
-  document.querySelector('[data-admin-group="media"]').hidden = !permissions.has("media") && !permissions.has("typography") && !permissions.has("maintenance");
-  document.querySelector('[data-admin-group="program"]').hidden = !permissions.has("program");
-  document.querySelector('[data-admin-group="finance"]').hidden = !permissions.has("finance") && !permissions.has("payments");
+  document.querySelector('[data-admin-group="contacts"]').hidden = !permissions.has("contacts") && !permissions.has("area");
+  document.querySelector('[data-admin-group="media"]').hidden = !permissions.has("media") && !permissions.has("typography") && !permissions.has("maintenance") && !permissions.has("program");
   const canManagePortraits = permissions.has("family") && role !== "Staff";
   document.querySelector("#family-task-panel").hidden = !canManagePortraits;
   const editPortraitField = document.querySelector("#edit-record-portrait-field");
@@ -2763,18 +2880,35 @@ let newsImagePreviewUrl = "";
 let editingNewsId = null;
 newsForm.elements.uploaded_at.value = localDateTimeInputValue();
 
-function showNewsImagePreview(imageUrl = "", message = "Foto Opsional · PNG, JPG, WebP") {
+function showNewsImagePreview(imageUrl = "", message = "Belum ada foto dipilih. PNG, JPG, atau WebP.") {
   const nextObjectUrl = imageUrl.startsWith("blob:") ? imageUrl : "";
   if (newsImagePreviewUrl && newsImagePreviewUrl !== nextObjectUrl) URL.revokeObjectURL(newsImagePreviewUrl);
   newsImagePreviewUrl = nextObjectUrl;
   newsImagePreview.replaceChildren();
+  newsImagePreview.classList.toggle("is-empty", !imageUrl);
   if (imageUrl) {
+    /* Foto terpilih ditampilkan dalam kartu: gambar di kiri, keterangan di
+       kanan. Sebelumnya gambar dan teksnya menempel tanpa pembatas, sehingga
+       sulit dibaca sebagai satu kesatuan. */
+    const frame = document.createElement("div");
+    frame.className = "news-image-frame";
     const image = document.createElement("img");
     image.src = imageUrl;
     image.alt = "Pratinjau Foto Berita";
-    newsImagePreview.append(image, document.createTextNode(message));
+    const caption = document.createElement("div");
+    caption.className = "news-image-caption";
+    const captionTitle = document.createElement("strong");
+    captionTitle.textContent = "Foto akan dipakai di berita ini";
+    const captionHint = document.createElement("span");
+    captionHint.textContent = message;
+    caption.append(captionTitle, captionHint);
+    frame.append(image, caption);
+    newsImagePreview.append(frame);
   } else {
-    newsImagePreview.textContent = message;
+    const placeholder = document.createElement("span");
+    placeholder.className = "news-image-empty";
+    placeholder.textContent = message;
+    newsImagePreview.append(placeholder);
   }
 }
 
@@ -2794,7 +2928,7 @@ async function loadAdminPayments() {
     const { payments: items } = await request("/api/admin/payments");
     container.replaceChildren();
     if (!items.length) {
-      container.textContent = "Belum ada bukti pembayaran yang dikirim warga.";
+      container.textContent = "Belum ada setoran yang perlu diverifikasi. Data di sini sama dengan menu Warga dan Setoran.";
       return;
     }
     for (const item of items) {
@@ -2809,14 +2943,66 @@ async function loadAdminPayments() {
       status.textContent = item.status;
       heading.append(name, status);
       const detail = document.createElement("p");
-      detail.textContent = `${item.period} · ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(item.amount)} · ${item.paid_at} · ${item.method}`;
-      const proof = document.createElement("a");
-      proof.href = item.proof_url;
-      proof.target = "_blank";
-      proof.rel = "noopener";
-      proof.textContent = "Lihat bukti pembayaran";
-      card.append(heading, detail, proof);
+      const area = [item.rt && `RT ${item.rt}`, item.rw && `RW ${item.rw}`].filter(Boolean).join(" / ");
+      detail.textContent = [item.period, contributionMoney.format(item.amount), item.paid_at, item.method, area].filter(Boolean).join(" · ");
+      card.append(heading, detail);
+      /* BUKTI OPSIONAL: setoran tanpa bukti tetap sah, jadi yang ditampilkan
+         hanya lencana status, bukan tautan gambar yang tidak ada. */
+      const proofRow = document.createElement("div");
+      proofRow.className = "admin-payment-proof";
+      if (item.proof_url) {
+        const proof = document.createElement("a");
+        proof.href = item.proof_url;
+        proof.target = "_blank";
+        proof.rel = "noopener";
+        proof.textContent = "Lihat bukti pembayaran";
+        proofRow.append(proof);
+      } else {
+        const noProof = document.createElement("span");
+        noProof.className = "admin-payment-no-proof";
+        noProof.textContent = "Tanpa bukti (opsional)";
+        proofRow.append(noProof);
+      }
+      const upload = document.createElement("button");
+      upload.type = "button";
+      upload.className = "action-button";
+      upload.textContent = item.proof_url ? "Ganti Bukti" : "Lampirkan Bukti";
+      upload.addEventListener("click", () => {
+        const fileInput = document.createElement("input");
+        fileInput.type = "file";
+        fileInput.accept = "image/png,image/jpeg,image/webp,application/pdf";
+        fileInput.addEventListener("change", async () => {
+          const file = fileInput.files?.[0];
+          if (!file) return;
+          upload.disabled = true;
+          try {
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            let binary = "";
+            for (let offset = 0; offset < bytes.length; offset += 32_768) {
+              binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+            }
+            await request(`/api/admin/contribution-payments/${item.id}/proof`, {
+              method: "POST",
+              body: JSON.stringify({ content_type: file.type, content_base64: btoa(binary) }),
+            });
+            await loadAdminPayments();
+          } catch (error) {
+            container.textContent = error.message;
+          } finally {
+            upload.disabled = false;
+          }
+        });
+        fileInput.click();
+      });
+      proofRow.append(upload);
+      card.append(proofRow);
       if (item.status === "Menunggu Verifikasi") {
+        const hint = document.createElement("p");
+        hint.className = "admin-payment-proof-hint";
+        hint.textContent = item.proof_url
+          ? "Periksa bukti, lalu putuskan apakah setoran ini diterima."
+          : "Belum ada bukti. Bukti bersifat opsional, jadi tetap bisa diputuskan sekarang.";
+        card.append(hint);
         const note = document.createElement("input");
         note.className = "admin-payment-note";
         note.placeholder = "Catatan (opsional; wajib diisi jika menolak)";
@@ -2925,7 +3111,10 @@ function renderContributionResidents() {
   });
 
   const visible = contributionResidents.filter((resident) => {
-    const matchesQuery = !query || [resident.full_name, resident.national_id_number, resident.address, resident.rt, resident.rw, ...residentRtRwVariants(resident.rt, resident.rw)]
+    // "meninggal" ikut dicari supaya warga yang sudah wafat mudah ditemukan.
+    const searchTerms = [resident.full_name, resident.national_id_number, resident.address, resident.rt, resident.rw, ...residentRtRwVariants(resident.rt, resident.rw)];
+    if (resident.deceased) searchTerms.push("meninggal", "wafat", resident.date_of_death || "");
+    const matchesQuery = !query || searchTerms
       .some((value) => String(value || "").toLocaleLowerCase("id-ID").includes(query));
     const matchesStatus = matchesContributionStatus(resident, filter);
     return matchesQuery && matchesStatus;
@@ -2953,7 +3142,7 @@ function renderContributionResidents() {
           <tbody>
             ${contributionResidents.map(r => `
               <tr>
-                <td style="padding: 4px; border: var(--tp-bw) solid var(--line);"><strong>${r.full_name}</strong></td>
+                <td style="padding: 4px; border: var(--tp-bw) solid var(--line);"><strong>${r.full_name}</strong>${r.deceased ? ' <span class="contribution-deceased-badge" style="margin-left:4px">Meninggal</span>' : ""}</td>
                 <td style="padding: 4px; border: var(--tp-bw) solid var(--line);"><span class="contribution-relationship-badge${(r.relationship||'').toUpperCase().includes('KEPALA') ? ' is-head' : ''}">${r.relationship||'-'}</span></td>
                 <td style="padding: 4px; border: var(--tp-bw) solid var(--line);">${r.phone||'-'}</td>
                 <td style="padding: 4px; border: var(--tp-bw) solid var(--line);">${r.rt||'-'} / ${r.rw||'-'}</td>
@@ -2979,6 +3168,7 @@ function renderContributionResidents() {
   pagedResidents.forEach((resident, index) => {
     const card = document.createElement("article");
     card.className = "contribution-resident-card";
+    if (resident.deceased) card.classList.add("is-deceased");
     card.dataset.residentId = String(resident.id);
     card.style.setProperty("--contribution-delay", `${Math.min(index, 10) * 45}ms`);
     const heading = document.createElement("div");
@@ -3004,8 +3194,13 @@ function renderContributionResidents() {
       const isHead = rel.toUpperCase().includes("KEPALA");
       relationshipBadge = `<span class="contribution-relationship-badge${isHead ? " is-head" : ""}" title="${rel}">${isHead ? "Kepala Kel" : rel}</span>`;
     }
+    // Warga yang tanggal wafatnya sudah diisi di Daftar Warga Wafat ditandai di
+    // sini. Datanya tetap dihitung seperti biasa, hanya diberi tanda.
+    const deceasedBadge = resident.deceased
+      ? `<span class="contribution-deceased-badge" title="Warga ini tercatat meninggal di Daftar Warga Wafat">Meninggal${resident.date_of_death ? ` · ${formatDate(resident.date_of_death)}` : ""}</span>`
+      : "";
     const areaText = `${resident.rt ? `RT ${String(resident.rt).padStart(3, "0")}` : "RT belum diatur"} / ${resident.rw ? `RW ${String(resident.rw).padStart(3, "0")}` : "RW belum diatur"}`;
-    identity.innerHTML = `${name.outerHTML}${relationshipBadge}<p class="contribution-resident-area">${areaText}</p><span class="contribution-status ${resident.paid_this_month ? "is-paid" : "is-unpaid"}">${resident.paid_this_month ? "Iuran bulan ini tercatat" : "Belum ada iuran bulan ini"}</span>`;
+    identity.innerHTML = `${name.outerHTML}${relationshipBadge}${deceasedBadge}<p class="contribution-resident-area">${areaText}</p><span class="contribution-status ${resident.paid_this_month ? "is-paid" : "is-unpaid"}">${resident.paid_this_month ? "Iuran bulan ini tercatat" : "Belum ada iuran bulan ini"}</span>`;
     const relationshipBadgeSpan = identity.querySelector('.contribution-relationship-badge');
     if (relationshipBadgeSpan) {
       relationshipBadgeSpan.addEventListener('click', async (e) => {
@@ -3063,27 +3258,10 @@ function renderContributionResidents() {
   });
   const contributionPageNumbers = document.querySelector("#contribution-residents-page-numbers");
   if (contributionPageNumbers) {
-    contributionPageNumbers.replaceChildren();
-    const maxVisiblePages = 7;
-    let startPage = 0;
-    if (contributionPageCount > maxVisiblePages) {
-      startPage = Math.min(Math.max(contributionResidentsPage - 3, 0), contributionPageCount - maxVisiblePages);
-    }
-    const endPage = Math.min(startPage + maxVisiblePages, contributionPageCount);
-    for (let pageIndex = startPage; pageIndex < endPage; pageIndex += 1) {
-      const pageButton = document.createElement("button");
-      pageButton.className = "record-page-number";
-      pageButton.type = "button";
-      pageButton.role = "listitem";
-      pageButton.textContent = String(pageIndex + 1);
-      pageButton.setAttribute("aria-label", `Buka halaman ${pageIndex + 1}`);
-      pageButton.setAttribute("aria-current", String(pageIndex === contributionResidentsPage));
-      pageButton.addEventListener("click", () => {
-        contributionResidentsPage = pageIndex;
-        renderContributionResidents();
-      });
-      contributionPageNumbers.append(pageButton);
-    }
+    renderPaginationNumbers(contributionPageNumbers, contributionPageCount, contributionResidentsPage, (pageIndex) => {
+      contributionResidentsPage = pageIndex;
+      renderContributionResidents();
+    });
   }
   const contributionPrev = document.querySelector("#contribution-residents-previous");
   const contributionNext = document.querySelector("#contribution-residents-next");
@@ -3209,14 +3387,57 @@ function openContributionHistoryDialog(resident) {
         note.textContent = payment.note;
         row.append(note);
       }
+      /* Bukti di menu ini opsional dan boleh dilampirkan atau diganti
+         pengelola kapan saja, jadi tombolnya selalu tersedia. */
+      const proofActions = document.createElement("div");
+      proofActions.className = "contribution-payment-proof";
       if (payment.proof_url) {
         const proof = document.createElement("a");
         proof.href = payment.proof_url;
         proof.target = "_blank";
         proof.rel = "noopener noreferrer";
         proof.textContent = "Lihat bukti";
-        row.append(proof);
+        proofActions.append(proof);
+      } else {
+        const noProof = document.createElement("span");
+        noProof.className = "contribution-payment-no-proof";
+        noProof.textContent = "Tanpa bukti";
+        proofActions.append(noProof);
       }
+      const attachProof = document.createElement("button");
+      attachProof.type = "button";
+      attachProof.className = "action-button";
+      attachProof.textContent = payment.proof_url ? "Ganti Bukti" : "Lampirkan Bukti";
+      attachProof.addEventListener("click", () => {
+        const fileInput = document.createElement("input");
+        fileInput.type = "file";
+        fileInput.accept = "image/png,image/jpeg,image/webp,application/pdf";
+        fileInput.addEventListener("change", async () => {
+          const file = fileInput.files?.[0];
+          if (!file) return;
+          attachProof.disabled = true;
+          try {
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            let binary = "";
+            for (let offset = 0; offset < bytes.length; offset += 32_768) {
+              binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+            }
+            await request(`/api/admin/contribution-payments/${payment.id}/proof`, {
+              method: "POST",
+              body: JSON.stringify({ content_type: file.type, content_base64: btoa(binary) }),
+            });
+            dialog.close();
+            await loadContributionResidents();
+          } catch (error) {
+            document.querySelector("#contribution-list-status").textContent = error.message;
+          } finally {
+            attachProof.disabled = false;
+          }
+        });
+        fileInput.click();
+      });
+      proofActions.append(attachProof);
+      row.append(proofActions);
       if (payment.editable || payment.deletable) {
         const paymentActions = document.createElement("div");
         paymentActions.className = "contribution-payment-actions";
@@ -3318,6 +3539,25 @@ function openContributionPaymentDialog(resident, payment = null) {
   form.elements.paid_at.value = payment?.paid_at || isoToday;
   form.elements.amount.value = payment?.amount || "";
   form.elements.note.value = payment?.source === "account" ? "" : payment?.note || "";
+  /* Input berkas tidak bisa diisi ulang otomatis, jadi saat mengedit setoran
+     yang sudah punya bukti, tautan dan penjelasan ditampilkan di bawah kolom
+     itu. Kolom yang dikosongkan berarti bukti lama tetap dipakai. */
+  form.elements.proof.value = "";
+  const proofHint = document.querySelector("#contribution-payment-proof-hint");
+  document.querySelector("#contribution-payment-proof-link")?.remove();
+  if (payment?.proof_url) {
+    const link = document.createElement("a");
+    link.id = "contribution-payment-proof-link";
+    link.className = "contribution-payment-current-proof";
+    link.href = payment.proof_url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "Lihat bukti yang tersimpan";
+    proofHint.after(link);
+    proofHint.textContent = "Bukti yang sudah terlampir tetap dipakai bila kolom ini dikosongkan. Pilih berkas baru untuk menggantinya.";
+  } else {
+    proofHint.textContent = "Boleh langsung ambil foto layar atau pilih berkas. JPG, PNG, WebP, atau PDF. Maksimal 5 MB. Tidak wajib diisi.";
+  }
   // The month input sits partway down the form. Focusing it normally scrolls
   // the dialog itself and hides its title/close button on smaller screens.
   dialog.scrollTop = 0;
@@ -3349,6 +3589,110 @@ document.querySelector("#contribution-status-filter").addEventListener("change",
 
 document.querySelector("#contribution-residents-previous")?.addEventListener("click", () => { contributionResidentsPage = Math.max(0, contributionResidentsPage - 1); renderContributionResidents(); });
 document.querySelector("#contribution-residents-next")?.addEventListener("click", () => { contributionResidentsPage += 1; renderContributionResidents(); });
+
+/* Kartu "Sudah Iuran Bulan Ini" dan "Total Setoran" bisa diklik supaya
+   pengurus bisa langsung melihat siapa saja yang sudah membayar, tanpa
+   menelusuri daftar satu per satu. Isinya mengikuti filter dan pencarian
+   yang sedang aktif, jadi angkanya selalu cocok dengan kartu. */
+/* Isi pilihan RT dan RW dari data warga yang sedang dimuat supaya tidak ada
+   pilihan kosong yang tidak pernah menghasilkan data. */
+function fillPayersAreaFilters(source) {
+  const rtSelect = document.querySelector("#contribution-payers-rt");
+  const rwSelect = document.querySelector("#contribution-payers-rw");
+  if (!rtSelect || !rwSelect) return;
+  const fill = (select, label, allLabel) => {
+    const chosen = select.value;
+    const unique = [...new Set(source.map((resident) => String(resident[label] || "").trim()).filter(Boolean))]
+      .sort((left, right) => Number(left) - Number(right));
+    select.replaceChildren();
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = allLabel;
+    select.append(all);
+    for (const value of unique) {
+      const option = document.createElement("option");
+      option.value = value.padStart(3, "0");
+      option.textContent = `${allLabel.split(" ")[0]} ${option.value}`;
+      select.append(option);
+    }
+    // Pilihan sebelumnya dipertahankan kalau masih ada.
+    select.value = unique.some((value) => value.padStart(3, "0") === chosen) ? chosen : "";
+  };
+  fill(rtSelect, "rt", "Semua RT");
+  fill(rwSelect, "rw", "Semua RW");
+}
+
+function renderPayersTable() {
+  const body = document.querySelector("#contribution-payers-body");
+  if (!body) return [];
+  const paidOnly = document.querySelector("#contribution-payers-title").textContent.includes("Sudah Iuran");
+  const chosenRt = document.querySelector("#contribution-payers-rt")?.value || "";
+  const chosenRw = document.querySelector("#contribution-payers-rw")?.value || "";
+  const query = (document.querySelector("#contribution-payers-search")?.value || "").trim().toLocaleLowerCase("id-ID");
+  let rows = (contributionResidents || []).filter((resident) => (paidOnly ? resident.paid_this_month : true));
+  if (chosenRt) rows = rows.filter((resident) => String(resident.rt || "").trim().padStart(3, "0") === chosenRt);
+  if (chosenRw) rows = rows.filter((resident) => String(resident.rw || "").trim().padStart(3, "0") === chosenRw);
+  if (query) rows = rows.filter((resident) => String(resident.full_name || "").toLocaleLowerCase("id-ID").includes(query));
+  rows.sort((left, right) => (right.total_paid || 0) - (left.total_paid || 0)
+    || String(left.full_name || "").localeCompare(String(right.full_name || "")));
+  const total = rows.reduce((sum, resident) => sum + (resident.total_paid || 0), 0);
+  const scope = [chosenRt ? `RT ${chosenRt}` : "", chosenRw ? `RW ${chosenRw}` : ""].filter(Boolean).join(" / ");
+  document.querySelector("#contribution-payers-summary").textContent = rows.length
+    ? `${rows.length} warga${scope ? ` di ${scope}` : ""} · total ${contributionMoney.format(total)}`
+    : "Tidak ada warga yang cocok dengan filter ini.";
+  body.replaceChildren();
+  if (!rows.length) {
+    const emptyRow = document.createElement("tr");
+    const emptyCell = document.createElement("td");
+    emptyCell.colSpan = 7;
+    emptyCell.textContent = "Tidak ada warga yang cocok dengan filter ini.";
+    emptyRow.append(emptyCell);
+    body.append(emptyRow);
+    return rows;
+  }
+  rows.forEach((resident, index) => {
+    const tr = document.createElement("tr");
+    for (const value of [
+      String(index + 1),
+      formatWords(resident.full_name),
+      resident.rt ? String(resident.rt).padStart(3, "0") : "-",
+      resident.rw ? String(resident.rw).padStart(3, "0") : "-",
+      `${resident.paid_months || 0} bulan`,
+      contributionMoney.format(resident.total_paid || 0),
+      resident.last_paid_at ? formatDate(resident.last_paid_at) : "-",
+    ]) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      tr.append(cell);
+    }
+    body.append(tr);
+  });
+  return rows;
+}
+
+function openPayersDialog(mode) {
+  const dialog = document.querySelector("#contribution-payers-dialog");
+  if (!dialog) return;
+  const paidOnly = mode === "paid";
+  document.querySelector("#contribution-payers-title").textContent = paidOnly
+    ? "Warga yang Sudah Iuran Bulan Ini"
+    : "Rincian Setoran Setiap Warga";
+  const search = document.querySelector("#contribution-payers-search");
+  if (search) search.value = "";
+  fillPayersAreaFilters(contributionResidents || []);
+  renderPayersTable();
+  if (!dialog.open) dialog.showModal();
+}
+
+document.querySelector("#contribution-payers-rt")?.addEventListener("change", renderPayersTable);
+document.querySelector("#contribution-payers-rw")?.addEventListener("change", renderPayersTable);
+document.querySelector("#contribution-payers-search")?.addEventListener("input", renderPayersTable);
+document.querySelector("#contribution-payers-print")?.addEventListener("click", () => window.print());
+document.querySelector("#contribution-paid-card")?.addEventListener("click", () => openPayersDialog("paid"));
+document.querySelector("#contribution-total-card")?.addEventListener("click", () => openPayersDialog("total"));
+document.querySelector("#contribution-payers-back")?.addEventListener("click", () => {
+  document.querySelector("#contribution-payers-dialog")?.close();
+});
 
 document.querySelector("#contribution-resident-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -3391,6 +3735,27 @@ document.querySelector("#contribution-payment-form").addEventListener("submit", 
   values.payment_id = values.payment_id ? Number(values.payment_id) : null;
   values.resident_id = Number(values.resident_id);
   values.amount = Number(values.amount);
+  /* Bukti transfer bersifat opsional. Berkas dibaca jadi base64 seperti
+     unggahan lain; kolom dikosongkan berarti tidak ada bukti baru yang dikirim,
+     sehingga bukti lama pada setoran yang disunting tidak ikut terhapus. */
+  const proofFile = form.elements.proof.files?.[0];
+  const hasProof = proofFile instanceof File && proofFile.size > 0;
+  delete values.proof;
+  if (hasProof && proofFile.size > 5 * 1024 * 1024) {
+    error.textContent = "Ukuran file bukti maksimal 5 MB.";
+    return;
+  }
+  values.content_type = "";
+  values.content_base64 = "";
+  if (hasProof) {
+    const bytes = new Uint8Array(await proofFile.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 32_768) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+    }
+    values.content_type = proofFile.type;
+    values.content_base64 = btoa(binary);
+  }
   try {
     await request("/api/admin/contribution-payments", { method: "POST", body: JSON.stringify(values) });
     document.querySelector("#contribution-payment-dialog").close();
@@ -3447,14 +3812,32 @@ async function loadAdminFinance() {
       title.textContent = entry.title;
       const amount = document.createElement("strong");
       const isIncome = entry.income > 0;
+      amount.className = isIncome ? "finance-amount-income" : "finance-amount-expense";
       amount.textContent = `${isIncome ? "+" : "−"}${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(isIncome ? entry.income : entry.expense)}`;
       heading.append(title, amount);
       const detail = document.createElement("p");
       detail.textContent = `${entry.entry_date}${entry.description ? ` · ${entry.description}` : ""}`;
+      /* Baris pemasukan iuran dibuat otomatis dari setoran warga, jadi
+         ditambahkan tombol untuk melihat siapa saja yang sudah menyetor.
+         Badge dan tombol dikumpulkan di satu baris kaki; sebelumnya keduanya
+         ditambahkan lebih dulu sehingga muncul di atas judul kartu. */
+      const footer = document.createElement("div");
+      footer.className = "finance-entry-footer";
+      if (entry.source === "contributions" && entry.source_period) {
+        const badge = document.createElement("span");
+        badge.className = "finance-auto-badge";
+        badge.textContent = "Otomatis dari setoran warga";
+        const drill = document.createElement("button");
+        drill.type = "button";
+        drill.className = "action-button finance-drill-button";
+        drill.textContent = "Lihat Rincian Setoran";
+        drill.addEventListener("click", () => openContributionDetail(entry.source_period, entry.title));
+        footer.append(badge, drill);
+      }
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.className = "text-button";
-      remove.textContent = "Hapus catatan";
+      remove.className = "text-button finance-remove-button";
+      remove.textContent = "Hapus Catatan";
       remove.addEventListener("click", async () => {
         if (!window.confirm(`Hapus catatan keuangan “${entry.title}”?`)) return;
         try {
@@ -3462,11 +3845,60 @@ async function loadAdminFinance() {
           await loadAdminFinance();
         } catch (error) { container.textContent = error.message; }
       });
-      card.append(heading, detail, remove);
+      footer.append(remove);
+      card.append(heading, detail, footer);
       container.append(card);
     });
   } catch (error) { container.textContent = error.message; }
 }
+
+async function openContributionDetail(period, title) {
+  const dialog = document.querySelector("#finance-contribution-dialog");
+  const body = document.querySelector("#finance-contribution-body");
+  const summary = document.querySelector("#finance-contribution-summary");
+  const heading = document.querySelector("#finance-contribution-title");
+  if (!dialog || !body) return;
+  heading.textContent = title || "Rincian Iuran";
+  summary.textContent = "Memuat…";
+  body.replaceChildren();
+  if (!dialog.open) dialog.showModal();
+  try {
+    const data = await request(`/api/admin/finance/contributions?period=${encodeURIComponent(period)}`);
+    const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
+    summary.textContent = data.label
+      ? `${data.label} · ${data.count} warga · total ${rupiah.format(data.total)}`
+      : `${data.count} warga · total ${rupiah.format(data.total)}`;
+    body.replaceChildren();
+    if (!data.payments.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 6;
+      cell.textContent = "Belum ada setoran pada periode ini.";
+      row.append(cell);
+      body.append(row);
+      return;
+    }
+    data.payments.forEach((payment, index) => {
+      const row = document.createElement("tr");
+      const area = [payment.rt ? `RT ${String(payment.rt).padStart(3, "0")}` : "",
+                    payment.rw ? `RW ${String(payment.rw).padStart(3, "0")}` : ""].filter(Boolean).join(" / ");
+      for (const value of [String(index + 1), payment.full_name || "-", area || "-",
+                           payment.paid_at || "-", rupiah.format(payment.amount), payment.note || "-"]) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      }
+      body.append(row);
+    });
+  } catch (error) {
+    body.replaceChildren();
+    summary.textContent = error.message;
+  }
+}
+
+document.querySelector("#finance-contribution-back")?.addEventListener("click", () => {
+  document.querySelector("#finance-contribution-dialog")?.close();
+});
 
 document.querySelector("#finance-entry-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -3544,7 +3976,7 @@ function renderAdminNews(articles) {
       newsForm.elements.body.value = article.body;
       newsForm.elements.author.value = article.author;
       newsForm.elements.uploaded_at.value = localDateTimeInputValue(new Date(article.uploaded_at));
-      showNewsImagePreview(article.image_url, article.image_url ? "Foto Saat Ini · Pilih Untuk Mengganti" : "Foto Opsional · PNG, JPG, WebP");
+      showNewsImagePreview(article.image_url, article.image_url ? "Foto tersimpan. Pilih berkas lain untuk menggantinya." : "Belum ada foto dipilih. PNG, JPG, atau WebP.");
       const deleteImageButton = document.querySelector("#delete-news-image-button");
       deleteImageButton.dataset.articleId = String(article.id);
       deleteImageButton.hidden = !article.image_url;
@@ -3662,6 +4094,16 @@ const positionResult = document.querySelector("#position-result");
 const positionSubmitButton = document.querySelector("#position-submit");
 const positionCancelButton = document.querySelector("#position-cancel-edit");
 
+/* Panah dekoratif pada tombol simpan. Label tombol diubah lewat
+   replaceChildren supaya teks dan ikonnya tetap ikut, berbeda dengan
+   textContent yang menghapus seluruh isi tombol. */
+function submitArrow() {
+  const arrow = document.createElement("span");
+  arrow.setAttribute("aria-hidden", "true");
+  arrow.textContent = "→";
+  return arrow;
+}
+
 async function loadPositionTitles() {
   try {
     const payload = await request("/api/admin/position-titles");
@@ -3706,7 +4148,7 @@ function renderPositionTitles() {
       editingPositionId = item.id;
       positionForm.elements.title_id.value = String(item.id);
       positionForm.elements.title.value = item.title;
-      positionSubmitButton.textContent = "Simpan Jabatan";
+      positionSubmitButton.replaceChildren("Simpan Jabatan", submitArrow());
       positionCancelButton.hidden = false;
       positionResult.hidden = true;
       focusAdminTask("position-structure-panel", "Struktur Jabatan");
@@ -3759,7 +4201,7 @@ function resetPositionForm() {
   positionForm.reset();
   positionForm.elements.title_id.value = "";
   editingPositionId = null;
-  positionSubmitButton.textContent = "Tambah Jabatan";
+  positionSubmitButton.replaceChildren("Tambah Jabatan", submitArrow());
   positionCancelButton.hidden = true;
   positionError.textContent = "";
 }
@@ -4034,25 +4476,16 @@ document.querySelector("#contact-print-confirm")?.addEventListener("click", () =
 document.querySelector("#contact-print-pdf")?.addEventListener("click", () => {
   const params = new URLSearchParams({ type: "contacts" });
   params.set("q", document.querySelector("#contact-search")?.value.trim() || "");
-  window.open(`/api/admin/export/pdf?${params.toString()}`, "_blank");
+  downloadPdf(params, "kontak-pengurus.pdf", "Menyusun PDF kontak pengurus...");
 });
 
 function renderContactPagination(pageCount) {
   const pageNumbers = document.querySelector("#admin-contacts-page-numbers");
   if (!pageNumbers) return;
-  pageNumbers.replaceChildren();
-  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-    const pageButton = document.createElement("button");
-    pageButton.className = "record-page-number";
-    pageButton.type = "button";
-    pageButton.textContent = String(pageIndex + 1);
-    pageButton.setAttribute("aria-current", String(pageIndex === adminContactsPage));
-    pageButton.addEventListener("click", () => {
-      adminContactsPage = pageIndex;
-      renderAdminContacts(areaContactsAdmin);
-    });
-    pageNumbers.append(pageButton);
-  }
+  renderPaginationNumbers(pageNumbers, pageCount, adminContactsPage, (pageIndex) => {
+    adminContactsPage = pageIndex;
+    renderAdminContacts(areaContactsAdmin);
+  });
   document.querySelector("#admin-contacts-previous").disabled = adminContactsPage === 0;
   document.querySelector("#admin-contacts-next").disabled = adminContactsPage >= pageCount - 1;
 }
@@ -4121,65 +4554,91 @@ contactForm.addEventListener("submit", async (event) => {
 
 function renderAdminTaskNavigation(name) {
   const taskNavigation = document.querySelector("#admin-task-nav");
+  // Sub menu dikelompokkan dengan "children" supaya tiap bagian dalam satu
+  // menu bisa dipisah lagi, misalnya Warga Wafat dan Warga Iuran.
   const menus = {
     records: [
-      { label: "Tambah Warga", target: "record-form" },
-      { label: "Data Tersimpan", target: "records-list-panel" },
-      { label: "Atur Jumlah RT dan RW", target: "settings-form", permission: "area" },
-    ],
-    registrations: [
-      { label: "Antrean Formulir", target: "registrations-panel", permission: "registration" },
+      {
+        label: "Warga Wafat",
+        children: [
+          { label: "Tambah Warga", target: "record-form" },
+          { label: "Data Tersimpan", target: "records-list-panel" },
+        ],
+      },
+      {
+        label: "Warga Iuran",
+        children: [
+          { label: "Warga dan Setoran", target: "contribution-residents-panel", permission: "payments" },
+          { label: "Periksa Bukti Pembayaran", target: "admin-payments-section", permission: "payments" },
+          { label: "Data Keuangan", target: "admin-finance-section", permission: "finance" },
+        ],
+      },
     ],
     import: [
-      { label: "Pilih File dan Pratinjau", target: "import-task-panel" },
-      { label: "Tinjauan Data", target: "issues-panel" },
+      {
+        label: "Impor File",
+        children: [
+          { label: "Pilih File dan Pratinjau", target: "import-task-panel" },
+          { label: "Tinjauan Data", target: "issues-panel" },
+        ],
+      },
+      {
+        label: "Pendaftaran BSK",
+        permission: "registration",
+        children: [{ label: "Antrean Formulir", target: "registrations-panel" }],
+      },
     ],
     news: [
       { label: "Tambah Berita", target: "news-form" },
       { label: "Berita Tersimpan", target: "news-saved-panel" },
     ],
     contacts: [
-      { label: "Tambah Nomor Kontak", target: "contact-form" },
-      { label: "Kontak Tersimpan", target: "contacts-saved-panel" },
-      { label: "Struktur Jabatan", target: "position-structure-panel" },
+      {
+        label: "Kontak RT / RW",
+        children: [
+          { label: "Tambah Nomor Kontak", target: "contact-form" },
+          { label: "Kontak Tersimpan", target: "contacts-saved-panel" },
+          { label: "Struktur Jabatan", target: "position-structure-panel" },
+        ],
+      },
+      {
+        label: "Wilayah",
+        permission: "area",
+        children: [{ label: "Atur Jumlah RT dan RW", target: "settings-form" }],
+      },
     ],
     media: [
       { label: "Logo Dan Gambar Utama", target: "site-images-panel", permission: "media" },
       { label: "Atur Footer dan Skala Logo", target: "footer-settings-form", permission: "media" },
       { label: "Atur Dana Apresiasi", target: "donation-settings-form", permission: "media" },
       { label: "Kop Ekspor dan Tanda Tangan", target: "export-letterhead-section", permission: "media" },
+      { label: "Informasi Program", target: "admin-program-section", permission: "program" },
       { label: "Font Dan Tipografi", target: "typography-form", permission: "typography" },
       { label: "Atur Jadwal Maintenance", target: "maintenance-form", permission: "maintenance" },
     ],
-    
     users: [{ label: "Daftar Pengguna", target: "users-list-panel" }],
-    payments: [{ label: "Periksa Bukti Pembayaran", target: "admin-payments-section" }],
-    program: [{ label: "Edit Informasi Program", target: "admin-program-section" }],
-    finance: [
-      { label: "Daftar Warga", target: "contribution-residents-panel", permission: "payments" },
-      { label: "Periksa Bukti Pembayaran", target: "admin-payments-section", permission: "payments" },
-      { label: "Tambah dan Lihat Catatan", target: "admin-finance-section", permission: "finance" },
-    ],
   };
   if (name === "users" && currentUser?.role === "Super Admin") {
     menus.users.push({ label: "Hak Akses", target: "permissions-task-panel" });
   }
   taskNavigation.replaceChildren();
   const permissions = new Set(currentUser?.permissions || rolePermissionDefaults[currentUser?.role] || []);
-  const menuItems = (menus[name] || []).filter((item) => !item.permission || permissions.has(item.permission));
-  for (const item of menuItems) {
+  const allowed = (item) => !item.permission || permissions.has(item.permission);
+  for (const item of menus[name] || []) {
     if (item.children) {
-      const group = document.createElement("details");
-      group.className = "admin-task-group";
-      group.open = false;
-      const summary = document.createElement("summary");
-      summary.textContent = item.label;
+      // Grup tanpa isi tidak ditampilkan, supaya tidak ada judul kosong.
+      const children = item.children.filter(allowed);
+      if (!children.length || !allowed(item)) continue;
+      // Judul grup ditampilkan sebagai label biasa, bukan sub menu yang
+      // bisa dilipat. Anakannya langsung terlihat di bawahnya.
+      const heading = document.createElement("p");
+      heading.className = "admin-task-heading";
+      heading.textContent = item.label;
       const links = document.createElement("div");
       links.className = "admin-task-links";
-      for (const child of item.children) links.append(createAdminTaskLink(child));
-      group.append(summary, links);
-      taskNavigation.append(group);
-    } else {
+      for (const child of children) links.append(createAdminTaskLink(child));
+      taskNavigation.append(heading, links);
+    } else if (allowed(item)) {
       taskNavigation.append(createAdminTaskLink(item));
     }
   }
@@ -4235,6 +4694,12 @@ function focusAdminTask(targetId, label) {
   if (mobileTaskDialog.open && mobileTaskTarget) restoreMobileTaskTarget();
   if (targetId === "contribution-residents-panel") loadContributionResidents();
   if (targetId === "issues-panel") loadDataIssues();
+  // Bagian yang pindah menu dimuat saat panelnya dibuka, bukan saat tab ditekan,
+  // supaya tidak ada permintaan sia-sia untuk menu yang tidak sedang dipakai.
+  if (targetId === "admin-program-section") loadAdminProgramInfo();
+  if (targetId === "registrations-panel") window.loadRegistrations?.();
+  if (targetId === "admin-finance-section" && hasPermission("finance")) loadAdminFinance();
+  if (targetId === "admin-payments-section" && hasPermission("payments")) loadAdminPayments();
   clearAdminTaskFocus();
   const target = document.getElementById(targetId);
   const view = target?.closest(".admin-view");
@@ -4325,6 +4790,11 @@ document.querySelector("#admin-task-return").addEventListener("click", () => {
   activeTab?.focus();
 });
 
+function hasPermission(name) {
+  const permissions = currentUser?.permissions || rolePermissionDefaults[currentUser?.role] || [];
+  return new Set(permissions).has(name);
+}
+
 function setAdminTab(name, focus = false, openGroup = true) {
   clearAdminTaskFragment();
   clearAdminTaskFocus();
@@ -4351,12 +4821,12 @@ function setAdminTab(name, focus = false, openGroup = true) {
       loadPositionTitles();
       loadAdminContacts();
     }
-    if (active && tab.dataset.adminTab === "program") loadAdminProgramInfo();
-    if (active && tab.dataset.adminTab === "registrations") window.loadRegistrations?.();
     if (active && tab.dataset.adminTab === "import") loadDataIssues();
-    if (active && tab.dataset.adminTab === "finance") {
-      if (currentUser?.permissions?.includes("finance") || rolePermissionDefaults[currentUser?.role]?.includes("finance")) loadAdminFinance();
-      if (currentUser?.permissions?.includes("payments") || rolePermissionDefaults[currentUser?.role]?.includes("payments")) loadAdminPayments();
+    if (active && tab.dataset.adminTab === "records") {
+      // Daftar warga iuran ikut di menu Daftar Warga, jadi datanya dimuat
+      // saat menu itu dibuka.
+      if (hasPermission("finance")) loadAdminFinance();
+      if (hasPermission("payments")) loadAdminPayments();
     }
   }
   document.querySelectorAll(".admin-view").forEach((panel) => { panel.hidden = true; });
@@ -4388,13 +4858,29 @@ function formatIssueTimestamp(value) {
   }).format(date);
 }
 
+// Impor Data memuat dua antrean yang punya lencana sendiri: tinjauan data
+// dan pendaftaran BSK. Keduanya menulis judul tooltip ke tab yang sama, jadi
+// judulnya disusun di satu tempat agar tidak saling menimpa.
+const importBadgeCounts = { issues: 0, registrations: 0 };
+function updateImportTabTitle() {
+  const tab = document.querySelector("#admin-tab-import");
+  if (!tab) return;
+  const parts = [];
+  if (importBadgeCounts.issues) parts.push(`${importBadgeCounts.issues} field bermasalah belum diperbaiki`);
+  if (importBadgeCounts.registrations) parts.push(`${importBadgeCounts.registrations} formulir menunggu verifikasi`);
+  tab.setAttribute("title", parts.length ? parts.join(" · ") : "Tidak ada hal yang menunggu");
+}
+window.setImportBadgeCount = (key, total) => {
+  importBadgeCounts[key] = Number(total) || 0;
+  updateImportTabTitle();
+};
+
 function updateIssueTabBadge(openTotal) {
   const badge = document.querySelector("#issue-tab-badge");
   if (!badge) return;
   badge.textContent = String(openTotal);
   badge.hidden = !openTotal;
-  const tab = document.querySelector("#admin-tab-import");
-  if (tab) tab.setAttribute("title", openTotal ? `${openTotal} field bermasalah belum diperbaiki` : "Tidak ada field bermasalah");
+  updateImportTabTitle();
 }
 
 async function loadDataIssues() {
@@ -5719,6 +6205,13 @@ exportHeaderForm.addEventListener("submit", async (event) => {
     export_header_title: exportHeaderForm.elements.export_header_title.value,
     export_header_line_2: exportHeaderForm.elements.export_header_line_2.value,
     export_header_line_3: exportHeaderForm.elements.export_header_line_3.value,
+    export_header_line_4: exportHeaderForm.elements.export_header_line_4.value,
+    export_address_lines: exportHeaderForm.elements.export_address_lines.value,
+    export_logo_1_size: Number(exportHeaderForm.elements.export_logo_1_size.value) || settings.export_logo_1_size,
+    export_logo_2_size: Number(exportHeaderForm.elements.export_logo_2_size.value) || settings.export_logo_2_size,
+    export_header_title_size: Number(exportHeaderForm.elements.export_header_title_size.value) || settings.export_header_title_size,
+    export_header_line_size: Number(exportHeaderForm.elements.export_header_line_size.value) || settings.export_header_line_size,
+    export_header_contact_size: Number(exportHeaderForm.elements.export_header_contact_size.value) || settings.export_header_contact_size,
   };
   try {
     await request("/api/settings", { method: "POST", body: JSON.stringify(payload) });
@@ -5730,7 +6223,7 @@ exportHeaderForm.addEventListener("submit", async (event) => {
 });
 document.querySelector("#clear-export-header-button").addEventListener("click", () => {
   clearTextSettings(exportHeaderForm,
-    ["export_header_title", "export_header_line_2", "export_header_line_3"],
+    ["export_header_title", "export_header_line_2", "export_header_line_3", "export_header_line_4", "export_address_lines"],
     document.querySelector("#export-header-error"), "Hapus seluruh teks Kop Ekspor?");
 });
 const signatureSettingsForm = document.querySelector("#signature-settings-form");
@@ -5740,6 +6233,19 @@ let signatureRtNames = {};
 let signatureRtImages = {};
 let signatureRtCommonName = "";
 let signatureRtCommonImage = false;
+
+/* TANDA TANGAN: tombol hapus muncul hanya bila gambar sudah tersimpan.
+   Statusnya tetap berupa teks supaya netral ketika belum ada gambar. */
+function setSignatureDeleteButton(role, hasImage, unitNumber = "") {
+  const button = document.querySelector(`.signature-delete-button[data-role="${role}"]`);
+  if (!button) return;
+  button.hidden = !hasImage;
+  const label = unitNumber
+    ? `RT ${String(unitNumber).padStart(3, "0")}`
+    : { maker: "Yang Membuat", rt: "Ketua RT", lmk: "LMK RW", rw: "Ketua RW", bsk: "Ketua BSK" }[role] || role;
+  button.dataset.unit = unitNumber || "";
+  button.textContent = `Hapus Tanda Tangan ${label}`;
+}
 
 /* DROPDOWN RT: setiap wilayah bisa punya tanda tangan Ketua RT sendiri. */
 function fillSignatureRtUnits() {
@@ -5764,17 +6270,44 @@ function loadSignatureRtUnit() {
     signatureRtStatus.textContent = signatureRtImages[unit]
       ? `Gambar tanda tangan RT ${String(unit).padStart(3, "0")} tersimpan.`
       : `Belum ada gambar tanda tangan khusus RT ${String(unit).padStart(3, "0")}.`;
+    setSignatureDeleteButton("rt", Boolean(signatureRtImages[unit]), unit);
   } else {
     signatureSettingsForm.elements.signature_rt_name.value = signatureRtCommonName;
     signatureRtStatus.textContent = signatureRtCommonImage
       ? "Gambar tanda tangan umum tersimpan."
       : "Belum ada gambar tanda tangan umum.";
+    setSignatureDeleteButton("rt", signatureRtCommonImage);
   }
 }
 
 signatureRtUnitSelect?.addEventListener("change", () => {
   loadSignatureRtUnit();
 });
+
+/* TANDA TANGAN: hapus gambar lewat endpoint yang sama dengan media lain.
+   unit_number hanya dikirim untuk Ketua RT per wilayah; "Semua RT" memakai
+   signature_rt biasa. */
+for (const button of document.querySelectorAll(".signature-delete-button")) {
+  button.addEventListener("click", async () => {
+    const role = button.dataset.role;
+    const unitNumber = button.dataset.unit ? Number(button.dataset.unit) : null;
+    const label = button.textContent.replace(/^Hapus Tanda Tangan /, "") || role;
+    const errorElement = document.querySelector("#signature-error");
+    if (errorElement) errorElement.textContent = "";
+    try {
+      const removed = await deleteAdminMedia(
+        "signature",
+        { role, unit_number: unitNumber },
+        `Hapus gambar tanda tangan ${label}? Nama penandatangan tetap tersimpan.`,
+      );
+      if (!removed) return;
+      delete signatureSettingsForm.dataset.dirty;
+      await loadSettings();
+    } catch (error) {
+      if (errorElement) errorElement.textContent = error.message;
+    }
+  });
+}
 signatureSettingsForm.addEventListener("input", () => { signatureSettingsForm.dataset.dirty = "true"; });
 signatureSettingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -5911,13 +6444,53 @@ if (contributionHistoryDialog) {
   contributionHistoryDialog.addEventListener("click", (event) => { if (event.target === contributionHistoryDialog) contributionHistoryDialog.close(); });
   contributionHistoryDialog.addEventListener("cancel", () => contributionHistoryDialog.close());
 }
+// Pesan galat disimpan di dalam dialog gambar tanda tangan sendiri.
+// Sebelumnya ditulis ke #signature-error yang berada di form pengaturan,
+// sehingga tertutup di balik modal dan tidak pernah terlihat.
+function signaturePadError(message) {
+  const box = document.querySelector("#signature-pad-error");
+  if (!box) return;
+  box.textContent = message || "";
+  box.classList.toggle("is-visible", Boolean(message));
+}
+
+/* Apakah kanvas benar-benar sudah berisi tulisan?
+ *
+ * Dulu diperiksa lewat ukuran file PNG. Cara itu salah: kanvas yang kosong
+ * pun menghasilkan PNG sekitar 4,7 KB, jauh di atas ambang 500 byte, jadi
+ * tanda tangan kosong ikut tersimpan tanpa kesalahan yang terlihat. Yang diperiksa
+ * sekarang adalah jumlah piksel yang benar-benar berisi tinta. */
+function signaturePadHasInk() {
+  try {
+    const context = signaturePadCanvas.getContext("2d");
+    if (!context) return true;
+    const { data } = context.getImageData(0, 0, signaturePadCanvas.width, signaturePadCanvas.height);
+    let ink = 0;
+    for (let index = 0; index < data.length; index += 4) {
+      // Latar kanvas dibuat putih, jadi tinta apa pun lebih gelap dari itu.
+      if (data[index] < 220 || data[index + 1] < 220 || data[index + 2] < 220) {
+        ink += 1;
+        // Cukup untuk memastikan ada coretan, tidak perlu menghitung semua.
+        if (ink > 40) return true;
+      }
+    }
+    return false;
+  } catch {
+    // Kanvas tidak terbaca (misalnya konteks hilang). Jangan memblokir
+    // pengguna hanya karena pemeriksaan ini tidak bisa dijalankan.
+    return true;
+  }
+}
+
 document.querySelector("#signature-pad-save").addEventListener("click", async () => {
-  const error = document.querySelector("#signature-error");
-  error.textContent = "";
+  signaturePadError("");
+  if (!signaturePadHasInk()) {
+    signaturePadError("Tulis atau gambar tanda tangan dulu sebelum disimpan.");
+    return;
+  }
   signaturePadCanvas.toBlob(async (blob) => {
-    if (!blob) return;
-    if (blob.size < 500) {
-      error.textContent = "Tulis atau gambar tanda tangan dulu sebelum disimpan.";
+    if (!blob) {
+      signaturePadError("Gambar tanda tangan tidak dapat dibaca. Coba gambar ulang.");
       return;
     }
     const saveRole = document.querySelector("#signature-pad-role-select").value;
@@ -5941,7 +6514,7 @@ document.querySelector("#signature-pad-save").addEventListener("click", async ()
         signaturePadDialog.close();
         window.onRegistrationSignatureSaved?.(result.registration);
       } catch (uploadError) {
-        error.textContent = uploadError.message;
+        signaturePadError(uploadError.message);
       }
       return;
     }
@@ -5957,7 +6530,7 @@ document.querySelector("#signature-pad-save").addEventListener("click", async ()
       signaturePadDialog.close();
       await loadSettings();
     } catch (uploadError) {
-      error.textContent = uploadError.message;
+      signaturePadError(uploadError.message);
     }
   }, "image/png");
 });
@@ -6317,7 +6890,7 @@ document.querySelector("#print-pdf-button")?.addEventListener("click", () => {
   const params = new URLSearchParams({ type: "records" });
   params.set("q", adminRecordSearchInput.value.trim());
   params.set("sort", adminRecordSortSelect.value);
-  window.open(`/api/admin/export/pdf?${params.toString()}`, "_blank");
+  downloadPdf(params, "data-wafat.pdf", "Menyusun PDF data warga wafat...");
 });
 
 // Contribution print preview handling
@@ -6342,7 +6915,7 @@ function renderContributionPrint() {
       const tr = document.createElement("tr");
       const rtLabel = resident.rt ? `RT ${String(resident.rt).padStart(3, "0")}` : "-";
       const rwLabel = resident.rw ? `RW ${String(resident.rw).padStart(3, "0")}` : "-";
-      tr.innerHTML = `<td>${idx + 1}</td><td>${formatWords(resident.full_name)}</td><td>${resident.family_card_number || ''}</td><td>${resident.national_id_number || ''}</td><td>${rtLabel}</td><td>${rwLabel}</td><td>${formatGenderLabel(resident.gender)}</td><td>${formatWords(resident.birthplace)}</td><td>${resident.birth_date ? formatDate(resident.birth_date) : ''}</td><td>${formatWords(resident.religion)}</td><td>${formatWords(resident.relationship)}</td><td>${resident.phone || ''}</td><td>${formatWords(resident.residence_status)}</td>`;
+      tr.innerHTML = `<td>${idx + 1}</td><td>${formatWords(resident.full_name)}${resident.deceased ? ` <span class="contribution-deceased-badge" style="margin-left:4px">Meninggal ${formatDate(resident.date_of_death)}</span>` : ""}</td><td>${resident.family_card_number || ''}</td><td>${resident.national_id_number || ''}</td><td>${rtLabel}</td><td>${rwLabel}</td><td>${formatGenderLabel(resident.gender)}</td><td>${formatWords(resident.birthplace)}</td><td>${resident.birth_date ? formatDate(resident.birth_date) : ''}</td><td>${formatWords(resident.religion)}</td><td>${formatWords(resident.relationship)}</td><td>${resident.phone || ''}</td><td>${formatWords(resident.residence_status)}</td>`;
       tbody.appendChild(tr);
     });
   } else {
@@ -6373,7 +6946,7 @@ document.querySelector("#contribution-print-pdf")?.addEventListener("click", () 
   params.set("q", document.querySelector("#contribution-search")?.value.trim() || "");
   params.set("status", contributionStatusKey);
   if (familyFilterKK) params.set("family", familyFilterKK);
-  window.open(`/api/admin/export/pdf?${params.toString()}`, "_blank");
+  downloadPdf(params, "daftar-warga-iuran.pdf", "Menyusun PDF daftar warga iuran...");
 });
 
 // Fill contribution print table if panel is open

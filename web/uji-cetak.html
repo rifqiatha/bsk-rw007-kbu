@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>Uji cetak dialog</title>
+  <link rel="stylesheet" href="/styles.css?v=20261012-28">
+  <style>
+    /* Tiruan minimal struktur halaman admin: workspace > views. */
+    .admin-workspace { display: flex; }
+    .admin-views { flex: 1; }
+  </style>
+</head>
+<body class="admin-page">
+  <header class="topbar"><span class="brand">TOPBAR</span></header>
+  <div class="admin-workspace">
+    <nav class="admin-nav">MENU</nav>
+    <div class="admin-views">
+      <section id="admin-view-contributions" class="admin-view" data-admin-panel="contributions">
+        <div class="manage-heading">DATA WARGA IURAN</div>
+        <div id="manage-list">baris data panel</div>
+      </section>
+      <dialog id="contribution-print-dialog" class="print-preview-panel" style="max-width:1200px;width:95vw;">
+        <div class="print-preview-header">
+          <div><h3>Pratinjau Cetak</h3><p>Periksa daftar ini sebelum membuka dialog printer.</p></div>
+          <div class="print-preview-actions">
+            <button id="contribution-print-pdf" class="action-button" type="button">Unduh PDF</button>
+            <button id="contribution-print-back" class="action-button" type="button">Kembali</button>
+            <button id="contribution-print-confirm" class="primary-button" type="button">Cetak Daftar</button>
+          </div>
+        </div>
+        <div class="print-preview-banner">
+          <div class="print-banner-text"><h2>DATA BADAN SOSIAL KEMATIAN (BSK)</h2><p>RT. 001 RW 007</p></div>
+        </div>
+        <div class="print-preview-scroll">
+          <table id="contribution-print-table" class="print-table">
+            <thead><tr><th>NO</th><th>NAMA</th><th>RT</th><th>RW</th></tr></thead>
+            <tbody id="contribution-print-body">
+              <tr><td>1</td><td>AHMAD SUDRAJAT</td><td>001</td><td>007</td></tr>
+              <tr><td>2</td><td>SITI AMINAH</td><td>002</td><td>007</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </dialog>
+      <section id="admin-view-records" class="admin-view" data-admin-panel="records">
+        <form id="record-form">FORM RECORDS</form>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    // Tiru renderContributionPrint(): dialog dibuka lewat showModal() sebelum
+    // window.print() dipanggil.
+    const dialog = document.querySelector("#contribution-print-dialog");
+    if (typeof dialog.showModal === "function") dialog.showModal();
+  </script>
+</body>
+</html>
