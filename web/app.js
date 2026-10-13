@@ -86,7 +86,7 @@ function ensureRegistrationModule() {
   if (registrationModulePromise) return registrationModulePromise;
   registrationModulePromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "/registration.js?v=20261013-41";
+    script.src = "/registration.min.js?v=20261013-46";
     script.onload = () => resolve();
     script.onerror = () => {
       // Jangan simpan promise yang gagal: percobaan berikutnya (misalnya

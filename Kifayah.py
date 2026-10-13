@@ -49,7 +49,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261013-40"
+APP_BUILD = "20261013-46"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -1895,6 +1895,30 @@ class KifayahHandler(BaseHTTPRequestHandler):
 
 	def send_stored_image(self, filename):
 		return self.send_stored_media(filename)
+
+	def resolve_stale_minified(self, relative):
+		"""Kalau berkas .min lebih tua dari sumbernya, layani sumbernya.
+
+		web/*.min.css dan web/*.min.js dibuat oleh tools/bangun-min.mjs. Kalau
+		sumber diedit tapi skrip itu belum dijalankan lagi, berkas .min masih
+		berisi kode versi lama. Tanpa pemeriksaan ini pengunjung diam-diam
+		dapat versi yang bukan yang baru saja ditulis, dan bugnya sulit
+		dicari karena berkas sumbernya sendiri sudah benar.
+
+		Kalau sumbernya memang lebih baru, berkas .min-nya diabaikan dan
+		versi yang bisa dibaca manusia yang dikirim.
+		"""
+		match = re.fullmatch(r"(.+)\.min\.(js|css)", relative)
+		if not match:
+			return relative
+		source_relative = f"{match.group(1)}.{match.group(2)}"
+		minified = WEB_DIR / relative
+		source = WEB_DIR / source_relative
+		if not source.is_file():
+			return relative
+		if source.stat().st_mtime <= minified.stat().st_mtime:
+			return relative
+		return source_relative
 
 	def theme_pack_css(self):
 		"""Isi theme.css, dibaca sekali lalu disimpan di memori.
@@ -4410,6 +4434,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		if path in ("/", "/admin", "/home", "/berita", "/kontak", "/daftar-warga") or re.fullmatch(r"/berita/[^/]+/?", path):
 			path = "/index.html"
 		relative = unquote(path).lstrip("/")
+		relative = self.resolve_stale_minified(relative)
 		target = (WEB_DIR / relative).resolve()
 		if WEB_DIR.resolve() not in target.parents or not target.is_file():
 			self.send_error(404)

@@ -9,7 +9,7 @@
 set -u
 
 BRANCH="${BRANCH:-main}"
-EXPECTED_BUILD="20261010-15"
+EXPECTED_BUILD="20261013-46"
 
 # Lokasi repo dicari dari posisi script ini, sehingga jalan baik di
 # /opt/kifayah maupun di /DATA/AppData/nginx/config/www (CasaOS).

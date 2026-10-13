@@ -19,6 +19,26 @@ Website menyediakan arsip data kematian serta dashboard Warga dan Pengelola yang
 - `web/app.js`: TEMA, rendering beranda, navigasi peran, akun, serta event formulir.
 - `Kifayah.py`: DATABASE, autentikasi, HTTP routes, perubahan data, dan penghapusan.
 
+## Berkas minified
+
+Peramban memuat versi `.min` dari `app.js`, `styles.css`, `auth.js`, dan
+`auth.css`. Berkas sumbernya tetap ada dan tetap dibaca manusia; yang
+diperkecil hanya salinan yang dikirim ke peramban.
+
+Kalau salah satu sumber diedit, bangun ulang salinannya:
+
+```bash
+node tools/bangun-min.mjs
+```
+
+Lalu naikkan nomor `?v=` di `web/index.html` dan `web/login.html` supaya
+peramban mengambil berkas yang baru.
+
+Sebagai pengaman, `Kifayah.py` membandingkan waktu modifikasi berkas sumber
+dengan berkas `.min`. Kalau sumbernya lebih baru, server **otomatis melayani
+berkas sumber** dan mengabaikan `.min` yang sudah basi, jadi kode usang tidak
+pernah sampai ke peramban meski `tools/bangun-min.mjs` lupa dijalankan.
+
 ## Menjalankan di Windows
 
 Pastikan Python 3.10 atau lebih baru tersedia, pasang dependensi, lalu jalankan dari folder proyek:
