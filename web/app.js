@@ -59,6 +59,45 @@ const heroImageElement = document.querySelector("#hero-image");
 const THEME_STORAGE_KEY = "kifayah-theme";
 const DARK_BSK_LOGO_URL = new URL("/assets/bsk-logo-dark.webp", document.baseURI).href;
 const LIGHT_BSK_LOGO_URL = new URL("/assets/bsk-logo-light.webp", document.baseURI).href;
+// Minta gambar dalam lebar tertentu. Server membuat (dan meng-cache) versi
+// WebP yang diperkecil, jadi foto 4 MB di ponsel warga tidak lagi dikirim utuh.
+// Hanya berlaku untuk URL /media/ dari server ini.
+function mediaVariant(url, width) {
+  if (!url || typeof url !== "string" || !url.startsWith("/media/")) return url;
+  if (url.includes("?")) return url;
+  return `${url}?w=${width}`;
+}
+
+// Modul pendaftaran dimuat saat dibutuhkan, bukan ikut app.js di awal halaman.
+//
+// Alasannya: seluruh antrean dan formulir pendaftaran berada di bagian yang
+// disembunyikan sampai pengguna masuk (#resident-dashboard dan
+// #admin-view-registrations sama-sama ber-atribut hidden). Pengunjung yang
+// hanya membuka beranda tidak pernah menyentuh salah satu form itu, tapi tetap
+// harus mengunduh sekitar 19 KB JavaScript yang tidak pernah dijalankan.
+//
+// Modul ini bukan modul ES, melainkan IIFE yang menaruh handful fungsi ke
+// window, jadi pemanggilannya lewat <script> yang disisipkan. Dipanggil
+// berulang kali aman: promise yang sama dikembalikan dan skrip kedua tidak
+// pernah ditambahkan.
+let registrationModulePromise = null;
+function ensureRegistrationModule() {
+  if (typeof window.loadRegistrations === "function") return Promise.resolve();
+  if (registrationModulePromise) return registrationModulePromise;
+  registrationModulePromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "/registration.js?v=20261013-41";
+    script.onload = () => resolve();
+    script.onerror = () => {
+      // Jangan simpan promise yang gagal: percobaan berikutnya (misalnya
+      // pengguna menekan tombol lagi) harus mengulang unduhan.
+      registrationModulePromise = null;
+      reject(new Error("Modul pendaftaran gagal dimuat."));
+    };
+    document.head.append(script);
+  });
+  return registrationModulePromise;
+}
 function themedBskLogoUrl(target, theme) {
   if (themeLogoAvailability[target]?.[theme]) return `/media/theme-logo/${target}/${theme}`;
   if (target === "logo2" || target === "hero") return theme === "dark" ? DARK_BSK_LOGO_URL : LIGHT_BSK_LOGO_URL;
@@ -338,6 +377,10 @@ function surfaceIsDark(element) {
 function updateThemeSensitiveLogos() {
   const theme = document.documentElement.dataset.mode === "dark" ? "dark" : "light";
   document.querySelectorAll(".theme-profile-logo").forEach((image) => {
+    // Avatar ini berada di bagian yang masih `hidden` sampai pengelola masuk.
+    // Mengisi src-nya lebih awal membuat browser mengunduh logo (ratusan KB)
+    // untuk warga yang tidak akan pernah membuka panel pengelola.
+    if (image.closest("[hidden]")) return;
     const configured = themeLogoAvailability.logo2?.[theme] ? themedBskLogoUrl("logo2", theme) : "";
     let logoUrl = configured;
     if (!logoUrl) {
@@ -789,7 +832,7 @@ function openRecordDetail(record, index) {
   if (record.portrait_url) {
     portrait = document.createElement("img");
     portrait.className = "record-detail-portrait";
-    portrait.src = record.portrait_url;
+    portrait.src = mediaVariant(record.portrait_url, 480);
     portrait.alt = `Foto ${record.full_name}`;
   }
   const title = document.createElement("h2");
@@ -1125,7 +1168,7 @@ function openNewsArticle(article, updateLocation = true) {
   content.replaceChildren();
   if (article.image_url) {
     const image = document.createElement("img");
-    image.src = article.image_url;
+    image.src = mediaVariant(article.image_url, 1280);
     image.alt = article.title;
     const applyImageEdgeColor = () => {
       try {
@@ -1230,13 +1273,18 @@ function createNewsCard(article, featured = false) {
   const card = document.createElement("button");
   card.type = "button";
   card.className = featured ? "news-featured" : "news-article-card";
-  card.setAttribute("aria-label", `Baca berita: ${article.title}`);
+  // Tanpa aria-label: tombol ini sudah berisi tanggal, judul, ringkasan, dan
+  // penulis, jadi namanya sudah lengkap. aria-label sebelumnya hanya berisi
+  // judul sehingga pembaca layar kehilangan bagian lain yang terlihat di layar.
   if (article.image_url) {
     const image = document.createElement("img");
     image.className = featured ? "news-featured-image" : "news-article-image";
-    image.src = article.image_url;
-    image.alt = "";
+    // Daftar berita berada di bawah lipatan, jadi gambar cukup dimuat saat
+    // mendekati layar. Tanpa ini semua foto berita ikut diunduh bersama.
     image.loading = "lazy";
+    image.decoding = "async";
+    image.src = mediaVariant(article.image_url, featured ? 1024 : 640);
+    image.alt = "";
     card.append(image);
   } else {
     const placeholder = document.createElement("span");
@@ -2190,7 +2238,16 @@ function updateHeroPlaylist(items, hasFallbackImage) {
   heroFailedMedia.clear();
   window.clearTimeout(heroSlideTimer);
   heroSlideTimer = null;
-  if (heroVideo) heroVideo.pause();
+  // Video yang sedang berjalan dilepas dengan rapi: hentikan pengambilan data
+  // dulu, baru lepas sumbernya. Melepas elemen tanpa itu membatalkan
+  // permintaan yang sedang berjalan dan peramban mencatatnya sebagai
+  // "net::ERR_CONNECTION_FAILED" di konsol.
+  if (heroVideo) {
+    heroVideo.preload = "none";
+    heroVideo.pause();
+    heroVideo.removeAttribute("src");
+    heroVideo.load();
+  }
   heroVideo = null;
   slideshow.replaceChildren();
   slideshow.hidden = true;
@@ -2221,6 +2278,11 @@ function showHeroSlide(index) {
   const item = usable[index % usable.length];
   window.clearTimeout(heroSlideTimer);
   if (heroVideo) {
+    // preload="none" dipasang lebih dulu supaya peramban menghentikan
+    // pengambilan data, bukan membatalkan permintaan yang sedang berjalan.
+    // Pembatalan seperti itu tercatat sebagai "net::ERR_CONNECTION_FAILED"
+    // di konsol dan ikut dihitung Lighthouse sebagai browser error.
+    heroVideo.preload = "none";
     heroVideo.pause();
     heroVideo.removeAttribute("src");
     heroVideo.load();
@@ -2448,7 +2510,7 @@ function showEditPortraitPreview(record, file = null) {
     return;
   }
   if (record?.portrait_url) {
-    image.src = record.portrait_url;
+    image.src = mediaVariant(record.portrait_url, 320);
     image.hidden = false;
     status.textContent = "Foto saat ini. Pilih file untuk menggantinya.";
     return;
@@ -2658,7 +2720,13 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   document.querySelector("#resident-dashboard").hidden = !isResident;
   document.querySelector("#resident-dashboard-name").textContent = profileName;
   document.querySelector("#resident-dashboard-username").textContent = currentUser?.username || "";
-  if (isResident) window.loadResidentRegistrations?.();
+  if (isResident) {
+    // Modul pendaftaran baru dimuat sekarang; form dan daftar statusnya memang
+    // baru terlihat sejak dashboard warga ini dibuka.
+    ensureRegistrationModule()
+      .then(() => window.loadResidentRegistrations?.())
+      .catch((error) => console.error("Modul pendaftaran gagal dimuat.", error));
+  }
   document.querySelector("#dialog-title").textContent = mustChangePassword
     ? "Ganti Kata Sandi Awal"
     : isResident ? "Dashboard Warga" : enabled ? "Kelola Daftar Warga" : "Masuk Pengelola";
@@ -2753,7 +2821,9 @@ function renderAdminUsers(users) {
     avatar.className = "user-avatar";
     if (user.avatar_url) {
       const image = document.createElement("img");
-      image.src = user.avatar_url;
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.src = mediaVariant(user.avatar_url, 160);
       image.alt = "";
       image.loading = "lazy";
       image.addEventListener("error", () => { image.hidden = true; });
@@ -3177,7 +3247,9 @@ function renderContributionResidents() {
     avatar.className = "contribution-resident-avatar";
     if (resident.photo_url) {
       const photo = document.createElement("img");
-      photo.src = resident.photo_url;
+      photo.loading = "lazy";
+      photo.decoding = "async";
+      photo.src = mediaVariant(resident.photo_url, 160);
       photo.alt = `Foto ${resident.full_name}`;
       avatar.append(photo);
     } else {
@@ -3944,7 +4016,9 @@ function renderAdminNews(articles) {
     if (article.image_url) {
       image = document.createElement("img");
       image.className = "admin-news-image";
-      image.src = article.image_url;
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.src = mediaVariant(article.image_url, 320);
       image.alt = `Foto Berita: ${article.title}`;
       image.loading = "lazy";
     }
@@ -4697,7 +4771,14 @@ function focusAdminTask(targetId, label) {
   // Bagian yang pindah menu dimuat saat panelnya dibuka, bukan saat tab ditekan,
   // supaya tidak ada permintaan sia-sia untuk menu yang tidak sedang dipakai.
   if (targetId === "admin-program-section") loadAdminProgramInfo();
-  if (targetId === "registrations-panel") window.loadRegistrations?.();
+  if (targetId === "registrations-panel") {
+    // Tab antrean pendaftaran baru dibuka sekarang, jadi modulnya dimuat di
+    // sini juga. ensureRegistrationModule() mengembalikan skrip yang sama
+    // kalau modulnya sudah dimuat oleh langkah lain.
+    ensureRegistrationModule()
+      .then(() => window.loadRegistrations?.())
+      .catch((error) => console.error("Modul pendaftaran gagal dimuat.", error));
+  }
   if (targetId === "admin-finance-section" && hasPermission("finance")) loadAdminFinance();
   if (targetId === "admin-payments-section" && hasPermission("payments")) loadAdminPayments();
   clearAdminTaskFocus();
@@ -5063,19 +5144,18 @@ for (const popup of document.querySelectorAll("dialog")) {
     if (event.target === popup && popup.dataset.draggedOut === "false") popup.dataset.draggedOut = "";
   });
 }
-function showResidentAuthForm() {
-  loginForm.hidden = false;
-  document.querySelector("#change-password-form").hidden = true;
-  document.querySelector("#resident-dashboard").hidden = true;
-  document.querySelector("#forgot-password-message").hidden = true;
-  document.querySelector("#dialog-title").textContent = "Masuk Warga";
-  document.querySelector('#login-form input[name="username"]').focus();
-}
 // Pendaftaran mandiri ditutup, jadi hanya ada aksi "Masuk".
-document.querySelector("#resident-login-open")?.addEventListener("click", () => {
-  if (!dialog.open) dialog.showModal();
-  showResidentAuthForm();
-});
+//
+// Catatan: tombol "Masuk" di header TIDAK lagi membuka dialog kecil ini.
+// Sebelumnya elemen #resident-login-open punya dua penangan klik: satu di
+// bagian atas berkas yang membawa pengguna ke halaman /masuk, dan satu di sini
+// yang memunculkan dialog. Keduanya berjalan bersamaan, jadi pengguna sempat
+// melihat popup login sesaat sebelum halaman /masuk terbuka.
+//
+// Halaman /masuk adalah tempat masuk yang resmi (punya auth.js/auth.css
+// sendiri), dan tombol "Masuk" versi menu seluler sudah sejak awal langsung
+// ke sana. Karena itu penangan popup ini dihapus agar kedua tombol "Masuk"
+// berperilaku sama.
 if (isAdminPage) {
   document.querySelector("#resident-login-open").hidden = true;
 }

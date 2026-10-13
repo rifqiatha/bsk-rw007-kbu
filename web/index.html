@@ -5,24 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta id="browser-theme-color" name="theme-color" content="#ededed">
   <title>Data Kifayah | Warga Kota Bambu Utara</title>
+  <meta name="description" content="Arsip data kematian warga RW 007 Kelurahan Kota Bambu Utara, program BSK, beserta informasi program, iuran, dan keuangan untuk warga.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Font dimuat tanpa memblokir render. Stylesheet dari Google ini menambah
+       sekitar 1 detik render-blocking pada koneksi 4G lambat, padahal teks
+       sudah bisa tampil memakai font cadangan. "media=print" membuat browser
+       menundanya sebagai stylesheet yang tidak dipakai untuk tampilan; begitu
+       selesai, onload mengaktifkannya. Font cadangan ada di token --tp-font-*,
+       jadi tampilan tetap terbaca saat font belum tiba. -->
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'; this.onload=null;">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
   <link id="dynamic-favicon" rel="icon" href="/favicon.ico">
   <!-- Logo diambil lebih awal supaya tidak baru tampil setelah app.js dan
        /api/settings selesai. Kalau pengaturan kosong, permintaan ini 404 dan
        diabaikan. -->
   <link rel="preload" as="image" href="/media/site-icon">
   <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/styles.css?v=20261012-38">
-  <script src="/app.js?v=20261012-38" defer></script>
-  <script src="/registration.js?v=20261011-27" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=20261013-40">
+  <script src="/app.js?v=20261013-41" defer></script>
+  <!-- registration.js sengaja tidak dimuat di sini. Modul pendaftaran hanya
+       dipakai setelah pengguna masuk, dan seluruh UI-nya ber-atribut hidden
+       sampai saat itu. app.js memuatnya lewat ensureRegistrationModule() saat
+       dashboard warga dibuka atau tab antrean pendaftaran diklik. -->
   <script type="module" src="/reveal.js"></script>
 </head>
 <body>
   <!-- HEADER: identitas situs, status pembaruan, tema, dan akses pengelola -->
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Beranda Data Kifayah">
+    <!-- Tanpa aria-label: teks "Kifayah" dan nama wilayah yang terlihat sudah
+     menjadi nama tautan ini. aria-label yang hanya berisi "Beranda" membuat
+     pembaca layar kehilangan teks yang benar-benar terlihat. -->
+    <a class="brand" href="/">
       <span class="brand-mark" aria-hidden="true">
         <span id="brand-mark-text">K</span>
         <span id="brand-logo-group" class="brand-logo-group" hidden>
@@ -32,7 +46,7 @@
                balladan selesai. -->
           <img id="brand-icon" src="/media/site-icon" alt="">
           <span id="brand-logo-divider" class="brand-logo-divider" aria-hidden="true" hidden>|</span>
-          <img id="brand-icon-secondary" src="/media/site-icon/2" alt="">
+          <img id="brand-icon-secondary" src="/media/site-icon/2" alt="" loading="lazy" decoding="async">
         </span>
       </span>
       <span class="brand-copy"><strong>Kifayah</strong><small id="brand-area">Warga Kota Bambu Utara</small></span>
@@ -93,7 +107,7 @@
         <img id="hero-image" alt="">
         <div id="hero-slideshow" class="hero-slideshow" aria-live="off" hidden></div>
       </figure>
-      <div class="intro-copy" data-reveal="theme">
+      <div class="intro-copy">
         <p class="eyebrow">Catatan warga · Kelurahan Kota Bambu Utara</p>
         <h1 id="page-title">Mengenang, Bersama.</h1>
         <p class="intro-description">Daftar warga yang telah berpulang, untuk membantu keluarga dan tetangga tetap saling terhubung.</p>
@@ -164,7 +178,11 @@
       <div><p class="eyebrow">Ruang Pengelola</p><h2 id="dialog-title">Masuk Pengelola</h2></div>
       <div id="admin-header-account" class="admin-header-account" hidden>
         <button id="admin-profile-toggle" class="admin-profile-trigger" type="button" aria-expanded="false" aria-controls="admin-profile-menu" aria-label="Menu akun pengelola">
-          <span id="admin-profile-avatar" class="admin-profile-avatar" aria-hidden="true"><span id="admin-profile-initials">U</span><img class="theme-profile-logo" src="/assets/bsk-logo-light.webp" alt=""></span>
+          <!-- src sengaja tidak ditulis di sini. Bagian ini tersembunyi sampai
+     pengelola masuk, dan logo BSK berukuran ~74 KB. app.js yang mengisinya
+     lewat updateThemeSensitiveLogos() hanya setelah bagiannya terlihat, jadi
+     warga tidak ikut mengunduh logo yang tidak pernah mereka lihat. -->
+<span id="admin-profile-avatar" class="admin-profile-avatar" aria-hidden="true"><span id="admin-profile-initials">U</span><img class="theme-profile-logo" alt="" loading="lazy" decoding="async"></span>
           <span class="admin-profile-copy"><strong id="admin-profile-name">Pengguna</strong><small id="admin-profile-role">Pengelola</small></span>
           <span class="admin-profile-chevron" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
         </button>
@@ -380,13 +398,13 @@
                   <label class="search-box"><span class="sr-only">Cari warga</span><input id="contribution-payers-search" type="search" placeholder="Cari nama warga" autocomplete="off"></label>
                 </div>
                 <div class="print-preview-banner">
-                  <img src="/media/export_logo/1" alt="Logo Kiri" class="print-banner-logo" onerror="this.style.display='none'">
+                  <img src="/media/export_logo/1" alt="Logo Kiri" class="print-banner-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">
                   <div class="print-banner-text">
                     <h2>DATA BADAN SOSIAL KEMATIAN (BSK)</h2>
                     <p>RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA</p>
                     <p>KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT</p>
                   </div>
-                  <img src="/media/export_logo/2" alt="Logo Kanan" class="print-banner-logo" onerror="this.style.display='none'">
+                  <img src="/media/export_logo/2" alt="Logo Kanan" class="print-banner-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">
                 </div>
                 <div class="print-preview-scroll">
                   <table id="contribution-payers-table" class="print-table">
@@ -408,13 +426,13 @@
               </div>
             </div>
             <div class="print-preview-banner">
-              <img src="/media/export_logo/1" alt="Logo Kiri" class="print-banner-logo" onerror="this.style.display='none'">
+              <img src="/media/export_logo/1" alt="Logo Kiri" class="print-banner-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">
               <div class="print-banner-text">
                 <h2>DATA BADAN SOSIAL KEMATIAN (BSK)</h2>
                 <p>RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA</p>
                 <p>KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT</p>
               </div>
-              <img src="/media/export_logo/2" alt="Logo Kanan" class="print-banner-logo" onerror="this.style.display='none'">
+              <img src="/media/export_logo/2" alt="Logo Kanan" class="print-banner-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">
             </div>
             <div class="print-preview-scroll">
               <table id="contribution-print-table" class="print-table">
@@ -474,13 +492,13 @@
                 </div>
               </div>
               <div class="print-preview-banner">
-                <img src="/media/export_logo/1" alt="Logo Kiri" class="print-banner-logo" onerror="this.style.display='none'">
+                <img src="/media/export_logo/1" alt="Logo Kiri" class="print-banner-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">
                 <div class="print-banner-text">
                   <h2>DATA BADAN SOSIAL KEMATIAN (BSK)</h2>
                   <p>RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA</p>
                   <p>KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT</p>
                 </div>
-                <img src="/media/export_logo/2" alt="Logo Kanan" class="print-banner-logo" onerror="this.style.display='none'">
+                <img src="/media/export_logo/2" alt="Logo Kanan" class="print-banner-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">
               </div>
               <div class="print-preview-scroll">
                 <table id="print-records-table" class="print-table">
@@ -745,13 +763,13 @@
               </div>
             </div>
             <div class="print-preview-banner">
-              <img src="/media/export_logo/1" alt="Logo Kiri" class="print-banner-logo" onerror="this.style.display='none'">
+              <img src="/media/export_logo/1" alt="Logo Kiri" class="print-banner-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">
               <div class="print-banner-text">
                 <h2>DATA BADAN SOSIAL KEMATIAN (BSK)</h2>
                 <p>RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA</p>
                 <p>KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT</p>
               </div>
-              <img src="/media/export_logo/2" alt="Logo Kanan" class="print-banner-logo" onerror="this.style.display='none'">
+              <img src="/media/export_logo/2" alt="Logo Kanan" class="print-banner-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">
             </div>
             <div class="print-preview-scroll">
               <table id="contact-print-table" class="print-table">

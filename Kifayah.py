@@ -1,5 +1,6 @@
 import base64
 import binascii
+import gzip
 import hashlib
 import hmac
 import io
@@ -27,6 +28,17 @@ BASE_DIR = Path(__file__).resolve().parent
 WEB_DIR = BASE_DIR / "web"
 DATABASE = BASE_DIR / "kifayah.sqlite3"
 UPLOAD_DIR = BASE_DIR / "uploads"
+# Theme pack (token --tp-*) disisipkan langsung ke HTML supaya tidak menambah
+# permintaan yang memblokir render. Isinya dibaca sekali lalu disimpan di sini,
+# dan dibaca ulang hanya kalau berkas theme.css berubah di disk.
+theme_path = WEB_DIR / "theme.css"
+_THEME_PACK_CACHE = {"stamp": None, "css": ""}
+# Turunan gambar (versi WebP yang diperkecil) disimpan terpisah supaya file
+# asli tetap utuh dan tidak ikut terhapus saat pengelola menggantinya.
+VARIANT_DIR = UPLOAD_DIR / "variants"
+# Lebar turunan yang boleh dibuat. Peramban hanya meminta lebar yang ada di
+# daftar ini, supaya jumlah file turunan per gambar tetap terbatas.
+ALLOWED_VARIANT_WIDTHS = (160, 240, 320, 480, 640, 800, 1024, 1280, 1600)
 # Batas badan permintaan JSON. Seluruh unggahan dikirim sebagai base64 di dalam
 # JSON, jadi ukurannya sekitar 4/3 dari file asli. Dua logo 5 MB saja sudah
 # mencapai sekitar 13 MB, sehingga batas lama 16 MB mudah tersentuh.
@@ -37,7 +49,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261012-38"
+APP_BUILD = "20261013-40"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -1621,16 +1633,59 @@ class KifayahHandler(BaseHTTPRequestHandler):
 	def log_message(self, format_string, *args):
 		sys.stderr.write("%s - %s\n" % (self.address_string(), format_string % args))
 
-	def send_json(self, status, payload, headers=None):
-		body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+	# Tipe yang layak dikompresi: teks yang jauh lebih besar dari versi gzip-nya.
+	# Aset gambar, video, dan PDF sudah dikompresi, jadi dilewati agar CPU tidak
+	# terbuang percuma.
+	COMPRESSIBLE_TYPES = (
+		"text/html", "text/css", "text/javascript", "application/javascript",
+		"application/json", "image/svg+xml", "text/plain",
+	)
+
+	def compress_body(self, body, content_type):
+		"""Kembalikan body terkompresi bila peramban menerima gzip dan hemat."""
+		if len(body) < 512:
+			return body
+		if not content_type.startswith(self.COMPRESSIBLE_TYPES):
+			return body
+		if "gzip" not in self.headers.get("Accept-Encoding", ""):
+			return body
+		# Level 6 cukup untuk aset teks ini (susut sekitar 4x) dan biaya CPU-nya
+		# tetap kecil karena server ini hanya melayani handful pemirsa.
+		return gzip.compress(body, 6)
+
+	def send_bytes(self, body, content_type, cache_control, status=200, extra_headers=None):
+		"""Kirim body dengan gzip opsional dan header cache yang benar."""
+		payload = self.compress_body(body, content_type)
 		self.send_response(status)
-		self.send_header("Content-Type", "application/json; charset=utf-8")
-		self.send_header("Content-Length", str(len(body)))
-		self.send_header("Cache-Control", "no-store")
-		for name, value in (headers or {}).items():
+		self.send_header("Content-Type", content_type)
+		self.send_header("Content-Length", str(len(payload)))
+		if payload is not body:
+			self.send_header("Content-Encoding", "gzip")
+			self.send_header("Vary", "Accept-Encoding")
+		if cache_control:
+			self.send_header("Cache-Control", cache_control)
+		self.send_header("X-Content-Type-Options", "nosniff")
+		for name, value in (extra_headers or {}).items():
 			self.send_header(name, value)
 		self.end_headers()
-		self.wfile.write(body)
+		self.wfile.write(payload)
+
+	def send_json(self, status, payload, headers=None):
+		body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+		# Untuk jawaban GET yang cukup besar (misalnya daftar warga), ETag membuat
+		# kunjungan berikutnya dijawab 304 tanpa mengirim ulang isi. Isi yang
+		# berubah akan menghasilkan ETag baru, jadi data tidak pernah basi.
+		if status == 200 and "GET" == self.command and len(body) > 2048:
+			etag = '"%s"' % hashlib.sha1(body).hexdigest()[:16]
+			if self.headers.get("If-None-Match") == etag:
+				self.send_response(304)
+				self.send_header("ETag", etag)
+				self.send_header("Cache-Control", "no-cache")
+				self.end_headers()
+				return
+			headers = dict(headers or {})
+			headers["ETag"] = etag
+		self.send_bytes(body, "application/json; charset=utf-8", "no-store", status, headers)
 
 	def maintenance_exempt(self, path):
 		if path in ("/admin", "/masuk", "/dashboard-warga", "/api/login", "/api/register", "/api/logout", "/app.js", "/auth.js", "/styles.css", "/auth.css", "/favicon.ico"):
@@ -1676,15 +1731,68 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		}.items():
 			body = body.replace(placeholder, value)
 		encoded = body.encode("utf-8")
-		self.send_response(503)
-		self.send_header("Content-Type", "text/html; charset=utf-8")
-		self.send_header("Content-Length", str(len(encoded)))
-		self.send_header("Cache-Control", "no-store")
-		self.send_header("Retry-After", "60")
-		self.end_headers()
-		self.wfile.write(encoded)
+		self.send_bytes(
+			encoded, "text/html; charset=utf-8", "no-store", status=503,
+			extra_headers={"Retry-After": "60"},
+		)
 
-	def send_stored_media(self, filename):
+	# Lebar turunan yang boleh dibuat. Peramban hanya meminta lebar yang ada di
+	# daftar ini, jadi cache varian tidak meledak dari permintaan acak.
+
+	def requested_variant_width(self):
+		"""Baca lebar turunan dari ?w= dan validasi terhadap daftar yang diizinkan."""
+		query = parse_qs(urlparse(self.path).query)
+		raw = (query.get("w") or [""])[0].strip()
+		if not raw.isdigit():
+			return 0
+		width = int(raw)
+		# Ambil lebar terdekat yang diizinkan supaya hanya ada sembilan kemungkinan
+		# file per gambar, bukan satu file untuk setiap angka acak.
+		for allowed in ALLOWED_VARIANT_WIDTHS:
+			if width <= allowed:
+				return allowed
+		return 0
+
+	def build_image_variant(self, image_path, width):
+		"""Buat (atau pakai ulang) versi WebP yang diperkecil dari gambar asli."""
+		VARIANT_DIR.mkdir(parents=True, exist_ok=True)
+		variant_path = VARIANT_DIR / f"{image_path.stem}-{width}.webp"
+		if variant_path.is_file() and variant_path.stat().st_size > 0:
+			return variant_path
+		try:
+			from PIL import Image, ImageOps
+		except ImportError:
+			return None
+		try:
+			with Image.open(image_path) as original:
+				# Foto dari ponsel sering membawa orientasi EXIF; tanpa langkah ini
+				# gambar bisa terputar 90 derajat setelah diperkecil.
+				fixed = ImageOps.exif_transpose(original) or original
+				if fixed.mode not in ("RGB", "RGBA"):
+					fixed = fixed.convert("RGBA" if "A" in fixed.getbands() else "RGB")
+				# thumbnail() hanya mengecilkan, tidak pernah memperbesar.
+				fixed.thumbnail((width, width * 4), Image.LANCZOS)
+				fixed.save(variant_path, "WEBP", quality=80, method=4)
+		except Exception:
+			# Gambar rusak atau format tidak didukung Pillow: kirim file asli
+			# supaya halaman tetap menampilkan gambar.
+			return None
+		return variant_path if variant_path.is_file() else None
+
+	def send_image_variant(self, image_path, width):
+		variant_path = self.build_image_variant(image_path, width)
+		if not variant_path:
+			# Turunan gagal dibuat (Pillow tidak tersedia atau gambar rusak);
+			# kirim file asli supaya halaman tetap menampilkan gambar.
+			return self.send_stored_media(image_path.name, allow_variant=False)
+		payload = variant_path.read_bytes()
+		# Nama file asal memakai token acak, jadi kalau gambar diganti, URL-nya
+		# ikut berubah. Ini membuat "immutable" aman untuk varian turunan.
+		self.send_bytes(
+			payload, "image/webp", "public, max-age=31536000, immutable",
+		)
+
+	def send_stored_media(self, filename, allow_variant=True):
 		if not filename or Path(filename).name != filename:
 			self.send_error(404)
 			return
@@ -1692,6 +1800,10 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		if not image_path.is_file():
 			self.send_error(404)
 			return
+		if allow_variant and image_path.suffix in (".png", ".jpg", ".jpeg", ".webp"):
+			variant_width = self.requested_variant_width()
+			if variant_width:
+				return self.send_image_variant(image_path, variant_width)
 		content_type = {
 			".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp",
 			".mp4": "video/mp4", ".webm": "video/webm", ".pdf": "application/pdf",
@@ -1771,12 +1883,52 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						break
 					self.wfile.write(chunk)
 					remaining -= len(chunk)
-		except (BrokenPipeError, ConnectionResetError):
-			# Client berhenti menggulir video; ini normal, bukan error server.
+		except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError):
+			# Client berhenti menggulir video atau menutup tab saat berkas masih
+			# dikirim; ini normal, bukan error server.
+			#
+			# ConnectionAbortedError wajib ikut karena di Windows那就是 yang
+			# muncul (WinError 10053) ketika peramban membatalkan permintaan
+			# media. Tanpa itu, satu permintaan video yang dibatalkan menghasilkan
+			# traceback penuh di log server.
 			pass
 
 	def send_stored_image(self, filename):
 		return self.send_stored_media(filename)
+
+	def theme_pack_css(self):
+		"""Isi theme.css, dibaca sekali lalu disimpan di memori.
+
+		Theme pack cuma beberapa KB, jadi tidak perlu dibaca ulang tiap
+		permintaan, dan cukup satu stat() untuk menyadarinya sudah berubah.
+		"""
+		stamp = theme_path.stat().st_mtime
+		if _THEME_PACK_CACHE["stamp"] == stamp:
+			return _THEME_PACK_CACHE["css"]
+		css = theme_path.read_text(encoding="utf-8")
+		_THEME_PACK_CACHE["stamp"] = stamp
+		_THEME_PACK_CACHE["css"] = css
+		return css
+
+	def inline_theme_pack(self, body):
+		"""Sisipkan isi theme.css ke dalam HTML dan buang tag <link>-nya.
+
+		theme.css hanya beberapa KB, tetapi sebagai berkas terpisah ia menambah
+		satu permintaan yang memblokir render. Lighthouse menandainya sebagai
+		"Render-blocking request". Memasukkan isinya langsung ke dalam HTML
+		menghapus satu langkah penuh di jalur kritis tanpa menggandakan isi
+		di mana pun: theme.css tetap satu-satunya sumber, dan tag <link> di
+		web/index.html tetap utuh sehingga berkas itu masih bisa dibuka
+		langsung dari disk tanpa server.
+		"""
+		link = b'<link rel="stylesheet" href="/theme.css">'
+		if link not in body or not theme_path.is_file():
+			return body
+		# Escaping penutup tag defensif: kalau isi CSS mengandung "</style>",
+		# browser akan salah menutup tag lebih awal.
+		css = self.theme_pack_css().replace("</style>", "<\\/style>")
+		style = f'<style id="theme-pack">\n{css}\n</style>'.encode("utf-8")
+		return body.replace(link, style)
 
 	def inject_brand_bootstrap(self, body):
 		"""Sisipkan data logo ke HTML sebelum dikirim ke peramban.
@@ -4274,14 +4426,31 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		body = target.read_bytes()
 		if relative == "index.html":
 			body = self.inject_brand_bootstrap(body)
-		self.send_response(200)
-		self.send_header("Content-Type", content_type)
-		self.send_header("Content-Length", str(len(body)))
-		self.send_header("X-Content-Type-Options", "nosniff")
-		# Perubahan tampilan harus langsung terlihat tanpa perlu hard refresh.
-		self.send_header("Cache-Control", "no-store, must-revalidate")
-		self.end_headers()
-		self.wfile.write(body)
+			body = self.inline_theme_pack(body)
+		# ETag dari isi file, sehingga peramban bisa menjawab 304 dengan
+		# satu header tanpa mengunduh ulang isi.
+		etag = '"%s"' % hashlib.sha1(body).hexdigest()[:16]
+		if self.headers.get("If-None-Match") == etag:
+			self.send_response(304)
+			self.send_header("ETag", etag)
+			self.send_header("Cache-Control", "no-cache")
+			self.end_headers()
+			return
+		if target.suffix == ".html":
+			# Markup halaman berubah setiap kali pengelola menyimpan pengaturan,
+			# jadi selalu divalidasi; gzip membuat ukurannya tetap kecil.
+			cache_control = "no-cache"
+		elif "v=" in self.path:
+			# CSS dan JS sudah diberi nomor versi (?v=...). URL yang berbeda
+			# berarti isi yang berbeda, jadi aman disimpan lama di browser.
+			cache_control = "public, max-age=31536000, immutable"
+		else:
+			# Aset statis tanpa nomor versi (theme.css, reveal.js, favicon).
+			cache_control = "public, max-age=3600"
+		self.send_bytes(
+			body, content_type, cache_control,
+			extra_headers={"ETag": etag},
+		)
 
 	# MUTATIONS: login, account management, residents, and settings.
 	def do_POST(self):

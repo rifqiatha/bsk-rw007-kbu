@@ -1,12 +1,26 @@
 // reveal.js — scroll reveal bawaan Theme Pack 164.
 // Markah: data-reveal="theme" (atau nama keyframe) + data-reveal-index sebagai jeda.
 // Elemen bertanda harus berada di bawah lipatan; nav dan chrome aplikasi tidak.
+//
+// PENTING: elemen yang sedang terlihat saat halaman dimuat TIDAK boleh diberi
+// opacity: 0. Chrome membatalkan entri Largest Contentful Paint begitu elemen
+// kandidat LCP disembunyikan, lalu mencatat LCP baru jauh lebih akhir. Hasilnya
+// Lighthouse melaporkan "LCP: Error! NO_LCP" untuk halaman yang sebenarnya
+// hanya sedikit lambat. Karena itu elemen di atas lipatan dilewati di sini, dan
+// pemanggil bisa menandai elemen secara manual lewat data-reveal-off.
 export function initReveals(scope = document) {
   if (!window.IntersectionObserver) return () => {};
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return () => {};
   const root = scope.documentElement || scope;
   const groups = new Map();
-  scope.querySelectorAll("[data-reveal]").forEach((element) => {
+  const fold = () => window.innerHeight || 0;
+  scope.querySelectorAll("[data-reveal]:not([data-reveal-off])").forEach((element) => {
+    // Jangan sentuh elemen yang sudah terlihat: displaying-nya lebih penting
+    // daripada animasi masuknya. getBoundingClientRect().top < fold() berarti
+    // elemen ada di dalam layar pertama.
+    const rect = element.getBoundingClientRect();
+    const rectTop = rect.top;
+    if (rectTop < fold()) return;
     element.style.animation = "none";
     element.style.opacity = "0";
     const scroller = element.closest("[data-reveal-root]") || null;

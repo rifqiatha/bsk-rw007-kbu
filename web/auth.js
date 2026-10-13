@@ -5,6 +5,18 @@ const savedTheme = localStorage.getItem("kifayah-theme");
 const authUsesDarkTheme = savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
 document.documentElement.dataset.mode = authUsesDarkTheme ? "dark" : "light";
 document.documentElement.style.colorScheme = authUsesDarkTheme ? "dark" : "light";
+// Logo cadangan untuk mode gelap dan terang. Dipakai persis seperti di
+// app.js (themedBskLogoUrl) supaya header halaman masuk dan header beranda
+// memilih gambar yang sama pada mode yang sama.
+const AUTH_DARK_LOGO_URL = new URL("/assets/bsk-logo-dark.webp", document.baseURI).href;
+const AUTH_LIGHT_LOGO_URL = new URL("/assets/bsk-logo-light.webp", document.baseURI).href;
+function authThemedLogoUrl(target, theme, configured) {
+  if (configured) return `/media/theme-logo/${target}/${theme}`;
+  // Logo kedua tidak punya berkas cadangan milik pengelola, jadi dipakai logo
+  // BSK bawaan yang memang dibuat terpisah untuk latar terang dan gelap.
+  if (target === "logo2") return theme === "dark" ? AUTH_DARK_LOGO_URL : AUTH_LIGHT_LOGO_URL;
+  return "";
+}
 function authSurfaceIsDark(element) {
   let node = element;
   while (node && node !== document.documentElement) {
@@ -32,6 +44,11 @@ const AUTH_THEME_ICONS = {
   dark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>',
   light: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.6v2.3M12 19.1v2.3M4.6 4.6l1.7 1.7M17.7 17.7l1.7 1.7M2.6 12h2.3M19.1 12h2.3M4.6 19.4l1.7-1.7M17.7 6.3l1.7-1.7"/></svg>',
 };
+// Pengaturan situs terakhir yang diterima dari /api/settings. Disimpan di
+// sini supaya logo bisa dipasang ulang setiap kali tema diganti tanpa
+// mengunduh ulang pengaturan.
+let authSettings = null;
+
 function authApplyTheme(theme) {
   const isDark = theme === "dark";
   document.documentElement.dataset.mode = isDark ? "dark" : "light";
@@ -41,41 +58,116 @@ function authApplyTheme(theme) {
     document.querySelector("#auth-theme-icon").innerHTML = AUTH_THEME_ICONS[isDark ? "dark" : "light"];
     toggle.title = isDark ? "Tema gelap" : "Tema terang";
   }
+  // Tandai pilihan yang sedang aktif di dalam menu.
+  document.querySelectorAll("#auth-theme-menu [data-theme-choice]").forEach((button) => {
+    button.setAttribute("aria-checked", String(button.dataset.themeChoice === (isDark ? "dark" : "light")));
+  });
+  // Logo perlu dipasang ulang karena pengelola bisa menyiapkan versi logo
+  // yang berbeda untuk mode terang dan mode gelap. Sebelumnya halaman ini
+  // hanya memasang logo sekali saat pengaturan diterima, sehingga menekan
+  // tombol tema tidak mengubah logo sama sekali.
+  authApplyLogosForTheme();
+}
+
+// Pasang logo header dan avatar sesuai mode tema saat ini.
+function authApplyLogosForTheme() {
+  const mode = document.documentElement.dataset.mode === "dark" ? "dark" : "light";
+  authUpdateProfileLogos(authSettings?.theme_logo_ready?.logo2?.[mode] ? `/media/theme-logo/logo2/${mode}` : null);
+  authUpdateBrandLogo(authSettings);
 }
 authApplyTheme(authUsesDarkTheme ? "dark" : "light");
-document.querySelector("#auth-theme-toggle")?.addEventListener("click", () => {
-  const next = document.documentElement.dataset.mode === "dark" ? "light" : "dark";
-  localStorage.setItem("kifayah-theme", next);
-  authApplyTheme(next);
-});
+
+// MENU MODE WARNA: tombol tema membuka daftar Terang/Gelap, sama seperti di
+// beranda. Sebelumnya tombol langsung berganti tema tanpa pilihan, sehingga
+// pengguna tidak pernah tahu halaman ini menyediakan dua mode.
+const authThemeToggle = document.querySelector("#auth-theme-toggle");
+const authThemeMenu = document.querySelector("#auth-theme-menu");
+const authThemeControl = document.querySelector(".auth-theme-control");
+
+function authCloseThemeMenu() {
+  if (!authThemeMenu || authThemeMenu.hidden) return;
+  authThemeMenu.hidden = true;
+  authThemeToggle?.setAttribute("aria-expanded", "false");
+}
+
+if (authThemeToggle && authThemeMenu) {
+  authThemeToggle.addEventListener("click", () => {
+    const opening = authThemeMenu.hidden;
+    authThemeMenu.hidden = !opening;
+    authThemeToggle.setAttribute("aria-expanded", String(opening));
+    if (opening) authThemeMenu.querySelector('[aria-checked="true"]')?.focus();
+  });
+  authThemeMenu.querySelectorAll("[data-theme-choice]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const theme = button.dataset.themeChoice;
+      localStorage.setItem("kifayah-theme", theme);
+      authApplyTheme(theme);
+      authCloseThemeMenu();
+      authThemeToggle.focus();
+    });
+  });
+  document.addEventListener("click", (event) => {
+    if (authThemeMenu.hidden || authThemeControl?.contains(event.target)) return;
+    authCloseThemeMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || authThemeMenu.hidden) return;
+    authCloseThemeMenu();
+    authThemeToggle.focus();
+  });
+}
 
 function authUpdateBrandLogo(settings) {
-  const image = document.querySelector("#auth-brand-icon");
+  const mark = document.querySelector(".auth-brand-mark");
   const markText = document.querySelector("#auth-brand-mark-text");
-  if (!image || !markText) return;
+  const group = document.querySelector("#auth-brand-logo-group");
+  const primary = document.querySelector("#auth-brand-icon");
+  const secondary = document.querySelector("#auth-brand-icon-2");
+  const divider = document.querySelector("#auth-brand-divider");
+  if (!mark || !markText || !group || !primary || !secondary || !divider) return;
   const theme = document.documentElement.dataset.mode === "dark" ? "dark" : "light";
-  const configured = settings?.theme_logo_ready?.logo1?.[theme] ? `/media/theme-logo/logo1/${theme}` : null;
-  const source = configured || (settings?.site_icon_ready ? "/media/site-icon" : null);
-  if (!source) {
-    image.hidden = true;
-    markText.hidden = false;
+  // Logo bertema (sudah disiapkan pengelola untuk mode terang/gelap) diutamakan,
+  // lalu logo cadangan. Urutan ini meniru themedBskLogoUrl + applyBrandLogos di
+  // app.js persis, termasuk turun ke logo BSK bawaan untuk logo kedua ketika
+  // pengelola belum memasang versi bertema. Tanpa bagian terakhir ini, logo
+  // kedua di halaman masuk tetap sama dari mode terang ke mode gelap,
+  // sementara beranda sudah berganti ke logo khusus latar gelap.
+  const primaryThemed = authThemedLogoUrl("logo1", theme, settings?.theme_logo_ready?.logo1?.[theme]);
+  const secondaryThemed = authThemedLogoUrl("logo2", theme, settings?.theme_logo_ready?.logo2?.[theme]);
+  const primaryUrl = primaryThemed || (settings?.site_icon_ready ? "/media/site-icon" : null);
+  const secondaryUrl = secondaryThemed || (settings?.site_icon_2_ready ? "/media/site-icon/2" : null);
+  const zoom1 = Number(settings?.icon_zoom_1 ?? 100) / 100;
+  const zoom2 = Number(settings?.icon_zoom_2 ?? 100) / 100;
+  // Zoom 0% berarti pengelola sengaja menyembunyikan logo tersebut.
+  const showPrimary = Boolean(primaryUrl) && zoom1 > 0;
+  const showSecondary = Boolean(secondaryUrl) && zoom2 > 0 && showPrimary;
+  const anyLogo = showPrimary || showSecondary;
+  mark.classList.toggle("has-icon", anyLogo);
+  markText.hidden = anyLogo;
+  group.hidden = !anyLogo;
+  primary.hidden = !showPrimary;
+  secondary.hidden = !(showPrimary && showSecondary);
+  divider.hidden = secondary.hidden;
+  if (!anyLogo) {
+    // Huruf cadangan tetap tampil di dalam lingkaran seperti semula.
     return;
   }
-  markText.hidden = true;
-  image.hidden = false;
-  const scale = Number(settings.icon_zoom_1 || 100) / 100;
-  image.style.width = `${40 * scale}px`;
-  image.style.height = `${44 * scale}px`;
-  if (image.getAttribute("src") !== source) image.src = source;
+  // Ukuran diatur lewat variabel CSS, sama seperti di app.js, supaya auth.css
+  // bisa memakai angka 28x37 dan 40x44 yang sama dengan header utama.
+  const root = document.documentElement;
+  root.style.setProperty("--auth-logo-zoom-1", String(showPrimary ? zoom1 : 0));
+  root.style.setProperty("--auth-logo-zoom-2", String(showSecondary ? zoom2 : 0));
+  root.style.setProperty("--auth-logo-single-zoom", String(showPrimary ? zoom1 : zoom2));
+  const primarySource = showPrimary ? primaryUrl : secondaryUrl;
+  if (primary.getAttribute("src") !== primarySource) primary.src = primarySource;
+  if (showPrimary && showSecondary && secondary.getAttribute("src") !== secondaryUrl) secondary.src = secondaryUrl;
 }
 authUpdateBrandLogo(null);
 fetch("/api/settings").then((response) => response.ok ? response.json() : null).then((settings) => {
   if (!settings) return;
+  authSettings = settings;
   document.querySelector("#auth-brand-area").textContent = settings.footer_area || "Warga Kota Bambu Utara";
-  const mode = document.documentElement.dataset.mode === "dark" ? "dark" : "light";
-  const isConfigured = settings.theme_logo_ready?.logo2?.[mode];
-  authUpdateProfileLogos(isConfigured ? `/media/theme-logo/logo2/${mode}` : null);
-  authUpdateBrandLogo(settings);
+  authApplyLogosForTheme();
 }).catch(() => {});
 // Reverse proxy dapat membalas halaman HTML (misal 413 Request Entity Too
 // Large) alih-alih JSON, sehingga response.json() melempar SyntaxError dan

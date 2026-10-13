@@ -9,11 +9,45 @@ body { display: flex; flex-direction: column; }
 .auth-topbar { position: sticky; top: 0; z-index: 30; display: flex; min-height: 76px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 18px; padding: 10px max(5vw, calc((100vw - 1180px) / 2)); border-bottom: 1px solid #d0d0d0; background: #f8f8f8; }
 .auth-brand { display: flex; align-items: center; gap: 12px; color: #171717; text-decoration: none; }
 .auth-brand-mark { display: grid; width: 40px; height: 40px; flex: none; place-items: center; color: #292929; border-radius: 50%; background: #e2e2e2; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7); font-size: 21px; font-weight: 600; }
-.auth-brand-mark img { width: 40px; height: 44px; object-fit: contain; }
+/* Ketika logo tampil, lingkaran abu-abu disembunyikan dan kotak.ukurannya
+   mengikuti logo. Sebelumnya kotaknya dikunci 40x40 sementara auth.js menulis
+   lebar dan tinggi mengikuti zoom pengelola. Pada zoom di atas 100% logo jadi
+   lebih besar dari kotaknya, meluber keluar, dan sisa lingkaran abu-abu
+   terlihat mengintip di belakang logo. Header halaman utama (.has-icon)
+   sudah memakai perilaku yang sama. */
+.auth-brand-mark.has-icon { display: flex; width: auto; height: auto; align-items: center; justify-content: center; overflow: visible; border-radius: 0; background: transparent; box-shadow: none; }
+.auth-brand:has(.auth-brand-mark.has-icon) { gap: 22px; }
+.auth-brand:has(.auth-brand-mark.has-icon):has(#auth-brand-icon-2[hidden]) { gap: 12px; }
+.auth-brand-logo-group { display: flex; height: auto; align-items: center; gap: 10px; }
+.auth-brand-logo-group:has(#auth-brand-icon-2[hidden]) { gap: 0; }
+.auth-brand-logo-group img { flex: none; border-radius: 0; object-fit: contain; }
+.auth-brand-divider { display: block; width: 2px; height: 28px; flex: none; margin: 0 5px; background: #d0d0d0; }
+/* Dua logo memakai ukuran 28x37, satu logo saja memakai 40x44. Kedua angka
+   ini sama dengan yang dipakai header halaman utama, dan tiap logo memakai
+   nilai zoomnya sendiri dari pengaturan pengelola. */
+#auth-brand-icon { width: calc(28px * var(--auth-logo-zoom-1, 1)); height: calc(37px * var(--auth-logo-zoom-1, 1)); }
+#auth-brand-icon-2 { width: calc(28px * var(--auth-logo-zoom-2, 1)); height: calc(37px * var(--auth-logo-zoom-2, 1)); }
+.auth-brand-logo-group:has(#auth-brand-icon-2[hidden]) #auth-brand-icon { width: calc(40px * var(--auth-logo-single-zoom, 1)); height: calc(44px * var(--auth-logo-single-zoom, 1)); }
 .auth-brand-copy { display: grid; gap: 2px; }
 .auth-brand-copy strong { color: #171717; font-size: 15px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
 .auth-brand-copy small { color: #5b5b5b; font-size: 12px; letter-spacing: .02em; }
 .auth-topbar-right { display: flex; flex: none; align-items: center; gap: 14px; }
+/* Menu mode warna. Tampilan meniru .theme-menu di styles.css, hanya memakai
+   palet abu-abu yang dipakai halaman ini, bukan tema hijau. */
+.auth-theme-control { position: relative; }
+.auth-theme-menu { position: absolute; z-index: 60; top: calc(100% + 12px); right: 0; display: grid; width: min(180px, calc(100vw - 32px)); gap: 3px; padding: 8px; border: 1px solid #d0d0d0; border-radius: 18px; background: #f8f8f8; box-shadow: 0 18px 34px rgba(0, 0, 0, .1), inset 0 1px 0 rgba(255, 255, 255, .8); }
+.auth-theme-menu[hidden] { display: none; }
+.auth-theme-menu button { display: flex; min-height: 40px; align-items: center; gap: 9px; padding: 9px 11px; border: 0; border-radius: 8px; color: #171717; background: transparent; font-size: 13px; font-weight: 500; text-align: left; }
+.auth-theme-menu button::before { width: 7px; height: 7px; flex: none; border: 1px solid #8a8a8a; border-radius: 50%; content: ""; }
+.auth-theme-menu button:hover:not([aria-checked="true"]) { background: #ececec; }
+.auth-theme-menu button[aria-checked="true"] { color: #171717; background: #e6e6e6; }
+.auth-theme-menu button[aria-checked="true"]::before { border-color: #171717; background: #171717; box-shadow: inset 0 0 0 2px #e6e6e6; }
+html[data-mode="dark"] .auth-theme-menu { border-color: #505050; background: #282828; box-shadow: 0 18px 34px rgba(0, 0, 0, .45); }
+html[data-mode="dark"] .auth-theme-menu button { color: #f5f5f5; }
+html[data-mode="dark"] .auth-theme-menu button::before { border-color: #9a9a9a; }
+html[data-mode="dark"] .auth-theme-menu button:hover:not([aria-checked="true"]) { background: #363636; }
+html[data-mode="dark"] .auth-theme-menu button[aria-checked="true"] { color: #fff; background: #3f3f3f; }
+html[data-mode="dark"] .auth-theme-menu button[aria-checked="true"]::before { border-color: #fff; background: #fff; box-shadow: inset 0 0 0 2px #3f3f3f; }
 .auth-icon-button { display: grid; width: 44px; height: 44px; place-items: center; padding: 0; color: #292929; border: 1px solid #d0d0d0; border-radius: 50%; background: #f8f8f8; line-height: 1; transition: color 200ms cubic-bezier(.22, 1, .36, 1), border-color 200ms cubic-bezier(.22, 1, .36, 1), background-color 200ms cubic-bezier(.22, 1, .36, 1); }
 .auth-icon-button:hover { border-color: #292929; background: #ededed; }
 .auth-icon-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -374,6 +408,10 @@ html[data-mode="dark"] .auth-brand { color: #f5f5f5; }
 html[data-mode="dark"] .auth-brand-copy strong { color: #f5f5f5; }
 html[data-mode="dark"] .auth-brand-copy small { color: #bdbdbd; }
 html[data-mode="dark"] .auth-brand-mark { color: #e5e5e5; background: #3a3a3a; }
+/* Aturan mode gelap di atas lebih kuat daripada .has-icon, jadi harus ditegas
+   ulang di sini; kalau tidak, lingkaran gelap tetap muncul di belakang logo. */
+html[data-mode="dark"] .auth-brand-mark.has-icon { background: transparent; box-shadow: none; }
+html[data-mode="dark"] .auth-brand-divider { background: #4a4a4a; }
 html[data-mode="dark"] .auth-icon-button { color: #e5e5e5; border-color: #505050; background: #282828; }
 html[data-mode="dark"] .auth-icon-button:hover { border-color: #e5e5e5; background: #363636; }
 @media (max-width: 560px) {

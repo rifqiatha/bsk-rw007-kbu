@@ -1,12 +1,12 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="id">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ededed">
   <title>Masuk | Kifayah</title>
-  <link rel="stylesheet" href="/auth.css?v=20261012-32">
-  <script src="/auth.js?v=20261012-32" defer></script>
+  <link rel="stylesheet" href="/auth.css?v=20261013-45">
+  <script src="/auth.js?v=20261013-45" defer></script>
 </head>
 <body>
   <!-- HEADER: samakan dengan panel /admin agar halaman masuk tidak kosong. -->
@@ -14,14 +14,26 @@
     <a class="auth-brand" href="/" aria-label="Beranda Data Kifayah">
       <span class="auth-brand-mark" aria-hidden="true">
         <span id="auth-brand-mark-text">K</span>
-        <img id="auth-brand-icon" alt="" hidden>
+        <span id="auth-brand-logo-group" class="auth-brand-logo-group" hidden>
+          <img id="auth-brand-icon" alt="">
+          <span id="auth-brand-divider" class="auth-brand-divider" aria-hidden="true" hidden></span>
+          <img id="auth-brand-icon-2" alt="">
+        </span>
       </span>
       <span class="auth-brand-copy"><strong>Kifayah</strong><small id="auth-brand-area">Warga Kota Bambu Utara</small></span>
     </a>
     <div class="auth-topbar-right">
-      <button id="auth-theme-toggle" class="auth-icon-button" type="button" aria-label="Pilih tema" title="Pilih tema">
-        <span id="auth-theme-icon" aria-hidden="true"></span>
-      </button>
+      <div class="auth-theme-control">
+        <button id="auth-theme-toggle" class="auth-icon-button" type="button" aria-label="Pilih tema" aria-haspopup="true" aria-expanded="false" title="Pilih tema">
+          <span id="auth-theme-icon" aria-hidden="true"></span>
+        </button>
+        <!-- Menu mode warna, sama seperti di beranda: tombol langsung
+             berganti tema tanpa perlu tekan dua kali (sekali buka, sekali pilih). -->
+        <div id="auth-theme-menu" class="auth-theme-menu" role="menu" aria-label="Pilih mode warna" hidden>
+          <button type="button" role="menuitemradio" aria-checked="true" data-theme-choice="light">Terang</button>
+          <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="dark">Gelap</button>
+        </div>
+      </div>
     </div>
   </header>
   <main class="auth-shell">
