@@ -49,7 +49,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261013-46"
+APP_BUILD = "20261031-47"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -295,16 +295,71 @@ def _initialize_database(connection):
 		"relationship": "TEXT NOT NULL DEFAULT ''",
 		"phone": "TEXT NOT NULL DEFAULT ''",
 		"residence_status": "TEXT NOT NULL DEFAULT ''",
+		"status_warga": "TEXT NOT NULL DEFAULT 'Aktif'",
+		"date_of_death": "TEXT NOT NULL DEFAULT ''",
 	}.items():
 		if name not in contribution_columns:
 			connection.execute(f"ALTER TABLE contribution_residents ADD COLUMN {name} {definition}")
-	# NIK dipakai untuk menyambungkan warga iuran dengan data warga wafat,
-	# jadi kedua tabel perlu indeks supaya penggabungan tetap cepat.
+	# NIK dipakai untuk menyambungkan data warga lama dengan arsip publik wafat.
+	# Status wafat kini juga disimpan pada baris warga iuran agar satu orang tetap
+	# memiliki satu status operasional, sementara tabel records tetap menjaga
+	# detail arsip publik (foto, alamat publikasi, dan keluarga).
+
 	connection.execute(
 		"CREATE INDEX IF NOT EXISTS idx_contribution_residents_nik ON contribution_residents(national_id_number)"
 	)
 	connection.execute(
 		"CREATE INDEX IF NOT EXISTS idx_records_nik ON records(national_id_number)"
+	)
+	# Migrasi satu kali/berulang yang aman: status wafat lama disalin ke data
+	# warga iuran berdasarkan NIK. Tidak menghapus arsip publik atau transaksi.
+	connection.execute(
+		"UPDATE contribution_residents SET status_warga = 'Wafat', date_of_death = ("
+		"SELECT MAX(NULLIF(records.date_of_death, '')) FROM records "
+		"WHERE TRIM(COALESCE(records.national_id_number, '')) <> '' "
+		"AND records.national_id_number = contribution_residents.national_id_number "
+		"AND TRIM(COALESCE(records.date_of_death, '')) <> '') "
+		"WHERE TRIM(COALESCE(national_id_number, '')) <> '' AND EXISTS ("
+		"SELECT 1 FROM records WHERE records.national_id_number = contribution_residents.national_id_number "
+		"AND TRIM(COALESCE(records.date_of_death, '')) <> '')"
+	)
+	# Jaga sinkronisasi bagi arsip wafat baru/yang diedit, dan untuk warga yang
+	# baru dimasukkan setelah arsipnya sudah ada. Tidak membuat tabel wafat baru.
+	connection.execute(
+		"""CREATE TRIGGER IF NOT EXISTS sync_record_death_to_resident_insert
+		AFTER INSERT ON records
+		WHEN TRIM(COALESCE(NEW.national_id_number, '')) <> ''
+		BEGIN
+			UPDATE contribution_residents
+			SET status_warga = 'Wafat', date_of_death = NEW.date_of_death
+			WHERE national_id_number = NEW.national_id_number;
+		END"""
+	)
+	connection.execute(
+		"""CREATE TRIGGER IF NOT EXISTS sync_record_death_to_resident_update
+		AFTER UPDATE OF national_id_number, date_of_death ON records
+		WHEN TRIM(COALESCE(NEW.national_id_number, '')) <> ''
+		BEGIN
+			UPDATE contribution_residents
+			SET status_warga = 'Wafat', date_of_death = NEW.date_of_death
+			WHERE national_id_number = NEW.national_id_number;
+		END"""
+	)
+	connection.execute(
+		"""CREATE TRIGGER IF NOT EXISTS sync_existing_death_to_resident_insert
+		AFTER INSERT ON contribution_residents
+		WHEN TRIM(COALESCE(NEW.national_id_number, '')) <> ''
+		BEGIN
+			UPDATE contribution_residents
+			SET status_warga = 'Wafat',
+			    date_of_death = (SELECT MAX(date_of_death) FROM records
+			                     WHERE national_id_number = NEW.national_id_number
+			                       AND TRIM(COALESCE(date_of_death, '')) <> '')
+			WHERE id = NEW.id AND EXISTS (
+				SELECT 1 FROM records WHERE national_id_number = NEW.national_id_number
+				AND TRIM(COALESCE(date_of_death, '')) <> ''
+			);
+		END"""
 	)
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS contribution_payments (
@@ -3139,7 +3194,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					# meninggal; tabel records ikut memuat warga yang masih hidup
 					# dan tanggalnya belum dilengkapi.
 					"SELECT r.*, COALESCE(NULLIF(r.full_name, ''), u.display_name) AS display_name, "
-					"wafat.date_of_death AS deceased_date, wafat.record_id AS deceased_record_id "
+					"COALESCE(NULLIF(r.date_of_death, ''), wafat.date_of_death) AS deceased_date, "
+					"wafat.record_id AS deceased_record_id "
 					"FROM contribution_residents r "
 					"LEFT JOIN admin_users u ON u.id = r.account_id "
 					"LEFT JOIN ("
@@ -3188,7 +3244,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"relationship": row["relationship"] if "relationship" in row.keys() else "", "phone": row["phone"] if "phone" in row.keys() else "", "residence_status": row["residence_status"] if "residence_status" in row.keys() else "",
 					# Status wafat diambil dari tabel records lewat NIK. Yang sudah
 					# meninggal tetap dihitung seperti biasa, hanya ditandai.
-					"deceased": bool(row["deceased_date"]),
+					"deceased": (row["status_warga"] == "Wafat") or bool(row["deceased_date"]),
+					"status_warga": "Wafat" if ((row["status_warga"] == "Wafat") or row["deceased_date"]) else "Aktif",
 					"date_of_death": row["deceased_date"] or "",
 					"deceased_record_id": row["deceased_record_id"],
 					"photo_url": f"/media/contribution-resident/{row['id']}" if row["photo_file"] else "",

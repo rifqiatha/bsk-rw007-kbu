@@ -3141,6 +3141,11 @@ function matchesContributionStatus(resident, status) {
     case "female": return gender === "P" || gender.startsWith("PEREMPUAN") || gender === "WANITA";
     case "male": return gender === "L" || gender.startsWith("LAKI") || gender === "PRIA";
     case "head": return relationship.includes("KEPALA");
+    case "family-deceased": return Boolean(resident.family_card_number && contributionResidents.some((member) =>
+      member.id !== resident.id &&
+      String(member.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") &&
+      member.deceased
+    )) || Boolean(resident.deceased);
     default: return true;
   }
 }
@@ -3182,8 +3187,11 @@ function renderContributionResidents() {
 
   const visible = contributionResidents.filter((resident) => {
     // "meninggal" ikut dicari supaya warga yang sudah wafat mudah ditemukan.
-    const searchTerms = [resident.full_name, resident.national_id_number, resident.address, resident.rt, resident.rw, ...residentRtRwVariants(resident.rt, resident.rw)];
+    const searchTerms = [resident.full_name, resident.national_id_number, resident.address, resident.family_card_number, resident.rt, resident.rw, ...residentRtRwVariants(resident.rt, resident.rw)];
     if (resident.deceased) searchTerms.push("meninggal", "wafat", resident.date_of_death || "");
+    if (resident.family_card_number && contributionResidents.some((member) =>
+      String(member.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") && member.deceased
+    )) searchTerms.push("keluarga wafat", "kk memiliki anggota wafat", "anggota keluarga meninggal");
     const matchesQuery = !query || searchTerms
       .some((value) => String(value || "").toLocaleLowerCase("id-ID").includes(query));
     const matchesStatus = matchesContributionStatus(resident, filter);
@@ -3269,10 +3277,22 @@ function renderContributionResidents() {
     // Warga yang tanggal wafatnya sudah diisi di Daftar Warga Wafat ditandai di
     // sini. Datanya tetap dihitung seperti biasa, hanya diberi tanda.
     const deceasedBadge = resident.deceased
-      ? `<span class="contribution-deceased-badge" title="Warga ini tercatat meninggal di Daftar Warga Wafat">Meninggal${resident.date_of_death ? ` · ${formatDate(resident.date_of_death)}` : ""}</span>`
+      ? `<span class="contribution-deceased-badge" title="Status warga ini tercatat wafat">${resident.date_of_death ? `Wafat · ${formatDate(resident.date_of_death)}` : "Wafat"}</span>`
+      : "";
+    const familyHasDeceased = Boolean(resident.family_card_number) && (
+      contributionResidents.some((member) =>
+        String(member.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") && member.deceased
+      ) ||
+      records.some((record) =>
+        String(record.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") &&
+        Boolean(record.date_of_death)
+      )
+    );
+    const familyDeceasedBadge = familyHasDeceased
+      ? `<span class="contribution-deceased-badge" title="Nomor KK ini memiliki setidaknya satu anggota keluarga yang wafat">KK: Ada anggota wafat</span>`
       : "";
     const areaText = `${resident.rt ? `RT ${String(resident.rt).padStart(3, "0")}` : "RT belum diatur"} / ${resident.rw ? `RW ${String(resident.rw).padStart(3, "0")}` : "RW belum diatur"}`;
-    identity.innerHTML = `${name.outerHTML}${relationshipBadge}${deceasedBadge}<p class="contribution-resident-area">${areaText}</p><span class="contribution-status ${resident.paid_this_month ? "is-paid" : "is-unpaid"}">${resident.paid_this_month ? "Iuran bulan ini tercatat" : "Belum ada iuran bulan ini"}</span>`;
+    identity.innerHTML = `${name.outerHTML}${relationshipBadge}${deceasedBadge}${familyDeceasedBadge}<p class="contribution-resident-area">${areaText}</p><span class="contribution-status ${resident.paid_this_month ? "is-paid" : "is-unpaid"}">${resident.paid_this_month ? "Iuran bulan ini tercatat" : "Belum ada iuran bulan ini"}</span>`;
     const relationshipBadgeSpan = identity.querySelector('.contribution-relationship-badge');
     if (relationshipBadgeSpan) {
       relationshipBadgeSpan.addEventListener('click', async (e) => {
@@ -4633,16 +4653,11 @@ function renderAdminTaskNavigation(name) {
   const menus = {
     records: [
       {
-        label: "Warga Wafat",
+        label: "Data Warga",
         children: [
-          { label: "Tambah Warga", target: "record-form" },
-          { label: "Data Tersimpan", target: "records-list-panel" },
-        ],
-      },
-      {
-        label: "Warga Iuran",
-        children: [
-          { label: "Warga dan Setoran", target: "contribution-residents-panel", permission: "payments" },
+          { label: "Daftar Warga & Status KK", target: "contribution-residents-panel", permission: "payments" },
+          { label: "Tambah Data Wafat", target: "record-form" },
+          { label: "Arsip Wafat untuk Publik", target: "records-list-panel" },
           { label: "Periksa Bukti Pembayaran", target: "admin-payments-section", permission: "payments" },
           { label: "Data Keuangan", target: "admin-finance-section", permission: "finance" },
         ],
