@@ -3143,7 +3143,7 @@ function matchesContributionStatus(resident, status) {
     case "head": return relationship.includes("KEPALA");
     case "family-deceased": return Boolean(resident.family_card_number && contributionResidents.some((member) =>
       member.id !== resident.id &&
-      String(member.family_card_number || "").replace(/\\s/g, "") === String(resident.family_card_number || "").replace(/\\s/g, "") &&
+      String(member.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") &&
       member.deceased
     )) || Boolean(resident.deceased);
     default: return true;
@@ -3190,7 +3190,7 @@ function renderContributionResidents() {
     const searchTerms = [resident.full_name, resident.national_id_number, resident.address, resident.family_card_number, resident.rt, resident.rw, ...residentRtRwVariants(resident.rt, resident.rw)];
     if (resident.deceased) searchTerms.push("meninggal", "wafat", resident.date_of_death || "");
     if (resident.family_card_number && contributionResidents.some((member) =>
-      String(member.family_card_number || "").replace(/\\s/g, "") === String(resident.family_card_number || "").replace(/\\s/g, "") && member.deceased
+      String(member.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") && member.deceased
     )) searchTerms.push("keluarga wafat", "kk memiliki anggota wafat", "anggota keluarga meninggal");
     const matchesQuery = !query || searchTerms
       .some((value) => String(value || "").toLocaleLowerCase("id-ID").includes(query));
@@ -3281,10 +3281,10 @@ function renderContributionResidents() {
       : "";
     const familyHasDeceased = Boolean(resident.family_card_number) && (
       contributionResidents.some((member) =>
-        String(member.family_card_number || "").replace(/\\s/g, "") === String(resident.family_card_number || "").replace(/\\s/g, "") && member.deceased
+        String(member.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") && member.deceased
       ) ||
       records.some((record) =>
-        String(record.family_card_number || "").replace(/\\s/g, "") === String(resident.family_card_number || "").replace(/\\s/g, "") &&
+        String(record.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") &&
         Boolean(record.date_of_death)
       )
     );
