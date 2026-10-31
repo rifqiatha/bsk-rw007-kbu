@@ -25,7 +25,7 @@
        dibaca. Kalau sumber lebih baru dari .min, server otomatis melayani
        sumbernya, jadi kode usang tidak pernah sampai ke peramban. -->
   <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/styles.min.css?v=20261013-46">
+  <link rel="stylesheet" href="/styles.min.css?v=20261031-47">
   <script src="/app.min.js?v=20261013-46" defer></script>
   <!-- registration.js sengaja tidak dimuat di sini. Modul pendaftaran hanya
        dipakai setelah pengguna masuk, dan seluruh UI-nya ber-atribut hidden
@@ -279,7 +279,7 @@
         <aside class="admin-sidebar">
         <nav class="admin-nav" aria-label="Menu pengelolaan">
           <details class="admin-nav-group" data-admin-group="records">
-            <summary id="admin-tab-records" class="admin-tab active" aria-current="page" aria-expanded="false" data-admin-tab="records">Daftar Warga</summary>
+            <summary id="admin-tab-records" class="admin-tab active" aria-current="page" aria-expanded="false" data-admin-tab="records">Data Warga</summary>
             <div id="admin-task-nav" class="admin-task-nav" aria-label="Tugas pada menu ini" hidden></div>
           </details>
           <details class="admin-nav-group" data-admin-group="import">
@@ -358,10 +358,10 @@
           <section id="admin-view-contributions" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="contributions" hidden>
             <section id="contribution-residents-panel" class="admin-section contribution-management" aria-labelledby="contribution-residents-title">
               <div class="contribution-page-heading">
-                <div><p class="eyebrow">Data dan Setoran</p><h2 id="contribution-residents-title">Daftar Warga</h2></div>
+                <div><p class="eyebrow">Data Warga Terpadu</p><h2 id="contribution-residents-title">Data Warga &amp; Status Kartu Keluarga</h2></div>
                 <button id="add-contribution-resident" class="primary-button" type="button">Tambah Warga <span aria-hidden="true">→</span></button>
               </div>
-              <p class="form-hint">Data iuran diperbarui dari pembayaran terverifikasi dan setoran yang dicatat admin. Nominal total serta jumlah bulan dihitung otomatis.</p>
+              <p class="form-hint">Data warga, status wafat, status KK, dan riwayat iuran ditampilkan dalam satu daftar. Jika salah satu anggota KK tercatat wafat, seluruh anggota dengan nomor KK yang sama akan diberi penanda.</p>
               <div class="contribution-summary" aria-label="Ringkasan iuran">
                 <article><span>Warga Terdaftar</span><strong id="contribution-resident-count">0</strong></article>
                 <button id="contribution-paid-card" class="stat-card" type="button" title="Lihat daftar warga yang sudah iuran bulan ini" aria-label="Lihat daftar warga yang sudah iuran bulan ini"><span>Sudah Iuran Bulan Ini</span><strong id="contribution-paid-count">0</strong></button>
@@ -373,9 +373,9 @@
               <div class="contribution-list-toolbar">
                 <label class="search-box" for="contribution-search">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.3 4.3"/></svg>
-                  <input id="contribution-search" type="search" placeholder="Cari nama, NIK, alamat, RT, atau RW" autocomplete="off">
+                  <input id="contribution-search" type="search" placeholder="Cari nama, NIK, nomor KK, alamat, RT, atau RW" autocomplete="off">
                 </label>
-                <label class="filter-select"><span class="sr-only">Filter warga</span><select id="contribution-status-filter"><option value="all">Semua Warga</option><option value="paid">Sudah Iuran Bulan Ini</option><option value="unpaid">Belum Iuran Bulan Ini</option></select></label>
+                <label class="filter-select"><span class="sr-only">Filter warga</span><select id="contribution-status-filter"><option value="all">Semua Warga</option><option value="paid">Sudah Iuran Bulan Ini</option><option value="unpaid">Belum Iuran Bulan Ini</option><option value="family-deceased">KK Memiliki Anggota Wafat</option></select></label>
                 <a class="export-button" href="/api/admin/export/excel?type=contributions">Ekspor XLSX Warga Iuran</a>
                 <button id="contribution-print-button" class="action-button" type="button">Pratinjau Cetak</button>
                 <button id="delete-all-contributions" class="delete-button" type="button" hidden>Hapus Semua Data</button>
