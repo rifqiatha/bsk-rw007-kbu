@@ -810,6 +810,15 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .manage-toolbar-copy h3 { margin: 0; font-family: var(--site-font-display); font-size: calc((19px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
 .managed-count { color: var(--muted); font-family: var(--site-font-mono); font-size: calc((12px) * var(--site-font-scale, 1)); }
 .manage-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.manage-actions .primary-button { width: auto; min-width: 0; min-height: 44px; padding: 0 18px; white-space: nowrap; gap: 10px; }
+#records-manage { align-items: center; }
+#records-manage > .primary-button { width: auto; min-width: 190px; }
+.manage-list-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.manage-list-filters .search-box { flex: 1 1 260px; }
+.manage-list-filters .records-list-actions { flex: 1 0 100%; margin-left: 0; justify-content: flex-end; }
+.records-list-actions .export-button { order: 1; }
+.records-list-actions #delete-all-records { order: 2; }
+.records-list-actions #print-records-button { order: 3; }
 .export-button, .action-button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); color: var(--green); background: var(--surface); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 500; text-decoration: none; transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease), border-color var(--tp-dur) var(--tp-ease), box-shadow var(--tp-dur) var(--tp-ease), transform var(--tp-dur) var(--tp-ease); }
 .export-button:hover, .action-button:hover { border-color: var(--green); background: var(--green-soft); box-shadow: var(--shadow-soft); transform: translateY(-2px); }
 #logout-button { margin-left: 5px; color: var(--muted); }
@@ -1383,7 +1392,9 @@ dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; tr
   .admin-profile { margin-top: 14px; padding-top: 12px; border-top: var(--tp-bw) solid var(--line); }
   .admin-tab { width: 100%; min-height: 44px; white-space: normal; }
   .manage-toolbar { align-items: flex-start; flex-direction: column; gap: 12px; }
-  .manage-actions { justify-content: flex-start; }
+  .manage-actions { justify-content: flex-end; width: 100%; }
+  #records-manage .manage-actions > * { flex: 0 1 auto; }
+  .manage-list-filters .records-list-actions { margin-left: 0; }
   #logout-button { margin-left: 0; }
   .family-inline-edit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .user-form-grid { grid-template-columns: minmax(0, 1fr); }
@@ -1626,6 +1637,9 @@ body #contact-print-table { counter-reset: none; }
 .record-footer { animation-delay: calc(var(--tp-stagger) * 1.2); }
 .footer { animation-delay: calc(var(--tp-stagger) * .6); }
 
+/* TINJAUAN DATA: penanda isu dan panel peninjauan */
+.issue-tab-badge { display: inline-block; min-width: 20px; padding: 1px 6px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--rust); color: var(--paper, #fff); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 700; line-height: 1.5; text-align: center; }
+.admin-task-nav .issue-tab-badge { margin-left: 0; }
 /* TINJAUAN DATA: penanda isu dan panel peninjauan */
 .issue-tab-badge { display: inline-block; min-width: 20px; padding: 1px 6px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--rust); color: var(--paper, #fff); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 700; line-height: 1.5; text-align: center; }
 .admin-task-nav .issue-tab-badge { margin-left: 0; }

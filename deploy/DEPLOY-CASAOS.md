@@ -170,33 +170,69 @@ Untuk Caddy, tidak perlu disetel karena Caddy tidak membatasi ukuran badan.
 
 Setelah selesai, uji dengan mengimpor beberapa file sekaligus.
 
-## 5c. Kode langsung dari folder repo, tanpa build ulang
+## 5c. Pembaruan aman dari GitHub pada CasaOS (tanpa menghapus data)
 
 `deploy/docker-compose.yml` memasang `Kifayah.py`, `importers.py`, dan folder
 `web/` dari folder repo ke dalam container. Efeknya `git reset --hard` di host
 langsung berlaku begitu container direstart — **tanpa** `docker compose build`
 yang memakan 5–10 menit.
 
-Cara memperbarui sekarang cukup:
+`git fetch` **hanya mengunduh informasi commit**; ia belum mengganti file yang
+dijalankan container. Saat pembaruan manual, gunakan urutan berikut. Jalankan
+di Terminal CasaOS/SSH, bukan melalui File Manager:
 
 ```bash
 cd /DATA/AppData/nginx/config/www
+# 1. Backup database terlebih dahulu (wajib, meski aman dari Git).
+mkdir -p deploy/backups
+cp kifayah.sqlite3 "deploy/backups/kifayah-manual-$(date +%Y%m%d-%H%M%S).sqlite3"
+
+# 2. Ambil lalu terapkan commit GitHub terbaru ke folder kerja.
+git fetch origin main
 git reset --hard origin/main
-cd deploy && docker compose up -d --force-recreate
+
+# 3. Buat ulang container agar mount kode terbaru benar-benar digunakan.
+KIFAYAH_DIR="$PWD" docker compose -f deploy/docker-compose.yml up -d --force-recreate
+
+# 4. Pastikan aplikasi dan build yang berjalan sehat.
+docker compose -f deploy/docker-compose.yml ps
+curl -fsS http://127.0.0.1:8081/health
+sh deploy/check-update.sh
 ```
 
-Bila folder repo tidak di `/DATA/AppData/nginx/config/www`, set `KIFAYAH_DIR`:
+Jangan menjalankan `git clean`, jangan menghapus `kifayah.sqlite3`, folder
+`uploads/`, atau folder `.git`. Berkas tersebut berisi data warga, unggahan,
+dan riwayat Git. `git reset --hard origin/main` hanya mengganti berkas kode
+yang dilacak Git; database yang diabaikan Git tetap ada.
+
+Jika `requirements.txt` berubah, image Python perlu dibangun ulang sekali:
 
 ```bash
-cd /opt/kifayah/deploy
-KIFAYAH_DIR=/opt/kifayah docker compose up -d --force-recreate
+cd /DATA/AppData/nginx/config/www
+KIFAYAH_REBUILD=1 sh deploy/auto-update.sh
 ```
 
-Build image tetap diperlukan hanya bila `requirements.txt` berubah:
+Setelah pembaruan, buka situs dengan **Ctrl+Shift+R** atau jendela incognito.
+Cloudflare dapat menyimpan CSS/JS lama; bila masih berantakan, lakukan
+**Caching → Configuration → Purge Everything** sekali di dashboard Cloudflare.
 
-```bash
-KIFAYAH_REBUILD=1 sh /DATA/AppData/nginx/config/www/deploy/auto-update.sh
-```
+Bila folder repo tidak di `/DATA/AppData/nginx/config/www`, ganti semua path
+di atas dengan lokasi repo sebenarnya dan tetap jalankan Compose dengan
+`KIFAYAH_DIR="$PWD"`.
+
+### Pemeriksaan tunnel Cloudflare
+
+Jika `curl http://127.0.0.1:8081/health` memberi JSON `{"status":"ok"...}`
+tetapi domain publik gagal dibuka, masalahnya ada di Cloudflare Tunnel/reverse
+proxy, bukan pada Git atau database. Di Cloudflare Zero Trust, pastikan tunnel
+berstatus **Healthy** dan Public Hostname `bsk-rw007-kbu.site` meneruskan ke
+`http://127.0.0.1:8081` apabila `cloudflared` berjalan langsung di host.
+Apabila `cloudflared` berjalan sebagai container terpisah, gunakan alamat host
+yang memang dapat dijangkau container itu (bukan `127.0.0.1` milik container),
+misalnya IP LAN host dan port `8081`.
+
+Jangan ubah tujuan tunnel ke port `8000`: port itu hanya ada di dalam container
+Kifayah.
 
 Bila nanti ada modul `.py` atau folder web baru yang perlu ikut ter-mount,
 tambahkan barisnya di `volumes:` pada `deploy/docker-compose.yml` supaya tidak

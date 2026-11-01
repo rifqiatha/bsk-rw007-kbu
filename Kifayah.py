@@ -49,7 +49,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261031-47"
+APP_BUILD = "20261031-58"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -115,6 +115,9 @@ ROLE_PERMISSIONS = {
 	"Super Admin": set(PERMISSION_LABELS),
 }
 PASSWORD_ITERATIONS = 310_000
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_MAX_FAILURES = 5
+LOGIN_LOCK_SECONDS = 15 * 60
 # STRUKTUR JABATAN: urutan paling awal adalah peringkat tertinggi.
 # RW menentukan arah contas, sehingga Ketua RW berada di urutan pertama.
 DEFAULT_POSITION_TITLES = (
@@ -142,6 +145,15 @@ def verify_password(password, salt_hex, digest_hex):
 		return False
 	actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS).hex()
 	return hmac.compare_digest(actual, digest_hex)
+
+
+def validate_password_strength(password):
+	"""Terapkan kata sandi panjang dan beragam untuk seluruh akun."""
+	if not isinstance(password, str) or len(password) < 12 or len(password) > 256:
+		raise ValueError("Kata sandi minimal 12 karakter.")
+	classes = sum((any(char.islower() for char in password), any(char.isupper() for char in password), any(char.isdigit() for char in password), any(not char.isalnum() for char in password)))
+	if classes < 3:
+		raise ValueError("Kata sandi gunakan sedikitnya 3 jenis: huruf kecil, huruf besar, angka, atau simbol.")
 SCHEMA_LOCK = threading.Lock()
 SCHEMA_DATABASE = None
 
@@ -301,18 +313,14 @@ def _initialize_database(connection):
 		if name not in contribution_columns:
 			connection.execute(f"ALTER TABLE contribution_residents ADD COLUMN {name} {definition}")
 	# NIK dipakai untuk menyambungkan data warga lama dengan arsip publik wafat.
-	# Status wafat kini juga disimpan pada baris warga iuran agar satu orang tetap
-	# memiliki satu status operasional, sementara tabel records tetap menjaga
-	# detail arsip publik (foto, alamat publikasi, dan keluarga).
-
+	# Status wafat juga disimpan pada baris warga iuran agar satu orang tetap
+	# memiliki satu status operasional, sementara records menjaga arsip publik.
 	connection.execute(
 		"CREATE INDEX IF NOT EXISTS idx_contribution_residents_nik ON contribution_residents(national_id_number)"
 	)
 	connection.execute(
 		"CREATE INDEX IF NOT EXISTS idx_records_nik ON records(national_id_number)"
 	)
-	# Migrasi satu kali/berulang yang aman: status wafat lama disalin ke data
-	# warga iuran berdasarkan NIK. Tidak menghapus arsip publik atau transaksi.
 	connection.execute(
 		"UPDATE contribution_residents SET status_warga = 'Wafat', date_of_death = ("
 		"SELECT MAX(NULLIF(records.date_of_death, '')) FROM records "
@@ -323,8 +331,6 @@ def _initialize_database(connection):
 		"SELECT 1 FROM records WHERE records.national_id_number = contribution_residents.national_id_number "
 		"AND TRIM(COALESCE(records.date_of_death, '')) <> '')"
 	)
-	# Jaga sinkronisasi bagi arsip wafat baru/yang diedit, dan untuk warga yang
-	# baru dimasukkan setelah arsipnya sudah ada. Tidak membuat tabel wafat baru.
 	connection.execute(
 		"""CREATE TRIGGER IF NOT EXISTS sync_record_death_to_resident_insert
 		AFTER INSERT ON records
@@ -458,6 +464,8 @@ def _initialize_database(connection):
 	for name, definition in {
 		"source": "TEXT NOT NULL DEFAULT ''",
 		"source_period": "TEXT NOT NULL DEFAULT ''",
+		"rt": "TEXT NOT NULL DEFAULT ''",
+		"rw": "TEXT NOT NULL DEFAULT ''",
 	}.items():
 		if name not in finance_columns:
 			connection.execute(f"ALTER TABLE finance_entries ADD COLUMN {name} {definition}")
@@ -1679,6 +1687,7 @@ class KifayahServer(ThreadingHTTPServer):
 	def __init__(self, server_address, handler_class, admin_password=None):
 		super().__init__(server_address, handler_class)
 		self.sessions = {}
+		self.login_attempts = {}
 		self.session_lock = threading.Lock()
 
 
@@ -1686,7 +1695,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 	server_version = "Kifayah/1.0"
 
 	def log_message(self, format_string, *args):
-		sys.stderr.write("%s - %s\n" % (self.address_string(), format_string % args))
+		# Query string dapat berisi kata pencarian NIK/KK. Jangan pernah
+		# menyalinnya ke log akses yang mungkin dibaca pihak lain.
+		message = format_string % args
+		message = re.sub(r"\?[^ ]*(?= HTTP/|$)", "?[redacted]", message)
+		sys.stderr.write("%s - %s\n" % (self.address_string(), message))
 
 	# Tipe yang layak dikompresi: teks yang jauh lebih besar dari versi gzip-nya.
 	# Aset gambar, video, dan PDF sudah dikompresi, jadi dilewati agar CPU tidak
@@ -1720,6 +1733,15 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		if cache_control:
 			self.send_header("Cache-Control", cache_control)
 		self.send_header("X-Content-Type-Options", "nosniff")
+		self.send_header("X-Frame-Options", "DENY")
+		self.send_header("Referrer-Policy", "no-referrer")
+		self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		self.send_header(
+			"Content-Security-Policy",
+			"default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; "
+			"img-src 'self' data:; media-src 'self'; object-src 'none'; script-src 'self'; "
+			"style-src 'self' 'unsafe-inline'",
+		)
 		for name, value in (extra_headers or {}).items():
 			self.send_header(name, value)
 		self.end_headers()
@@ -2889,6 +2911,43 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		except (KeyError, AttributeError):
 			return ""
 
+	def client_ip(self):
+		"""Gunakan IP proxy hanya bila koneksi datang dari proxy lokal."""
+		peer_ip = self.client_address[0]
+		if peer_ip in ("127.0.0.1", "::1"):
+			forwarded = self.headers.get("X-Real-IP", "").strip()
+			if forwarded and len(forwarded) <= 64:
+				return forwarded
+		return peer_ip
+
+	def login_is_locked(self):
+		key = self.client_ip()
+		now = time.time()
+		with self.server.session_lock:
+			entry = self.server.login_attempts.get(key)
+			if not entry:
+				return False
+			entry["failures"] = [stamp for stamp in entry["failures"] if now - stamp < LOGIN_WINDOW_SECONDS]
+			if entry.get("locked_until", 0) > now:
+				return True
+			if not entry["failures"]:
+				self.server.login_attempts.pop(key, None)
+			return False
+
+	def record_login_failure(self):
+		key = self.client_ip()
+		now = time.time()
+		with self.server.session_lock:
+			entry = self.server.login_attempts.setdefault(key, {"failures": [], "locked_until": 0})
+			entry["failures"] = [stamp for stamp in entry["failures"] if now - stamp < LOGIN_WINDOW_SECONDS]
+			entry["failures"].append(now)
+			if len(entry["failures"]) >= LOGIN_MAX_FAILURES:
+				entry["locked_until"] = now + LOGIN_LOCK_SECONDS
+
+	def clear_login_failures(self):
+		with self.server.session_lock:
+			self.server.login_attempts.pop(self.client_ip(), None)
+
 	# AUTHENTICATION: resolve session identity and enforce role thresholds.
 	def current_user(self):
 		token = self.session_token()
@@ -3023,21 +3082,13 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		if path == "/api/records":
 			with connect_database() as connection:
 				rows = connection.execute(
-					"SELECT id, full_name, gender, area, date_of_death, address, publish_address, portrait_file, publish_portrait "
+					# Endpoint publik sengaja hanya membawa identitas minimum.
+					# NIK, KK, alamat, gender, tanggal wafat, dan foto tidak pernah
+					# dikirim ke browser publik, termasuk bila dicoba lewat API langsung.
+					"SELECT id, full_name, area "
 					"FROM records ORDER BY date_of_death DESC, full_name COLLATE NOCASE"
 				).fetchall()
-			records = []
-			for row in rows:
-				record = dict(row)
-				if record.pop("publish_portrait") and record["portrait_file"]:
-					record["portrait_url"] = f"/media/portrait/{record['id']}"
-				record.pop("portrait_file", None)
-				if not record.pop("publish_address"):
-					record.pop("address")
-				else:
-					record.pop("publish_address", None)
-				records.append(record)
-			self.send_json(200, {"records": records, "admin": False})
+			self.send_json(200, {"records": [dict(row) for row in rows], "admin": False})
 			return
 		if path == "/api/contacts":
 			with connect_database() as connection:
@@ -3089,7 +3140,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			if not self.require_resident():
 				return
 			with connect_database() as connection:
-				rows = connection.execute("SELECT id, entry_date, title, description, income, expense FROM finance_entries ORDER BY entry_date DESC, id DESC").fetchall()
+				rows = connection.execute("SELECT id, entry_date, title, description, income, expense, rt, rw FROM finance_entries ORDER BY entry_date DESC, id DESC").fetchall()
 			self.send_json(200, {"entries": [dict(row) for row in rows]})
 			return
 		if path == "/api/admin/finance":
@@ -3097,7 +3148,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				return
 			with connect_database() as connection:
 				rows = connection.execute(
-					"SELECT id, entry_date, title, description, income, expense, source, source_period "
+					"SELECT id, entry_date, title, description, income, expense, source, source_period, rt, rw "
 					"FROM finance_entries ORDER BY entry_date DESC, id DESC"
 				).fetchall()
 			self.send_json(200, {"entries": [dict(row) for row in rows]})
@@ -3189,13 +3240,14 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"SELECT id, display_name FROM admin_users WHERE role = 'Warga'"
 				)
 				residents = connection.execute(
-					# Warga iuran disambung ke data warga wafat lewat NIK. Hanya
-					# catatan wafat yang tanggalnya sudah diisi yang dianggap
-					# meninggal; tabel records ikut memuat warga yang masih hidup
-					# dan tanggalnya belum dilengkapi.
+					# Status pribadi dicocokkan melalui NIK. Selain itu, status
+					# keluarga dihitung dari nomor KK: satu anggota wafat harus
+					# terlihat oleh seluruh anggota KK, tanpa membuat daftar warga
+					# wafat kedua di panel iuran.
 					"SELECT r.*, COALESCE(NULLIF(r.full_name, ''), u.display_name) AS display_name, "
-					"COALESCE(NULLIF(r.date_of_death, ''), wafat.date_of_death) AS deceased_date, "
-					"wafat.record_id AS deceased_record_id "
+					"COALESCE(NULLIF(r.date_of_death, ''), wafat.date_of_death) AS deceased_date, wafat.record_id AS deceased_record_id, "
+					"COALESCE(keluarga_wafat.deceased_count, 0) AS family_deceased_count, "
+					"COALESCE(keluarga_wafat.deceased_names, '') AS family_deceased_names "
 					"FROM contribution_residents r "
 					"LEFT JOIN admin_users u ON u.id = r.account_id "
 					"LEFT JOIN ("
@@ -3205,6 +3257,14 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"    AND TRIM(COALESCE(date_of_death, '')) <> '' "
 					"  GROUP BY national_id_number"
 					") wafat ON wafat.national_id_number = r.national_id_number "
+					"LEFT JOIN ("
+					"  SELECT family_card_number, COUNT(*) AS deceased_count, "
+					"         GROUP_CONCAT(full_name, ', ') AS deceased_names "
+					"  FROM records "
+					"  WHERE TRIM(COALESCE(family_card_number, '')) <> '' "
+					"    AND TRIM(COALESCE(date_of_death, '')) <> '' "
+					"  GROUP BY family_card_number"
+					") keluarga_wafat ON keluarga_wafat.family_card_number = r.family_card_number "
 					"WHERE r.active = 1 ORDER BY display_name COLLATE NOCASE"
 				).fetchall()
 				all_payments = connection.execute(
@@ -3248,6 +3308,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"status_warga": "Wafat" if ((row["status_warga"] == "Wafat") or row["deceased_date"]) else "Aktif",
 					"date_of_death": row["deceased_date"] or "",
 					"deceased_record_id": row["deceased_record_id"],
+					"family_deceased_count": row["family_deceased_count"],
+					"family_deceased_names": row["family_deceased_names"],
 					"photo_url": f"/media/contribution-resident/{row['id']}" if row["photo_file"] else "",
 					"payment_count": len(verified), "paid_months": len({item["period"] for item in verified}),
 					"total_paid": sum(item["amount"] for item in verified),
@@ -3512,6 +3574,72 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			parsed = urlparse(self.path)
 			query = parse_qs(parsed.query)
 			export_type = query.get("type", ["contributions"])[0]
+			if export_type == "finance":
+				if "finance" not in self.current_admin["permissions"]:
+					self.send_json(403, {"error": "Akun Anda tidak memiliki izin ekspor Data Keuangan."})
+					return
+				from openpyxl import Workbook
+				from openpyxl.drawing.image import Image as SpreadsheetImage
+				from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+				from PIL import Image as PILImage
+				with connect_database() as connection:
+					rows = connection.execute(
+						"SELECT entry_date, title, description, income, expense, rt, rw FROM finance_entries ORDER BY entry_date DESC, id DESC"
+					).fetchall()
+					settings = get_settings(connection)
+				workbook = Workbook()
+				sheet = workbook.active
+				sheet.title = "Data Keuangan"
+				sheet.merge_cells("B1:E1")
+				sheet["B1"] = "DATA KEUANGAN"
+				sheet.merge_cells("B2:E2")
+				sheet["B2"] = "RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA"
+				sheet.merge_cells("B3:E3")
+				sheet["B3"] = "KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT"
+				for cell in (sheet["B1"], sheet["B2"], sheet["B3"]):
+					cell.font = Font(bold=True, size=13 if cell.coordinate == "B1" else 10)
+					cell.alignment = Alignment(horizontal="center", vertical="center")
+				for column, width in {"A": 7, "B": 34, "C": 18, "D": 16, "E": 18, "F": 48}.items():
+					sheet.column_dimensions[column].width = width
+				for key, anchor in (("export_logo_1", "A1"), ("export_logo_2", "F1")):
+					filename = settings.get(key, "")
+					logo_path = UPLOAD_DIR / filename
+					if not filename or Path(filename).name != filename or not logo_path.is_file():
+						continue
+					try:
+						with PILImage.open(logo_path) as image:
+							image.thumbnail((95, 62))
+							buffer = io.BytesIO()
+							image.convert("RGBA").save(buffer, format="PNG")
+						buffer.seek(0)
+						sheet.add_image(SpreadsheetImage(buffer), anchor)
+					except (OSError, ValueError):
+						pass
+				sheet.row_dimensions[1].height = 27
+				for column, label in enumerate(["NO", "NAMA TRANSAKSI", "RT & RW", "TANGGAL", "NOMINAL", "CATATAN"], start=1):
+					cell = sheet.cell(row=5, column=column, value=label)
+					cell.font = Font(bold=True, color="FFFFFF")
+					cell.fill = PatternFill("solid", fgColor="174D3C")
+					cell.alignment = Alignment(horizontal="center")
+				thin = Side(style="thin", color="9AA8A1")
+				for index, row in enumerate(rows, start=1):
+					amount = row["income"] if row["income"] else -row["expense"]
+					area = " / ".join(filter(None, [f"RT {int(row['rt']):03d}" if str(row['rt']).isdigit() else "", f"RW {int(row['rw']):03d}" if str(row['rw']).isdigit() else ""])) or "-"
+					sheet.append([index, row["title"], area, row["entry_date"], amount, row["description"]])
+					for cell in sheet[sheet.max_row]:
+						cell.border = Border(bottom=thin)
+					sheet.cell(sheet.max_row, 5).number_format = '[$Rp-421] #,##0;[Red]-[$Rp-421] #,##0'
+				stream = io.BytesIO()
+				workbook.save(stream)
+				body = stream.getvalue()
+				self.send_response(200)
+				self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				self.send_header("Content-Disposition", 'attachment; filename="data-keuangan.xlsx"')
+				self.send_header("Content-Length", str(len(body)))
+				self.send_header("Cache-Control", "no-store")
+				self.end_headers()
+				self.wfile.write(body)
+				return
 			if export_type == "contacts":
 				from openpyxl import Workbook
 				from openpyxl.styles import Font, PatternFill
@@ -3550,18 +3678,64 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				return
 			if export_type == "records":
 				from openpyxl import Workbook
-				from openpyxl.styles import Font, PatternFill
+				from openpyxl.drawing.image import Image as SpreadsheetImage
+				from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+				from PIL import Image as PILImage
 				workbook = Workbook()
 				sheet = workbook.active
 				sheet.title = "Data Warga Wafat"
-				sheet.append(["NO", "Nama", "Alamat", "Area", "Tanggal Wafat"])
 				with connect_database() as connection:
 					rows = connection.execute("SELECT full_name, address, area, date_of_death FROM records ORDER BY created_at DESC").fetchall()
-				for idx, row in enumerate(rows, start=1):
-					sheet.append([idx, row["full_name"], row["address"], row["area"], row["date_of_death"]])
-				for cell in sheet[1]:
+					settings = get_settings(connection)
+				# Kop ekspor mengikuti Data Warga: logo DKI di kiri dan BSK di kanan.
+				for row_number, text, size in (
+					(1, "DATA WARGA WAFAT", 13),
+					(2, "RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA", 10),
+					(3, "KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT", 10),
+				):
+					sheet.merge_cells(start_row=row_number, start_column=2, end_row=row_number, end_column=4)
+					cell = sheet.cell(row=row_number, column=2, value=text)
+					cell.font = Font(bold=True, size=size)
+					cell.alignment = Alignment(horizontal="center", vertical="center")
+				for column, width in {"A": 7, "B": 34, "C": 45, "D": 22, "E": 18}.items():
+					sheet.column_dimensions[column].width = width
+				for key, anchor in (("export_logo_1", "A1"), ("export_logo_2", "E1")):
+					filename = str(settings.get(key, "") or "")
+					logo_path = UPLOAD_DIR / filename
+					if not filename or Path(filename).name != filename or not logo_path.is_file():
+						continue
+					try:
+						with PILImage.open(logo_path) as image:
+							image.thumbnail((95, 62))
+							buffer = io.BytesIO()
+							image.convert("RGBA").save(buffer, format="PNG")
+						buffer.seek(0)
+						sheet.add_image(SpreadsheetImage(buffer), anchor)
+					except (OSError, ValueError):
+						pass
+				sheet.row_dimensions[1].height = 27
+				sheet.row_dimensions[2].height = 20
+				sheet.row_dimensions[3].height = 20
+				sheet.row_dimensions[4].height = 9
+				headers = ["NO", "NAMA", "ALAMAT", "RT & RW", "TANGGAL WAFAT"]
+				for column, label in enumerate(headers, start=1):
+					cell = sheet.cell(row=5, column=column, value=label)
 					cell.font = Font(bold=True, color="FFFFFF")
 					cell.fill = PatternFill("solid", fgColor="174D3C")
+					cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+				thin = Side(style="thin", color="B7C4BE")
+				for idx, row in enumerate(rows, start=1):
+					date_of_death = row["date_of_death"]
+					try:
+						date_of_death = datetime.strptime(date_of_death, "%Y-%m-%d").strftime("%d/%m/%Y")
+					except (ValueError, TypeError):
+						pass
+					sheet.append([idx, row["full_name"], row["address"], row["area"], date_of_death])
+					for cell in sheet[sheet.max_row]:
+						cell.border = Border(bottom=thin)
+						cell.alignment = Alignment(vertical="top", wrap_text=cell.column in (2, 3))
+				sheet.freeze_panes = "A6"
+				sheet.auto_filter.ref = f"A5:E{max(5, sheet.max_row)}"
 				stream = io.BytesIO()
 				workbook.save(stream)
 				body = stream.getvalue()
@@ -3758,6 +3932,52 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					return datetime.strptime(str(value), "%Y-%m-%d").strftime("%d/%m/%Y")
 				except (ValueError, TypeError):
 					return str(value or "-")
+			if export_type == "finance":
+				if "finance" not in self.current_admin["permissions"]:
+					self.send_json(403, {"error": "Akun Anda tidak memiliki izin ekspor Data Keuangan."})
+					return
+				with connect_database() as connection:
+					site = get_settings(connection)
+					finance_rows = connection.execute(
+						"SELECT entry_date, title, description, income, expense, rt, rw FROM finance_entries ORDER BY entry_date DESC, id DESC"
+					).fetchall()
+				doc = pymupdf.open()
+				page = doc.new_page(width=842, height=595)
+				bold = pymupdf.Font("hebo")
+				regular = pymupdf.Font("helv")
+				# Kop memakai dua logo ekspor yang sama seperti Data Warga.
+				for key, rect in (("export_logo_1", pymupdf.Rect(52, 20, 98, 66)), ("export_logo_2", pymupdf.Rect(744, 20, 790, 66))):
+					filename = str(site.get(key, "") or "")
+					logo_path = UPLOAD_DIR / filename
+					if filename and Path(filename).name == filename and logo_path.is_file():
+						try: page.insert_image(rect, filename=str(logo_path), keep_proportion=True)
+						except Exception: pass
+				for text, y, size in (("DATA KEUANGAN", 30, 14), ("RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA", 46, 10), ("KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT", 61, 10)):
+					width = bold.text_length(text, fontsize=size)
+					page.insert_text(((842 - width) / 2, y), text, fontsize=size, fontname="hebo")
+				columns = [(36, 34, "NO"), (70, 180, "NAMA TRANSAKSI"), (250, 96, "RT & RW"), (346, 82, "TANGGAL"), (428, 110, "NOMINAL"), (538, 268, "CATATAN")]
+				def header(y):
+					for x, width, label in columns:
+						page.draw_rect(pymupdf.Rect(x, y, x + width, y + 18), color=(.5,.5,.5), fill=(.9,.9,.9), width=.4)
+						page.insert_text((x + 3, y + 12), label, fontsize=6.8, fontname="hebo")
+				y = 82; header(y); y += 18
+				for number, row in enumerate(finance_rows, start=1):
+					if y > 558:
+						page.insert_text((390, 580), f"Halaman {len(doc)}", fontsize=8, fontname="helv")
+						page = doc.new_page(width=842, height=595); y = 28; header(y); y += 18
+					area = " / ".join(filter(None, [f"RT {int(row['rt']):03d}" if str(row['rt']).isdigit() else "", f"RW {int(row['rw']):03d}" if str(row['rw']).isdigit() else ""])) or "-"
+					amount = row["income"] if row["income"] else -row["expense"]
+					values = [str(number), str(row["title"] or "-"), area, date_label(row["entry_date"]), f"Rp{amount:,.0f}".replace(",", "."), str(row["description"] or "-")]
+					for (x, width, _), value in zip(columns, values):
+						page.draw_rect(pymupdf.Rect(x, y, x + width, y + 17), color=(.75,.75,.75), width=.3)
+						text = value
+						while text and regular.text_length(text + "...", fontsize=7) > width - 6: text = text[:-1]
+						page.insert_text((x + 3, y + 11), text if text == value else text + "...", fontsize=7, fontname="helv")
+					y += 17
+				page.insert_text((390, 580), f"Halaman {len(doc)}", fontsize=8, fontname="helv")
+				body = doc.tobytes(garbage=4, deflate=True); doc.close()
+				self.send_bytes(body, "application/pdf", "no-store", 200, {"Content-Disposition": 'attachment; filename="data-keuangan.pdf"'})
+				return
 			with connect_database() as connection:
 				site = get_settings(connection)
 				if export_type == "contacts":
@@ -4233,6 +4453,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				"icon_zoom_2": settings["icon_zoom_2"],
 				"hero_background_scale": settings["hero_background_scale"],
 				"hero_image_position": settings["hero_image_position"],
+				"site_icon": settings.get("site_icon", ""),
+				"site_icon_2": settings.get("site_icon_2", ""),
 				"site_icon_ready": bool(settings.get("site_icon")),
 				"site_icon_2_ready": bool(settings.get("site_icon_2")),
 				"theme_logo_ready": {
@@ -4390,10 +4612,9 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"SELECT portrait_file, publish_portrait FROM records WHERE id = ?", (record_id,)
 				).fetchone()
 			viewer = self.current_user()
-			if not record or (
-				not record["publish_portrait"]
-				and (not viewer or viewer.get("role_level", ROLE_LEVELS["Admin"]) < ROLE_LEVELS["Admin"])
-			):
+			# Foto warga tidak lagi menjadi aset publik. URL yang ditebak tetap
+			# ditolak; hanya pengelola Admin/Super Admin yang dapat membukanya.
+			if not record or not viewer or viewer.get("role_level", ROLE_LEVELS["Admin"]) < ROLE_LEVELS["Admin"]:
 				self.send_error(404)
 				return
 			return self.send_stored_image(record["portrait_file"])
@@ -4740,6 +4961,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				description = payload.get("description", "")
 				entry_type = payload.get("entry_type", "")
 				amount = payload.get("amount")
+				rt = str(payload.get("rt", "")).strip()
+				rw = str(payload.get("rw", "")).strip()
 				if not isinstance(entry_date, str):
 					raise ValueError("Tanggal transaksi tidak valid.")
 				date.fromisoformat(entry_date)
@@ -4749,11 +4972,13 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Catatan transaksi maksimal 1.000 karakter.")
 				if entry_type not in ("income", "expense") or type(amount) is not int or not 1 <= amount <= 1_000_000_000_000:
 					raise ValueError("Jenis dan nominal transaksi tidak valid.")
+				if (rt and not rt.isdigit()) or (rw and not rw.isdigit()):
+					raise ValueError("RT dan RW harus berupa angka.")
 				income, expense = (amount, 0) if entry_type == "income" else (0, amount)
 				with connect_database() as connection:
 					cursor = connection.execute(
-						"INSERT INTO finance_entries (entry_date, title, description, income, expense) VALUES (?, ?, ?, ?, ?)",
-						(entry_date, title.strip(), description.strip(), income, expense),
+						"INSERT INTO finance_entries (entry_date, title, description, income, expense, rt, rw) VALUES (?, ?, ?, ?, ?, ?, ?)",
+						(entry_date, title.strip(), description.strip(), income, expense, rt, rw),
 					)
 			except (ValueError, TypeError, sqlite3.Error) as error:
 				self.send_json(400, {"error": str(error) or "Transaksi tidak dapat disimpan."})
@@ -4858,6 +5083,9 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			})
 			return
 		if path == "/api/login":
+			if self.login_is_locked():
+				self.send_json(429, {"error": "Terlalu banyak percobaan masuk. Tunggu 15 menit lalu coba kembali."})
+				return
 			try:
 				payload = self.read_json()
 				username = payload.get("username", "")
@@ -4874,11 +5102,14 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				self.send_json(400, {"error": str(error)})
 				return
 			if not user or not verify_password(password, user["password_salt"], user["password_hash"]):
+				self.record_login_failure()
 				self.send_json(401, {"error": "Nama akun atau kata sandi tidak sesuai."})
 				return
+			self.clear_login_failures()
 			token = secrets.token_urlsafe(32)
 			with self.server.session_lock:
-				self.server.sessions[token] = {"user_id": user["id"], "expires_at": time.time() + 12 * 60 * 60}
+				self.server.sessions[token] = {"user_id": user["id"], "expires_at": time.time() + 8 * 60 * 60}
+			secure_cookie = "; Secure" if self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
 			self.send_json(
 				200,
 				{
@@ -4887,7 +5118,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"force_password_change": bool(user["force_password_change"]),
 				"build": APP_BUILD,
 				},
-				{"Set-Cookie": f"kifayah_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200"},
+				{"Set-Cookie": f"kifayah_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800{secure_cookie}"},
 			)
 			return
 		if path == "/api/resident/registrations":
@@ -4943,6 +5174,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Kata sandi tidak valid.")
 				if not new_password:
 					raise ValueError("Kata sandi baru wajib diisi.")
+				validate_password_strength(new_password)
 				with connect_database() as connection:
 					stored = connection.execute(
 						"SELECT password_salt, password_hash FROM admin_users WHERE id = ? AND active = 1",
@@ -5006,7 +5238,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Level atau nama divisi harus 2-60 karakter.")
 				role = role.strip()
 				permissions = sorted({item for item in permissions if item in PERMISSION_LABELS})
-				password = "user"
+				validate_password_strength(password)
 				salt, password_hash = hash_password(password)
 				with connect_database() as connection:
 					cursor = connection.execute(
@@ -5172,6 +5404,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Gunakan Ganti Kata Sandi untuk mengubah sandi akun sendiri.")
 				if not new_password:
 					raise ValueError("Kata sandi baru wajib diisi.")
+				validate_password_strength(new_password)
 				salt, password_hash = hash_password(new_password)
 				with connect_database() as connection:
 					cursor = connection.execute(
@@ -6090,8 +6323,10 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				rt = payload.get("rt")
 				rw = payload.get("rw")
 				date_of_death = payload.get("date_of_death", "")
+				family_card_number = payload.get("family_card_number", "")
+				national_id_number = payload.get("national_id_number", "")
 				publish_address = payload.get("publish_address", False)
-				if not all(isinstance(item, str) for item in (name, gender, address, date_of_death)):
+				if not all(isinstance(item, str) for item in (name, gender, address, date_of_death, family_card_number, national_id_number)):
 					raise ValueError("Periksa kembali data yang diisi.")
 				gender = gender.strip().upper()
 				if gender not in ("P", "L"):
@@ -6104,23 +6339,43 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Staff tidak dapat mempublikasikan alamat warga.")
 				name = name.strip().upper()
 				address = address.strip()
+				family_card_number = family_card_number.strip()
+				national_id_number = national_id_number.strip()
 				if not name or not address or len(name) > 120 or len(address) > 300:
 					raise ValueError("Nama dan alamat wajib diisi sesuai batas yang tersedia.")
+				if len(family_card_number) > 32 or len(national_id_number) > 32:
+					raise ValueError("Nomor KK dan NIK maksimal 32 karakter.")
 				parse_iso_date(date_of_death, "Tanggal wafat")
 				with connect_database() as connection:
 					settings = get_settings(connection)
 					if not 1 <= rt <= settings["rt_count"] or not 1 <= rw <= settings["rw_count"]:
 						raise ValueError("Pilihan RT atau RW sudah tidak tersedia. Muat ulang formulir.")
 					area = f"RT {rt:03d} / RW {rw:03d}"
-					cursor = connection.execute(
-						"INSERT INTO records (full_name, gender, address, area, date_of_death, publish_address, "
-						"updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)",
-						(name, gender, address, area, date_of_death, int(publish_address), self.editor_label()),
-					)
+					existing = None
+					if national_id_number:
+						existing = connection.execute(
+							"SELECT id FROM records WHERE national_id_number = ? ORDER BY id DESC LIMIT 1",
+							(national_id_number,),
+						).fetchone()
+					if existing:
+						connection.execute(
+							"UPDATE records SET full_name = ?, gender = ?, address = ?, area = ?, date_of_death = ?, "
+							"publish_address = ?, family_card_number = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE id = ?",
+							(name, gender, address, area, date_of_death, int(publish_address), family_card_number, self.editor_label(), existing["id"]),
+						)
+						record_id = existing["id"]
+					else:
+						cursor = connection.execute(
+							"INSERT INTO records (full_name, gender, address, area, date_of_death, publish_address, "
+							"family_card_number, national_id_number, updated_at, updated_by) "
+							"VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)",
+							(name, gender, address, area, date_of_death, int(publish_address), family_card_number, national_id_number, self.editor_label()),
+						)
+						record_id = cursor.lastrowid
 			except (ValueError, TypeError) as error:
 				self.send_json(400, {"error": str(error) or "Periksa kembali tanggal."})
 				return
-			self.send_json(201, {"id": cursor.lastrowid})
+			self.send_json(201, {"id": record_id})
 			return
 		self.send_json(404, {"error": "Rute tidak ditemukan."})
 

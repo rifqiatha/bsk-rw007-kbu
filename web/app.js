@@ -1870,9 +1870,18 @@ function updateSiteIconControls() {
   const exists = siteIconAvailability[slot];
   const status = document.querySelector("#site-icon-status");
   const remove = document.querySelector("#delete-site-icon-button");
+  const preview = document.querySelector("#site-icon-preview");
+  const previewImg = document.querySelector("#site-icon-preview-img");
   status.textContent = exists ? `Logo ${slot} tersimpan.` : `Logo ${slot} belum dipasang.`;
   remove.hidden = !exists;
   remove.textContent = `Hapus Logo ${slot}`;
+  if (exists) {
+    const url = slot === 1 ? "/media/site-icon" : "/media/site-icon/2";
+    if (previewImg.getAttribute("src") !== url) previewImg.src = url;
+    preview.hidden = false;
+  } else {
+    preview.hidden = true;
+  }
 }
 function updateThemeLogoControls() {
   const form = document.querySelector("#theme-logo-form");
@@ -2749,7 +2758,8 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   document.querySelector('[data-admin-group="contacts"]').hidden = !permissions.has("contacts") && !permissions.has("area");
   document.querySelector('[data-admin-group="media"]').hidden = !permissions.has("media") && !permissions.has("typography") && !permissions.has("maintenance") && !permissions.has("program");
   const canManagePortraits = permissions.has("family") && role !== "Staff";
-  document.querySelector("#family-task-panel").hidden = !canManagePortraits;
+  // Semua identitas privat memakai satu form Edit; panel lama tidak dirender.
+  document.querySelector("#family-task-panel").hidden = true;
   const editPortraitField = document.querySelector("#edit-record-portrait-field");
   editPortraitField.hidden = !canManagePortraits;
   editPortraitField.disabled = !canManagePortraits;
@@ -3141,11 +3151,6 @@ function matchesContributionStatus(resident, status) {
     case "female": return gender === "P" || gender.startsWith("PEREMPUAN") || gender === "WANITA";
     case "male": return gender === "L" || gender.startsWith("LAKI") || gender === "PRIA";
     case "head": return relationship.includes("KEPALA");
-    case "family-deceased": return Boolean(resident.family_card_number && contributionResidents.some((member) =>
-      member.id !== resident.id &&
-      String(member.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") &&
-      member.deceased
-    )) || Boolean(resident.deceased);
     default: return true;
   }
 }
@@ -3187,11 +3192,10 @@ function renderContributionResidents() {
 
   const visible = contributionResidents.filter((resident) => {
     // "meninggal" ikut dicari supaya warga yang sudah wafat mudah ditemukan.
-    const searchTerms = [resident.full_name, resident.national_id_number, resident.address, resident.family_card_number, resident.rt, resident.rw, ...residentRtRwVariants(resident.rt, resident.rw)];
-    if (resident.deceased) searchTerms.push("meninggal", "wafat", resident.date_of_death || "");
-    if (resident.family_card_number && contributionResidents.some((member) =>
-      String(member.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") && member.deceased
-    )) searchTerms.push("keluarga wafat", "kk memiliki anggota wafat", "anggota keluarga meninggal");
+    const searchTerms = [resident.full_name, resident.national_id_number, resident.address, resident.rt, resident.rw, ...residentRtRwVariants(resident.rt, resident.rw)];
+    if (resident.deceased || resident.family_deceased_count) {
+      searchTerms.push("meninggal", "wafat", resident.date_of_death || "", resident.family_deceased_names || "");
+    }
     const matchesQuery = !query || searchTerms
       .some((value) => String(value || "").toLocaleLowerCase("id-ID").includes(query));
     const matchesStatus = matchesContributionStatus(resident, filter);
@@ -3220,7 +3224,7 @@ function renderContributionResidents() {
           <tbody>
             ${contributionResidents.map(r => `
               <tr>
-                <td style="padding: 4px; border: var(--tp-bw) solid var(--line);"><strong>${r.full_name}</strong>${r.deceased ? ' <span class="contribution-deceased-badge" style="margin-left:4px">Meninggal</span>' : ""}</td>
+                <td style="padding: 4px; border: var(--tp-bw) solid var(--line);"><strong>${r.full_name}</strong>${r.deceased ? ' <span class="contribution-deceased-badge" style="margin-left:4px">Meninggal</span>' : (r.family_deceased_count ? ` <span class="contribution-deceased-badge" style="margin-left:4px">Keluarga: ${r.family_deceased_count} wafat</span>` : "")}</td>
                 <td style="padding: 4px; border: var(--tp-bw) solid var(--line);"><span class="contribution-relationship-badge${(r.relationship||'').toUpperCase().includes('KEPALA') ? ' is-head' : ''}">${r.relationship||'-'}</span></td>
                 <td style="padding: 4px; border: var(--tp-bw) solid var(--line);">${r.phone||'-'}</td>
                 <td style="padding: 4px; border: var(--tp-bw) solid var(--line);">${r.rt||'-'} / ${r.rw||'-'}</td>
@@ -3277,19 +3281,10 @@ function renderContributionResidents() {
     // Warga yang tanggal wafatnya sudah diisi di Daftar Warga Wafat ditandai di
     // sini. Datanya tetap dihitung seperti biasa, hanya diberi tanda.
     const deceasedBadge = resident.deceased
-      ? `<span class="contribution-deceased-badge" title="Status warga ini tercatat wafat">${resident.date_of_death ? `Wafat · ${formatDate(resident.date_of_death)}` : "Wafat"}</span>`
+      ? `<span class="contribution-deceased-badge" title="Warga ini tercatat meninggal di Daftar Warga Wafat">Meninggal${resident.date_of_death ? ` · ${formatDate(resident.date_of_death)}` : ""}</span>`
       : "";
-    const familyHasDeceased = Boolean(resident.family_card_number) && (
-      contributionResidents.some((member) =>
-        String(member.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") && member.deceased
-      ) ||
-      records.some((record) =>
-        String(record.family_card_number || "").replace(/\s/g, "") === String(resident.family_card_number || "").replace(/\s/g, "") &&
-        Boolean(record.date_of_death)
-      )
-    );
-    const familyDeceasedBadge = familyHasDeceased
-      ? `<span class="contribution-deceased-badge" title="Nomor KK ini memiliki setidaknya satu anggota keluarga yang wafat">KK: Ada anggota wafat</span>`
+    const familyDeceasedBadge = !resident.deceased && resident.family_deceased_count
+      ? `<span class="contribution-deceased-badge" title="${resident.family_deceased_names || "Salah satu anggota keluarga"} tercatat wafat">Keluarga: ${resident.family_deceased_count} anggota wafat</span>`
       : "";
     const areaText = `${resident.rt ? `RT ${String(resident.rt).padStart(3, "0")}` : "RT belum diatur"} / ${resident.rw ? `RW ${String(resident.rw).padStart(3, "0")}` : "RW belum diatur"}`;
     identity.innerHTML = `${name.outerHTML}${relationshipBadge}${deceasedBadge}${familyDeceasedBadge}<p class="contribution-resident-area">${areaText}</p><span class="contribution-status ${resident.paid_this_month ? "is-paid" : "is-unpaid"}">${resident.paid_this_month ? "Iuran bulan ini tercatat" : "Belum ada iuran bulan ini"}</span>`;
@@ -3374,11 +3369,56 @@ async function loadContributionResidents() {
       contributionResidentsSignature = signature;
       renderContributionResidents();
     }
+    updateDeathResidentOptions();
     status.textContent = `Data diperbarui ${new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date())}.`;
   } catch (error) {
     status.textContent = error.message;
   }
 }
+
+// Mencatat wafat selalu dimulai dari warga yang sudah ada. NIK menjadi
+// penghubung utama, sedangkan nama tetap membantu operator saat mencari.
+function updateDeathResidentOptions() {
+  const options = document.querySelector("#death-resident-options");
+  if (!options) return;
+  options.replaceChildren();
+  originalContributionResidents.forEach((resident) => {
+    const option = document.createElement("option");
+    option.value = resident.full_name;
+    option.label = resident.national_id_number ? `NIK ${resident.national_id_number}` : "Tanpa NIK";
+    options.append(option);
+  });
+}
+
+function selectResidentForDeathStatus(query) {
+  const normalized = String(query || "").trim().toLocaleLowerCase("id-ID");
+  if (!normalized) return null;
+  return originalContributionResidents.find((resident) =>
+    String(resident.national_id_number || "").toLocaleLowerCase("id-ID") === normalized
+    || String(resident.full_name || "").toLocaleLowerCase("id-ID") === normalized
+  ) || null;
+}
+
+function fillDeathStatusForm(resident) {
+  if (!resident) return;
+  const form = recordForm;
+  form.elements.full_name.value = resident.full_name || "";
+  form.elements.gender.value = resident.gender || "";
+  form.elements.rt.value = resident.rt || "";
+  form.elements.rw.value = resident.rw || "";
+  form.elements.address.value = resident.address || "";
+  form.elements.family_card_number.value = resident.family_card_number || "";
+  form.elements.national_id_number.value = resident.national_id_number || "";
+  const hint = document.querySelector("#death-resident-search-hint");
+  hint.textContent = resident.deceased
+    ? `${resident.full_name} sudah berstatus wafat${resident.date_of_death ? ` pada ${formatDate(resident.date_of_death)}` : ""}. Periksa sebelum menyimpan.`
+    : `Data ${resident.full_name} telah diisi. Lengkapi tanggal wafat lalu simpan.`;
+}
+
+document.querySelector("#death-resident-search")?.addEventListener("change", (event) => {
+  const resident = selectResidentForDeathStatus(event.currentTarget.value);
+  if (resident) fillDeathStatusForm(resident);
+});
 
 // HAPUS TOTAL: kosongkan satu daftar. Karena tidak bisa dikembalikan,
 // Outlet minta ketik ulang konfirmasi sebelum permintaan dikirim.
@@ -3599,6 +3639,9 @@ function openFamilyDialog(familyCardNumber, currentResident) {
   document.querySelector('#family-dialog-title').textContent = `Keluarga - Nomor KK: ${familyCardNumber || '-'}`;
   familyMembers.forEach((member, index) => {
     const row = document.createElement('tr');
+    const deathStatus = member.deceased
+      ? `Wafat${member.date_of_death ? ` · ${formatDate(member.date_of_death)}` : ""}`
+      : "Aktif";
     row.innerHTML = `
       <td>${index + 1}</td>
       <td>${member.full_name || '-'}</td>
@@ -3608,6 +3651,7 @@ function openFamilyDialog(familyCardNumber, currentResident) {
       <td>${member.gender || '-'}</td>
       <td>${member.relationship || '-'}</td>
       <td>${member.residence_status || '-'}</td>
+      <td>${deathStatus}</td>
     `;
     tbody.appendChild(row);
   });
@@ -3885,11 +3929,14 @@ document.querySelector("#program-info-form").addEventListener("submit", async (e
   }
 });
 
+let financeEntries = [];
+
 async function loadAdminFinance() {
   const container = document.querySelector("#admin-finance-list");
   container.replaceChildren(document.createTextNode("Memuat data keuangan…"));
   try {
     const { entries } = await request("/api/admin/finance");
+    financeEntries = entries;
     container.replaceChildren();
     if (!entries.length) {
       container.textContent = "Belum ada catatan keuangan.";
@@ -4006,16 +4053,52 @@ document.querySelector("#finance-entry-form").addEventListener("submit", async (
         description: form.elements.description.value,
         entry_type: form.elements.entry_type.value,
         amount: Number(form.elements.amount.value),
+        rt: form.elements.rt.value,
+        rw: form.elements.rw.value,
       }),
     });
     form.reset();
     form.elements.entry_date.value = new Date().toISOString().slice(0, 10);
     result.textContent = "Catatan keuangan berhasil ditambahkan.";
+    form.hidden = true;
+    document.querySelector("#add-finance-entry").hidden = false;
     await loadAdminFinance();
   } catch (error) { result.textContent = error.message; }
 });
 
 document.querySelector('#finance-entry-form [name="entry_date"]').value = new Date().toISOString().slice(0, 10);
+document.querySelector("#add-finance-entry")?.addEventListener("click", () => {
+  const form = document.querySelector("#finance-entry-form");
+  form.hidden = false;
+  document.querySelector("#add-finance-entry").hidden = true;
+  form.elements.entry_date.value = new Date().toISOString().slice(0, 10);
+  form.elements.title.focus({ preventScroll: true });
+});
+
+document.querySelector("#finance-print-button")?.addEventListener("click", () => {
+  const body = document.querySelector("#finance-print-body");
+  body.replaceChildren();
+  const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
+  financeEntries.forEach((entry, index) => {
+    const row = document.createElement("tr");
+    const amount = entry.income > 0 ? entry.income : -entry.expense;
+    const area = [entry.rt ? `RT ${String(entry.rt).padStart(3, "0")}` : "", entry.rw ? `RW ${String(entry.rw).padStart(3, "0")}` : ""].filter(Boolean).join(" / ") || "-";
+    [String(index + 1), entry.title || "-", area, entry.entry_date || "-", rupiah.format(amount), entry.description || "-"].forEach((value) => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.append(cell);
+    });
+    body.append(row);
+  });
+  if (!financeEntries.length) {
+    const row = document.createElement("tr"); const cell = document.createElement("td");
+    cell.colSpan = 6; cell.textContent = "Belum ada catatan keuangan."; row.append(cell); body.append(row);
+  }
+  document.querySelector("#finance-print-dialog").showModal();
+});
+document.querySelector("#finance-print-back")?.addEventListener("click", () => document.querySelector("#finance-print-dialog").close());
+document.querySelector("#finance-print-confirm")?.addEventListener("click", () => window.print());
+document.querySelector("#finance-print-pdf")?.addEventListener("click", () => downloadPdf(new URLSearchParams({ type: "finance" }), "data-keuangan.pdf", "Menyusun PDF data keuangan..."));
 
 async function loadAdminNews() {
   try {
@@ -4648,17 +4731,15 @@ contactForm.addEventListener("submit", async (event) => {
 
 function renderAdminTaskNavigation(name) {
   const taskNavigation = document.querySelector("#admin-task-nav");
-  // Sub menu dikelompokkan dengan "children" supaya tiap bagian dalam satu
-  // menu bisa dipisah lagi, misalnya Warga Wafat dan Warga Iuran.
+  // Data warga dan iuran berada di satu kelompok kerja. Status wafat adalah
+  // atribut warga/keluarga, bukan daftar warga yang terpisah.
   const menus = {
     records: [
       {
-        label: "Data Warga",
+        label: "Data Warga dan Iuran",
         children: [
-          { label: "Daftar Warga & Status KK", target: "contribution-residents-panel", permission: "payments" },
-          { label: "Tambah Data Wafat", target: "record-form" },
-          { label: "Arsip Wafat untuk Publik", target: "records-list-panel" },
-          { label: "Periksa Bukti Pembayaran", target: "admin-payments-section", permission: "payments" },
+          { label: "Daftar Warga & Setoran", target: "contribution-residents-panel", permission: "payments" },
+          { label: "Arsip Status Wafat", target: "records-list-panel" },
           { label: "Data Keuangan", target: "admin-finance-section", permission: "finance" },
         ],
       },
@@ -4782,6 +4863,7 @@ function clearAdminTaskFocus() {
 function focusAdminTask(targetId, label) {
   if (mobileTaskDialog.open && mobileTaskTarget) restoreMobileTaskTarget();
   if (targetId === "contribution-residents-panel") loadContributionResidents();
+  if (targetId === "record-form") loadContributionResidents();
   if (targetId === "issues-panel") loadDataIssues();
   // Bagian yang pindah menu dimuat saat panelnya dibuka, bukan saat tab ditekan,
   // supaya tidak ada permintaan sia-sia untuk menu yang tidak sedang dipakai.
@@ -5268,7 +5350,8 @@ function openUserDialog(user = null) {
   if (!user && createUserForm.elements.role.value === "Warga") makeResidentUsername();
   createUserForm.elements.custom_role.value = user && !builtInRoles.includes(user.role) ? user.role : "";
   const passwordField = document.querySelector("#user-edit-password-field");
-  passwordField.hidden = !user;
+  passwordField.hidden = false;
+  createUserForm.elements.password.required = !user;
   createUserForm.elements.password.value = "";
   editingUserPermissions = user?.permissions || rolePermissionDefaults[createUserForm.elements.role.value] || [];
   document.querySelector("#user-create-title").textContent = user ? "Edit pengguna" : "Tambah pengguna";
@@ -5390,8 +5473,7 @@ createUserForm.addEventListener("submit", async (event) => {
   const errorElement = document.querySelector("#create-user-error");
   errorElement.textContent = "";
   const values = Object.fromEntries(new FormData(createUserForm));
-  if (!editingUser) values.password = "user";
-  else if (!values.password) delete values.password;
+  if (editingUser && !values.password) delete values.password;
   if (values.role === "__custom__") values.role = values.custom_role.trim();
   delete values.custom_role;
   values.permissions = editingUser ? editingUserPermissions : rolePermissionDefaults[values.role] || [];
@@ -5427,6 +5509,31 @@ createUserForm.addEventListener("submit", async (event) => {
     errorElement.textContent = error.message;
   }
 });
+const recordDialog = document.querySelector("#record-dialog");
+document.querySelector("#add-record")?.addEventListener("click", () => {
+  document.querySelector("#record-error").textContent = "";
+  document.querySelector("#record-result").hidden = true;
+  try {
+    // Navigasi Arsip menyembunyikan sibling panel; buka dialog kembali
+    // sebelum showModal agar tombol selalu menampilkan pop-up.
+    recordDialog.hidden = false;
+    if (!recordDialog.open) recordDialog.showModal();
+    document.querySelector("#death-resident-search").focus({ preventScroll: true });
+    // Isi opsi pencarian boleh diperbarui di belakang layar; dialog harus
+    // langsung terbuka dan tidak pernah menunggu permintaan jaringan.
+    loadContributionResidents();
+  } catch (error) {
+    document.querySelector("#record-error").textContent = "Form status wafat tidak dapat dibuka. Muat ulang halaman lalu coba kembali.";
+  }
+});
+// Klik di luar dan Escape tidak membatalkan data yang sedang diisi.
+recordDialog?.addEventListener("cancel", (event) => event.preventDefault());
+document.querySelector("#record-dialog-cancel")?.addEventListener("click", () => {
+  if (!recordForm.querySelector("input[name='full_name']").value.trim() || window.confirm("Batalkan pengisian status wafat? Data yang belum disimpan akan hilang.")) {
+    recordForm.reset();
+    recordDialog.close();
+  }
+});
 recordForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const errorElement = document.querySelector("#record-error");
@@ -5449,6 +5556,8 @@ recordForm.addEventListener("submit", async (event) => {
         rt: Number(formData.get("rt")),
         rw: Number(formData.get("rw")),
         date_of_death: formData.get("date_of_death"),
+        family_card_number: formData.get("family_card_number"),
+        national_id_number: formData.get("national_id_number"),
         publish_address: formData.has("publish_address"),
       }),
     });
@@ -5468,6 +5577,7 @@ recordForm.addEventListener("submit", async (event) => {
     resultElement.textContent = resultMessage;
     resultElement.hidden = false;
     await refreshRecords();
+    recordDialog.close();
   } catch (error) {
     errorElement.textContent = error.message;
   }

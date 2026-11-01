@@ -9,7 +9,6 @@
 set -u
 
 BRANCH="${BRANCH:-main}"
-EXPECTED_BUILD="20261013-46"
 
 # Lokasi repo dicari dari posisi script ini, sehingga jalan baik di
 # /opt/kifayah maupun di /DATA/AppData/nginx/config/www (CasaOS).
@@ -37,6 +36,11 @@ fi
 if git fetch --quiet origin "$BRANCH" 2>/dev/null; then
     local_head="$(git rev-parse --short HEAD)"
     remote_head="$(git rev-parse --short "origin/$BRANCH")"
+    # Jangan menyimpan nomor build secara manual di skrip ini. Nomor yang
+    # dipakai harus selalu berasal dari Kifayah.py pada commit GitHub terbaru;
+    # bila tidak, pemeriksaan bisa salah menyebut server tertinggal padahal
+    # container sudah menjalankan build yang lebih baru.
+    EXPECTED_BUILD="$(git show "origin/$BRANCH:Kifayah.py" 2>/dev/null | grep -m1 '^APP_BUILD' | sed 's/.*"\(.*\)".*/\1/')"
     printf 'Commit lokal    : %s\n' "$local_head"
     printf 'Commit remote   : %s\n' "$remote_head"
     if [ "$local_head" = "$remote_head" ]; then
@@ -62,10 +66,10 @@ if [ -n "$CONTAINER" ]; then
     if [ -z "$container_build" ]; then
         printf '%s\n' "Build di container: TIDAK ADA -> container memakai Kifayah.py versi lama."
         printf '%s\n' "Perbaiki dengan: sh deploy/auto-update.sh"
-    elif [ "$container_build" = "$EXPECTED_BUILD" ]; then
+    elif [ -n "$EXPECTED_BUILD" ] && [ "$container_build" = "$EXPECTED_BUILD" ]; then
         printf 'Build di container: %s (sesuai)\n' "$container_build"
     else
-        printf 'Build di container: %s (HARAPNYA %s) -> versi berbeda\n' "$container_build" "$EXPECTED_BUILD"
+        printf 'Build di container: %s (GitHub: %s) -> versi berbeda\n' "$container_build" "${EXPECTED_BUILD:-(tidak terbaca)}"
         printf '%s\n' "Perbaiki dengan: sh deploy/auto-update.sh"
     fi
 else
