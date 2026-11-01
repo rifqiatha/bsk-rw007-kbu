@@ -4186,7 +4186,18 @@ function ensureEditFormPopup(key, form, title, onClose) {
 function openEditFormPopup(key, form, title, onClose, focusTarget) {
   const { dialog } = ensureEditFormPopup(key, form, title, onClose);
   if (form.parentElement !== dialog) dialog.append(form);
-  if (!dialog.open) dialog.showModal();
+  // Form dapat sebelumnya tersembunyi oleh navigasi panel. Pastikan ia
+  // terlihat lagi setelah dipindahkan ke top-layer dialog.
+  form.hidden = false;
+  if (!dialog.open) {
+    try {
+      dialog.showModal();
+    } catch {
+      // Fallback browser lama: tetap tampil sebagai dialog non-modal daripada
+      // menampilkan panel kosong atau menghentikan handler klik.
+      dialog.show();
+    }
+  }
   (focusTarget || form.querySelector("input, select, textarea, button"))?.focus({ preventScroll: true });
 }
 
