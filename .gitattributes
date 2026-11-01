@@ -1,0 +1,5 @@
+# Skrip deployment selalu dieksekusi Linux di CasaOS. Paksa LF agar `sh`
+# tidak menerima karakter CR dari checkout atau editor Windows.
+*.sh text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
