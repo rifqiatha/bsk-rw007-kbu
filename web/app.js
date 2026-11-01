@@ -4143,6 +4143,28 @@ function promoteToDocumentDialog(selector) {
   return popup;
 }
 
+// Semua popup biasa ditutup dengan cara yang sama: Escape, klik area backdrop,
+// atau tombol ×. Dua dialog khusus dikecualikan: panel admin adalah kerangka
+// halaman aktif dan dialog proses tidak boleh ditutup saat pekerjaan berjalan.
+function enableDialogDismissal(dialog) {
+  if (!dialog || dialog.dataset.dismissReady === "true") return;
+  dialog.dataset.dismissReady = "true";
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    if (dialog.open) dialog.close();
+  });
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog && dialog.open) dialog.close();
+  });
+  dialog.querySelectorAll("button.icon-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (dialog.open) dialog.close();
+    });
+  });
+}
+
+document.querySelectorAll("dialog:not(#admin-dialog):not(#processing-dialog)").forEach(enableDialogDismissal);
+
 // Form tambah tetap berada di halamannya masing-masing, tetapi ketika tombol
 // Edit ditekan form yang sama dipindahkan sementara ke satu dialog native.
 // Satu state per form memastikan listener submit yang sudah terpasang tidak
@@ -4174,6 +4196,7 @@ function ensureEditFormPopup(key, form, title, onClose) {
   heading.append(headingCopy, closeButton);
   dialog.append(heading);
   document.body.append(dialog);
+  enableDialogDismissal(dialog);
   state = { dialog, form, placeholder, onClose };
   dialog.addEventListener("close", () => {
     if (form.parentElement === dialog) placeholder.after(form);
