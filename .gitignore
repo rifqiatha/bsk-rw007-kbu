@@ -10,6 +10,7 @@ server_startup.log
 deploy/persist/
 deploy/backups/
 deploy/auto-update.log
+deploy/.auto-update.lock
 _backup/
 uploads/*
 !uploads/1f5a6f509232401123da18defe05c8e7.png
