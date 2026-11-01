@@ -49,7 +49,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261031-58"
+APP_BUILD = "20261101-59"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -3082,11 +3082,25 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		if path == "/api/records":
 			with connect_database() as connection:
 				rows = connection.execute(
-					# Endpoint publik sengaja hanya membawa identitas minimum.
-					# NIK, KK, alamat, gender, tanggal wafat, dan foto tidak pernah
-					# dikirim ke browser publik, termasuk bila dicoba lewat API langsung.
-					"SELECT id, full_name, area "
-					"FROM records ORDER BY date_of_death DESC, full_name COLLATE NOCASE"
+					# Daftar publik mengambil sumber utama warga/iuran, bukan hanya
+					# arsip wafat. Dengan demikian data yang baru disimpan admin langsung
+					# terlihat di /home. Kolom sensitif sengaja tidak dipilih: browser
+					# hanya menerima nama dan RT/RW, tidak pernah NIK, KK, alamat, foto,
+					# gender, tanggal lahir, maupun status wafat.
+					"SELECT 'warga-' || r.id AS id, r.full_name, "
+					"       'RT ' || CASE WHEN TRIM(r.rt) = '' THEN '-' ELSE printf('%03d', CAST(r.rt AS INTEGER)) END || "
+					"       ' / RW ' || CASE WHEN TRIM(r.rw) = '' THEN '-' ELSE printf('%03d', CAST(r.rw AS INTEGER)) END AS area "
+					"FROM contribution_residents r WHERE r.active = 1 AND TRIM(r.full_name) <> '' "
+					"UNION ALL "
+					# Arsip lama yang belum punya pasangan di daftar warga tetap dapat
+					# dilihat. Pencocokan NIK dilakukan hanya di server untuk mencegah
+					# duplikasi; NIK tidak ikut keluar pada respons API.
+					"SELECT 'arsip-' || d.id AS id, d.full_name, d.area "
+					"FROM records d WHERE TRIM(d.full_name) <> '' AND NOT EXISTS ("
+					"  SELECT 1 FROM contribution_residents r "
+					"  WHERE r.active = 1 AND TRIM(COALESCE(d.national_id_number, '')) <> '' "
+					"    AND r.national_id_number = d.national_id_number"
+					") ORDER BY full_name COLLATE NOCASE"
 				).fetchall()
 			self.send_json(200, {"records": [dict(row) for row in rows], "admin": False})
 			return

@@ -807,8 +807,8 @@ function visibleRecords() {
   const query = searchInput.value.trim().toLocaleLowerCase("id-ID");
   const filtered = records.filter((record) => `${record.full_name} ${record.area} ${rtRwSearchVariants(record.area).join(" ")}`.toLocaleLowerCase("id-ID").includes(query)
     && (!selectedGenderFilter || record.gender === selectedGenderFilter));
-  const sortKey = tableSortKey || (sortSelect.value === "name" ? "name" : "date");
-  const direction = tableSortKey ? tableSortDirection : sortSelect.value === "oldest" ? "asc" : "desc";
+  const sortKey = tableSortKey || (sortSelect.value === "name" || !isAdmin ? "name" : "date");
+  const direction = tableSortKey ? tableSortDirection : (sortSelect.value === "oldest" || sortSelect.value === "name" || !isAdmin) ? "asc" : "desc";
   const valueFor = (record) => {
     if (sortKey === "name") return record.full_name || "";
     if (sortKey === "rt") return String(record.area || "").match(/RT\s*0*(\d+)/i)?.[1] || "0";
@@ -826,6 +826,7 @@ function visibleRecords() {
 }
 
 function openRecordDetail(record, index) {
+	if (!isAdmin) return;
   const dialogContent = document.querySelector("#record-detail-content");
   dialogContent.replaceChildren();
   let portrait;
@@ -863,12 +864,15 @@ function render() {
   if (!listElement || !countElement || !emptyState || !searchInput || !sortSelect) return;
   const initialRender = !hasRenderedRecords;
   hasRenderedRecords = true;
-  document.querySelector("#total-data strong").textContent = records.length;
-  document.querySelector("#total-l strong").textContent = records.filter((record) => record.gender === "L").length;
-  document.querySelector("#total-p strong").textContent = records.filter((record) => record.gender === "P").length;
-  document.querySelector("#total-data").setAttribute("aria-pressed", String(!selectedGenderFilter));
-  document.querySelector("#total-l").setAttribute("aria-pressed", String(selectedGenderFilter === "L"));
-  document.querySelector("#total-p").setAttribute("aria-pressed", String(selectedGenderFilter === "P"));
+  const totalData = document.querySelector("#total-data");
+  const totalMale = document.querySelector("#total-l");
+  const totalFemale = document.querySelector("#total-p");
+  if (totalData) totalData.querySelector("strong").textContent = records.length;
+  if (totalMale) totalMale.querySelector("strong").textContent = records.filter((record) => record.gender === "L").length;
+  if (totalFemale) totalFemale.querySelector("strong").textContent = records.filter((record) => record.gender === "P").length;
+  totalData?.setAttribute("aria-pressed", String(!selectedGenderFilter));
+  totalMale?.setAttribute("aria-pressed", String(selectedGenderFilter === "L"));
+  totalFemale?.setAttribute("aria-pressed", String(selectedGenderFilter === "P"));
   const visible = visibleRecords();
   const pageCount = Math.max(1, Math.ceil(visible.length / RECORDS_PAGE_SIZE));
   recordsPage = Math.min(recordsPage, pageCount - 1);
@@ -879,21 +883,23 @@ function render() {
   emptyState.hidden = visible.length > 0;
   document.querySelector("#empty-title").textContent = records.length ? "Tidak Ada Hasil" : "Belum Ada Data";
   document.querySelector("#empty-copy").textContent = records.length
-  ? "Coba kata kunci atau jenis kelamin lainnya."
-  : "Entri yang telah diverifikasi akan ditampilkan di sini.";
+  ? "Coba kata kunci nama, RT, atau RW lainnya."
+  : "Data warga yang telah disimpan pengelola akan tampil di sini.";
 
   pageRecords.forEach((record, index) => {
     const row = document.createElement("tr");
     if (initialRender) row.classList.add("initial-render");
     const number = document.createElement("td");
     number.textContent = String(pageStart + index + 1).padStart(2, "0");
-    const name = document.createElement("button");
+    const name = document.createElement(isAdmin ? "button" : "span");
     name.className = "record-detail-trigger";
-    name.type = "button";
     name.textContent = record.full_name || "Nama belum dilengkapi";
-    name.setAttribute("aria-haspopup", "dialog");
-    name.setAttribute("aria-label", `Buka detail ${record.full_name || "warga tanpa nama"}`);
-    name.addEventListener("click", () => openRecordDetail(record, pageStart + index));
+    if (isAdmin) {
+      name.type = "button";
+      name.setAttribute("aria-haspopup", "dialog");
+      name.setAttribute("aria-label", `Buka detail ${record.full_name || "warga tanpa nama"}`);
+      name.addEventListener("click", () => openRecordDetail(record, pageStart + index));
+    }
     const nameCell = document.createElement("td");
     nameCell.append(name);
     const areaMatch = String(record.area || "").match(/RT\s*0*(\d+).*?RW\s*0*(\d+)/i);
@@ -901,13 +907,7 @@ function render() {
     rtCell.textContent = areaMatch ? areaMatch[1].padStart(3, "0") : "-";
     const rwCell = document.createElement("td");
     rwCell.textContent = areaMatch ? areaMatch[2].padStart(3, "0") : "-";
-    const genderCell = document.createElement("td");
-    genderCell.textContent = record.gender === "L" ? "Laki-Laki" : record.gender === "P" ? "Perempuan" : "-";
-    const dateCell = document.createElement("td");
-    dateCell.textContent = record.date_of_death ? formatDate(record.date_of_death) : "Belum dilengkapi";
-    const addressCell = document.createElement("td");
-    addressCell.textContent = record.address ? "Tersedia" : "Privat";
-    row.append(number, nameCell, rtCell, rwCell, genderCell, dateCell, addressCell);
+    row.append(number, nameCell, rtCell, rwCell);
     listElement.append(row);
   });
   const pageNumbers = document.querySelector("#records-page-numbers");
@@ -934,14 +934,6 @@ let seenHomeNotificationIds = new Set();
 
 function getHomeNotificationItems() {
   return [
-    ...records.map((record) => ({
-      id: `record:${record.id}`,
-      type: "record",
-      title: record.full_name || "Warga tanpa nama",
-      date: record.date_of_death ? formatDate(record.date_of_death) : "Tanggal wafat belum dilengkapi",
-      timestamp: Date.parse(record.date_of_death || "") || 0,
-      record,
-    })),
     ...newsArticles.map((article) => ({
       id: `news:${article.id}`,
       type: "news",

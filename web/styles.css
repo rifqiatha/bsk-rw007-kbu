@@ -271,6 +271,10 @@ body:has(.hero-visual:not([hidden])) .topbar:not([data-scrolled]) .brand-copy sm
 .directory::before { content: ""; position: absolute; z-index: -1; inset-block: 0; left: 50%; width: 100vw; transform: translateX(-50%); background: var(--archive-band); }
 .directory-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .directory-heading .eyebrow { margin-bottom: 8px; }
+.directory-total { margin: 0; color: var(--muted); font-family: var(--site-font-mono); font-size: calc((13px) * var(--site-font-scale, 1)); white-space: nowrap; }
+.directory-total strong { color: var(--ink); font-size: calc((20px) * var(--site-font-scale, 1)); }
+.directory-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.directory-toolbar .search-box { flex: 1 1 260px; }
 h2 { margin-bottom: 0; font-family: var(--site-font-display); font-size: calc((clamp(28px, 4vw, 44px)) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); line-height: 1; letter-spacing: var(--tp-track-display); text-transform: capitalize; }
 .record-count { display: flex; align-items: baseline; gap: 8px; color: var(--muted); font-size: calc((14px) * var(--site-font-scale, 1)); }
 .record-count span, .managed-count { text-transform: capitalize; }
@@ -1239,6 +1243,7 @@ dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; tr
   .admin-page .admin-views { padding: 20px; }
 }
 @media (max-width: 760px) {
+	.directory-toolbar { align-items: stretch; flex-direction: column; }
   .contribution-page-heading { align-items: flex-start; flex-direction: column; }
   .contribution-page-heading .primary-button { width: 100%; }
   .contribution-list-toolbar { grid-template-columns: minmax(0, 1fr); }
