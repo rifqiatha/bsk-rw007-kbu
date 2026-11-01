@@ -205,9 +205,13 @@ body:not(.admin-page) .topbar:has(#mobile-nav-toggle[aria-expanded="true"]) { bo
 
 /* BERANDA: cover, statistik, toolbar, dan arsip */
 main { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
-main > section { min-width: 0; scroll-margin-top: calc(var(--topbar-height) + 10px); }
+/* Setiap bagian publik adalah satu layar penuh. Dengan begitu Beranda,
+   Berita, dan Kontak berhenti pada batas yang jelas, termasuk saat navigasi
+   mengarah langsung ke /berita atau /kontak. Konten yang lebih panjang tetap
+   boleh melampaui satu layar—ini minimum, bukan tinggi yang dipotong. */
+main > section { min-width: 0; min-height: calc(100svh - var(--topbar-height)); scroll-margin-top: var(--topbar-height); }
 .news-section, .directory { min-height: calc(100svh - var(--topbar-height)); }
-.intro { min-height: min(calc(78svh - var(--topbar-height)), 720px); }
+.intro { min-height: calc(100svh - var(--topbar-height)); }
 .intro { position: relative; isolation: isolate; display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; min-width: 0; padding: 32px 0; }
 /* Hero full-bleed: media menutupi seluruh .intro dan teks ada di atasnya.
    Penting: saat media ada, .intro HARUS berhenti menjadi flex container.
@@ -370,7 +374,7 @@ button.record-page-ellipsis:hover, button.record-page-ellipsis:focus-visible { c
 .stat-card[aria-pressed="true"] span { opacity: .82; }
 .stat-card:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
 /* BERITA: unggulan, carousel arsip, dan panel bacaan */
-.news-section { position: relative; isolation: isolate; display: grid; min-width: 0; align-content: start; max-width: 1180px; margin: 0 auto; padding: 32px 0; }
+.news-section { position: relative; isolation: isolate; display: grid; min-width: 0; align-content: center; max-width: 1180px; margin: 0 auto; padding: 32px 0; }
 .news-section::before { content: ""; position: absolute; z-index: -1; inset-block: 0; left: 50%; width: 100vw; transform: translateX(-50%); background: var(--news-band); }
 .news-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 26px; }
 .news-section-heading .eyebrow { margin: 0 0 7px; }
@@ -403,7 +407,7 @@ button.record-page-ellipsis:hover, button.record-page-ellipsis:focus-visible { c
 .news-article-headline { color: var(--muted); font-size: calc((14px) * var(--site-font-scale, 1)); line-height: 1.65; }
 .news-article-card time { display: block; margin-bottom: 1px; color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); line-height: 1.5; }
 .news-article-author { color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); line-height: 1.5; }
-.contacts-section { position: relative; isolation: isolate; display: grid; min-width: 0; align-content: start; max-width: 1180px; margin: 0 auto; padding: 32px 0; }
+.contacts-section { position: relative; isolation: isolate; display: grid; min-width: 0; align-content: center; max-width: 1180px; margin: 0 auto; padding: 32px 0; }
 .contacts-section::before { content: ""; position: absolute; z-index: -1; inset-block: 0; left: 50%; width: 100vw; transform: translateX(-50%); background: var(--news-band); }
 .contacts-hint { margin: 0 0 22px; color: var(--muted); font-size: calc((15px) * var(--site-font-scale, 1)); line-height: 1.65; }
 /* align-items:start mencegah kartu ikutdiregangkan mengikuti kartu

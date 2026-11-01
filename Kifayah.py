@@ -49,7 +49,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261101-61"
+APP_BUILD = "20261101-62"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -3083,6 +3083,13 @@ class KifayahHandler(BaseHTTPRequestHandler):
 	# HTTP ROUTES: public reads and authenticated administration.
 	def do_GET(self):
 		path = urlparse(self.path).path
+		# Tautan yang dibagikan oleh peramban atau reverse-proxy kadang membawa
+		# garis miring terakhir (/admin/, /berita/, dan seterusnya). Aplikasi
+		# adalah single-page app; jangan jadikan variasi URL yang setara itu 404.
+		# Aset dan endpoint API sengaja tidak dinormalisasi agar nama berkas serta
+		# rute API tetap ketat.
+		if path != "/" and path.endswith("/") and not path.startswith(("/api/", "/media/")):
+			path = path.rstrip("/") or "/"
 		if not self.maintenance_exempt(path):
 			with connect_database() as connection:
 				maintenance_settings = get_settings(connection)
