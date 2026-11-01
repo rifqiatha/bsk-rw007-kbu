@@ -1751,7 +1751,7 @@ async function downloadPdf(params, filename, label = "Menyusun PDF...") {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261101-71";
+const EXPECTED_BACKEND_BUILD = "20261101-72";
 let backendBuildChecked = false;
 
 // Cache hanya hidup selama tab ini terbuka. ETag dari server dipakai agar
@@ -4140,6 +4140,7 @@ function promoteToDocumentDialog(selector) {
 }
 
 const financeEntryDialog = promoteToDocumentDialog("#finance-entry-dialog");
+const recordsPrintDialog = promoteToDocumentDialog("#print-preview-panel");
 const financeEntryForm = document.querySelector("#finance-entry-form");
 
 document.querySelector("#add-finance-entry")?.addEventListener("click", () => {
@@ -7184,12 +7185,12 @@ typographyForm.addEventListener("submit", async (event) => {
   }
 });
 document.querySelector("#print-records-button")?.addEventListener("click", () => {
-  const preview = document.querySelector("#print-preview-panel");
-  preview.hidden = false;
-  preview.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Pratinjau Arsip Wafat memakai popup yang sama dengan pratinjau menu
+  // admin lainnya; tidak lagi mendorong daftar data ke bawah halaman.
+  if (recordsPrintDialog && !recordsPrintDialog.open) recordsPrintDialog.showModal();
 });
 document.querySelector("#print-preview-back")?.addEventListener("click", () => {
-  document.querySelector("#print-preview-panel").hidden = true;
+  recordsPrintDialog?.close();
 });
 document.querySelector("#print-preview-confirm")?.addEventListener("click", () => window.print());
 document.querySelector("#print-pdf-button")?.addEventListener("click", () => {

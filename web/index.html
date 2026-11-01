@@ -13,7 +13,7 @@
   <link id="dynamic-favicon" rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="/styles.min.css?v=20261101-70">
-  <script src="/app.min.js?v=20261101-71" defer></script>
+  <script src="/app.min.js?v=20261101-72" defer></script>
   <script type="module" src="/reveal.min.js"></script>
 </head>
 <body>
@@ -494,7 +494,7 @@
                 <button id="print-records-button" class="action-button" type="button">Pratinjau Cetak</button>
               </div>
             </div>
-            <section id="print-preview-panel" class="print-preview-panel" aria-labelledby="print-preview-title" hidden>
+            <dialog id="print-preview-panel" class="print-preview-panel" aria-labelledby="print-preview-title">
               <div class="print-preview-header">
                 <div><h3 id="print-preview-title">Pratinjau Cetak</h3><p>Periksa daftar ini sebelum membuka dialog printer.</p><p id="print-preview-note" class="form-hint"></p></div>
                 <div class="print-preview-actions">
@@ -518,7 +518,7 @@
                   <tbody id="print-records-body"></tbody>
                 </table>
               </div>
-            </section>
+            </dialog>
             <ul id="manage-list" class="manage-list"></ul>
             <div class="admin-record-pagination" aria-label="Halaman entri tersimpan">
               <button id="admin-records-previous" class="action-button" type="button">Sebelumnya</button>
