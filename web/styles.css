@@ -204,17 +204,20 @@ body:not(.admin-page) .topbar:has(#mobile-nav-toggle[aria-expanded="true"]) { bo
 }
 
 /* BERANDA: cover, statistik, toolbar, dan arsip */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-snap-type: y proximity; }
+}
 main { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
 /* Setiap bagian publik adalah satu layar penuh. Dengan begitu Beranda,
    Berita, dan Kontak berhenti pada batas yang jelas, termasuk saat navigasi
    mengarah langsung ke /berita atau /kontak. Konten yang lebih panjang tetap
    boleh melampaui satu layar—ini minimum, bukan tinggi yang dipotong. */
-main > section { min-width: 0; min-height: calc(100svh - var(--topbar-height)); scroll-margin-top: var(--topbar-height); }
-.news-section, .directory { min-height: calc(100svh - var(--topbar-height)); }
+main > section { min-width: 0; min-height: 100vh; min-height: 100svh; min-height: 100dvh; scroll-margin-top: 0; scroll-snap-align: start; scroll-snap-stop: always; }
+.news-section, .directory { min-height: 100vh; min-height: 100svh; min-height: 100dvh; }
 /* Intro adalah cover satu halaman utuh. Header berada di atas cover secara
    visual, sehingga pengurangan tinggi header membuat section berikutnya
    mengintip sebelum satu layar selesai, terutama pada monitor lebar. */
-.intro { min-height: 100svh; }
+.intro { min-height: 100vh; min-height: 100svh; min-height: 100dvh; }
 .intro { position: relative; isolation: isolate; display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; min-width: 0; padding: 32px 0; }
 /* Hero full-bleed: media menutupi seluruh .intro dan teks ada di atasnya.
    Penting: saat media ada, .intro HARUS berhenti menjadi flex container.
