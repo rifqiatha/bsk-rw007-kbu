@@ -1751,7 +1751,7 @@ async function downloadPdf(params, filename, label = "Menyusun PDF...") {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261101-68";
+const EXPECTED_BACKEND_BUILD = "20261101-69";
 let backendBuildChecked = false;
 
 // Cache hanya hidup selama tab ini terbuka. ETag dari server dipakai agar
@@ -4952,6 +4952,11 @@ function focusAdminTask(targetId, label) {
   if (targetId === "contribution-residents-panel") loadContributionResidents();
   if (targetId === "record-form") loadContributionResidents();
   if (targetId === "issues-panel") loadDataIssues();
+  if (["news-form", "news-saved-panel"].includes(targetId)) loadAdminNews();
+  if (["contact-form", "contacts-saved-panel", "position-structure-panel", "settings-form"].includes(targetId)) {
+    loadPositionTitles();
+    loadAdminContacts();
+  }
   // Bagian yang pindah menu dimuat saat panelnya dibuka, bukan saat tab ditekan,
   // supaya tidak ada permintaan sia-sia untuk menu yang tidak sedang dipakai.
   if (targetId === "admin-program-section") loadAdminProgramInfo();
@@ -5014,14 +5019,10 @@ function focusAdminTask(targetId, label) {
     target.querySelector('input:not([type="hidden"]), select, textarea, button, a[href]')?.focus({ preventScroll: true });
     return;
   }
-  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
-  if (!reduceMotion && typeof target.animate === "function") {
-    target.animate(
-      [{ opacity: 0, transform: "translateY(9px)" }, { opacity: 1, transform: "translateY(0)" }],
-      { duration: 300, easing: "cubic-bezier(.2, .8, .2, 1)" },
-    );
-  }
+  // Panel admin dapat memuat tabel besar. Scroll dan animasi JavaScript pada
+  // seluruh subtree membuat input terasa tersendat, terutama di CasaOS.
+  // Pindahkan fokus langsung; transisi tombol kecil tetap ditangani CSS.
+  target.scrollIntoView({ behavior: "auto", block: "start" });
 }
 
 function restoreMobileTaskTarget() {
@@ -5081,18 +5082,9 @@ function setAdminTab(name, focus = false, openGroup = true) {
     if (active) tab.setAttribute("aria-current", "page");
     else tab.removeAttribute("aria-current");
     if (active && focus) tab.focus();
-    if (active && tab.dataset.adminTab === "news") loadAdminNews();
-    if (active && tab.dataset.adminTab === "contacts") {
-      loadPositionTitles();
-      loadAdminContacts();
-    }
-    if (active && tab.dataset.adminTab === "import") loadDataIssues();
-    if (active && tab.dataset.adminTab === "records") {
-      // Daftar warga iuran ikut di menu Daftar Warga, jadi datanya dimuat
-      // saat menu itu dibuka.
-      if (hasPermission("finance")) loadAdminFinance();
-      if (hasPermission("payments")) loadAdminPayments();
-    }
+    // Membuka grup navigasi hanya menggambar daftar submenu. Data tiap
+    // submenu dimuat ketika submenu tersebut benar-benar dipilih di
+    // focusAdminTask(), sehingga klik menu tetap ringan.
   }
   document.querySelectorAll(".admin-view").forEach((panel) => { panel.hidden = true; });
   document.querySelector(".admin-views").classList.add("is-idle");

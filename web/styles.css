@@ -726,11 +726,7 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 /* Garis vertikal pemandu di sub menu dihapus supaya sidebar terlihat bersih.
    Indentasi tetap dipertahankan agar hierarki menu masih terbaca. */
 .admin-task-nav { display: grid; gap: 3px; margin: 2px 0 10px 8px; padding: 0; }
-.admin-task-nav > * { animation: admin-task-reveal calc(var(--tp-dur) * 1.8) var(--tp-ease) both; }
-.admin-task-nav > *:nth-child(2) { animation-delay: calc(var(--tp-stagger) * .5); }
-.admin-task-nav > *:nth-child(3) { animation-delay: calc(var(--tp-stagger) * 1); }
-.admin-task-nav > *:nth-child(4) { animation-delay: calc(var(--tp-stagger) * 1.5); }
-.admin-task-nav > *:nth-child(5) { animation-delay: calc(var(--tp-stagger) * 2); }
+.admin-task-nav > * { animation: none; }
 .admin-task-heading { margin: 6px 0 2px; color: var(--muted); font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }.admin-task-group { min-width: 0; }
 .admin-task-group summary,
 .admin-task-link { display: flex; min-width: 0; min-height: 38px; align-items: center; gap: 7px; padding: 8px 10px; border-radius: var(--radius-control); color: var(--muted); font-size: calc((12.5px) * var(--site-font-scale, 1)); line-height: 1.35; text-align: left; text-decoration: none; overflow-wrap: anywhere; cursor: pointer; }
@@ -742,11 +738,7 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .admin-task-link:hover,
 .admin-task-link:focus-visible { color: var(--green); background: var(--green-soft); outline: none; }
 .admin-task-link.is-active { color: var(--green); background: var(--green-soft); box-shadow: inset 2px 0 0 var(--green); font-weight: 600; }
-.admin-task-links { display: grid; gap: 2px; margin: 2px 0 6px 6px; padding-left: 4px; animation: admin-task-reveal calc(var(--tp-dur) * 1.4) var(--tp-ease) both; }
-.admin-task-links > * { animation: admin-task-reveal calc(var(--tp-dur) * 1.5) var(--tp-ease) both; }
-.admin-task-links > *:nth-child(2) { animation-delay: calc(var(--tp-stagger) * .4); }
-.admin-task-links > *:nth-child(3) { animation-delay: calc(var(--tp-stagger) * .8); }
-.admin-task-links > *:nth-child(4) { animation-delay: calc(var(--tp-stagger) * 1.2); }
+.admin-task-links { display: grid; gap: 2px; margin: 2px 0 6px 6px; padding-left: 4px; }
 .admin-task-link { min-height: 34px; padding: 7px 9px; transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
 .admin-task-link-button { width: 100%; border: 0; color: inherit; background: transparent; font-family: inherit; font-size: calc((12.5px) * var(--site-font-scale, 1)); font-weight: 400; line-height: 1.35; }
 .admin-tab { display: flex; width: 100%; min-height: 46px; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border: 0; border-radius: 0; color: var(--muted); background: transparent; font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 400; line-height: 1.35; text-align: left; list-style: none; cursor: pointer; transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
@@ -758,7 +750,7 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .admin-tab.active { color: var(--green); background: var(--green-soft); box-shadow: inset 3px 0 0 var(--green); font-weight: 600; }
 .admin-views { min-width: 0; padding: 28px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-soft); }
 .admin-views.is-idle { display: none; }
-.admin-task-focus { display: flex; min-width: 0; align-items: center; gap: 14px; margin-bottom: 18px; padding-bottom: 12px; border-bottom: var(--tp-bw) solid var(--line); animation: admin-task-reveal calc(var(--tp-dur) * 1.4) var(--tp-ease) both; }
+.admin-task-focus { display: flex; min-width: 0; align-items: center; gap: 14px; margin-bottom: 18px; padding-bottom: 12px; border-bottom: var(--tp-bw) solid var(--line); }
 .admin-task-focus .text-button { flex: none; }
 .admin-task-return { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .admin-task-return svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
@@ -1654,8 +1646,11 @@ body #contact-print-table { counter-reset: none; }
 .stats-grid > .stat-card,
 .toolbar,
 .record-table-wrap,
-.record-footer,
-.admin-page .admin-view:not([hidden]) { animation: tp-blur-in var(--tp-dur-slow) var(--tp-ease) both; }
+.record-footer { animation: tp-blur-in var(--tp-dur-slow) var(--tp-ease) both; }
+/* Animasi blur pada satu panel admin memaksa browser meraster ulang tabel dan
+   formulir besar setiap submenu dibuka. Panel pengelola sengaja tanpa blur
+   agar klik dan pengisian data langsung responsif di perangkat CasaOS. */
+.admin-page .admin-view:not([hidden]) { animation: none; }
 .footer { animation: content-settle var(--tp-dur-slow) var(--tp-ease) both; }
 .topbar { animation: topbar-fade-in var(--tp-dur-slow) var(--tp-ease) both; }
 .news-section-heading { animation-delay: calc(var(--tp-stagger) * .3); }
