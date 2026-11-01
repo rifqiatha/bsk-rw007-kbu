@@ -20,13 +20,12 @@
   <!-- Logo diambil lebih awal supaya tidak baru tampil setelah app.js dan
        /api/settings selesai. Kalau pengaturan kosong, permintaan ini 404 dan
        diabaikan. -->
-  <link rel="preload" as="image" href="/media/site-icon">
   <!-- Berkas .min dihasilkan tools/bangun-min.mjs dari sumber yang bisa
        dibaca. Kalau sumber lebih baru dari .min, server otomatis melayani
        sumbernya, jadi kode usang tidak pernah sampai ke peramban. -->
   <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/styles.min.css?v=20261101-59">
-  <script src="/app.min.js?v=20261101-59" defer></script>
+  <link rel="stylesheet" href="/styles.min.css?v=20261101-60">
+  <script src="/app.min.js?v=20261101-60" defer></script>
   <!-- registration.js sengaja tidak dimuat di sini. Modul pendaftaran hanya
        dipakai setelah pengguna masuk, dan seluruh UI-nya ber-atribut hidden
        sampai saat itu. app.js memuatnya lewat ensureRegistrationModule() saat
@@ -43,13 +42,11 @@
       <span class="brand-mark" aria-hidden="true">
         <span id="brand-mark-text">K</span>
         <span id="brand-logo-group" class="brand-logo-group" hidden>
-          <!-- src ditulis langsung supaya browser mulai mengunduh logo
-               bersamaan dengan app.js dan /api/settings. Kalau src baru diisi
-               oleh JavaScript, logo baru muncul setelah dua permintaan
-               balladan selesai. -->
-          <img id="brand-icon" src="/media/site-icon" alt="">
+          <!-- src baru diisi setelah server memastikan berkas logo masih ada.
+               Ini mencegah ikon gambar rusak bila folder uploads dipindah. -->
+          <img id="brand-icon" alt="">
           <span id="brand-logo-divider" class="brand-logo-divider" aria-hidden="true" hidden>|</span>
-          <img id="brand-icon-secondary" src="/media/site-icon/2" alt="" loading="lazy" decoding="async">
+          <img id="brand-icon-secondary" alt="" loading="lazy" decoding="async">
         </span>
       </span>
       <span class="brand-copy"><strong>Kifayah</strong><small id="brand-area">Warga Kota Bambu Utara</small></span>
@@ -57,6 +54,7 @@
 
     <nav id="section-navigation" class="section-navigation" aria-label="Navigasi halaman utama">
       <a href="/home" data-section-link="intro-section" aria-current="location">Beranda</a>
+      <a href="/daftar-warga" data-section-link="directory-section">Daftar Warga</a>
       <a href="/berita" data-section-link="news-section" hidden>Berita</a>
       <a href="/kontak" data-section-link="contacts-section" hidden>Kontak</a>
     </nav>
@@ -93,6 +91,7 @@
     <div id="mobile-nav-menu" class="mobile-nav-menu" hidden>
     <nav id="mobile-section-navigation" class="mobile-section-navigation" aria-label="Navigasi halaman utama">
       <a href="/home" data-section-link="intro-section" aria-current="location">Beranda</a>
+      <a href="/daftar-warga" data-section-link="directory-section">Daftar Warga</a>
       <a href="/berita" data-section-link="news-section" hidden>Berita</a>
       <a href="/kontak" data-section-link="contacts-section" hidden>Kontak</a>
     </nav>

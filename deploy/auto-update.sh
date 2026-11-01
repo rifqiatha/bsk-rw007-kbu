@@ -13,6 +13,7 @@ APP_DIR="${APP_DIR:-$(dirname "$SCRIPT_DIR")}"
 COMPOSE_DIR="$APP_DIR/deploy"
 LOG="$APP_DIR/deploy/auto-update.log"
 BACKUP_DIR="$APP_DIR/deploy/backups"
+LOCK_FILE="$APP_DIR/deploy/.auto-update.lock"
 
 if [ ! -f "$APP_DIR/Kifayah.py" ]; then
     printf '%s  GAGAL: Kifayah.py tidak ditemukan di %s\n' "$(date -Iseconds)" "$APP_DIR" >&2
@@ -25,25 +26,40 @@ log() {
     printf '%s  %s\n' "$(date -Iseconds)" "$1" >> "$LOG"
 }
 
+# Pembaruan timer dan pembaruan manual tidak boleh menjalankan Git/Docker
+# bersamaan. flock melepaskan kunci otomatis jika proses dihentikan mendadak.
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    log "Pembaruan lain masih berjalan; giliran ini dilewati."
+    exit 0
+fi
+
 cd "$APP_DIR"
+
+# CasaOS bisa menjalankan timer dengan user yang berbeda. Opsi ini membuat
+# pemeriksaan kepemilikan Git aman bagi folder aplikasi tanpa konfigurasi
+# global yang rapuh atau bergantung pada user tertentu.
+git_safe() {
+    git -c safe.directory="$APP_DIR" "$@"
+}
 
 # Perubahan lokal di-stash, bukan sekadar dilewati. Dulu script berhenti
 # begitu ada satu file yang berubah, sehingga server bisa tertinggal banyak
 # versi tanpa ada yang tahu. Stash dipakai supaya update tetap jalan.
-if ! git diff --quiet 2>/dev/null; then
+if ! git_safe diff --quiet 2>/dev/null; then
     log "Ada perubahan lokal yang belum di-commit; disimpan lewat stash lalu update dilanjutkan."
-    if ! git stash push --include-untracked -m "auto-update $(date -Iseconds)" >>"$LOG" 2>&1; then
+    if ! git_safe stash push --include-untracked -m "auto-update $(date -Iseconds)" >>"$LOG" 2>&1; then
         log "GAGAL: tidak bisa menyimpan perubahan lokal. Jalankan 'cd $APP_DIR && git status' untuk diperiksa."
         exit 0
     fi
 fi
 
-current="$(git rev-parse HEAD)"
-if ! git fetch --quiet origin "$BRANCH"; then
+current="$(git_safe rev-parse HEAD)"
+if ! git_safe fetch --quiet origin "$BRANCH"; then
     log "GAGAL: tidak bisa menghubungi repo. Akan coba lagi nanti."
     exit 0
 fi
-incoming="$(git rev-parse "origin/$BRANCH")"
+incoming="$(git_safe rev-parse "origin/$BRANCH")"
 
 if [ "$current" = "$incoming" ]; then
     exit 0
@@ -52,6 +68,13 @@ fi
 log "HEAD lokal = $current ; HEAD remote = $incoming"
 
 log "Ada versi baru: $(echo "$current" | cut -c1-7) -> $(echo "$incoming" | cut -c1-7)"
+
+# Kode utama ter-mount langsung sehingga cukup restart. Image dibangun ulang
+# otomatis ketika basis image, dependensi, entrypoint, atau Compose berubah.
+needs_rebuild=0
+if git_safe diff --name-only "$current" "$incoming" | grep -Eq '^(Dockerfile|requirements\.txt|deploy/(entrypoint\.sh|docker-compose\.yml))$'; then
+    needs_rebuild=1
+fi
 
 # Cadangkan database sebelum mengganti kode. Lokasi database berbeda-bedanya:
 # di /opt/kifayah biasanya deploy/persist, sedangkan di CasaOS database ikut
@@ -72,7 +95,7 @@ else
     log "PERINGATAN: kifayah.sqlite3 tidak ditemukan, tidak ada cadangan dibuat."
 fi
 
-if ! git merge --ff-only "origin/$BRANCH"; then
+if ! git_safe merge --ff-only "origin/$BRANCH"; then
     log "GAGAL: tidak bisa fast-forward, perlu intervensi manual."
     exit 1
 fi
@@ -88,8 +111,8 @@ export KIFAYAH_DIR
 # Kode diambil dari folder repo lewat volume mount (lihat docker-compose.yml),
 # jadi build image tidak perlu diulang. Build hanya perlu saat requirements.txt
 # berubah, yaitu ketika KIFAYAH_REBUILD=1.
-if [ "${KIFAYAH_REBUILD:-0}" = "1" ]; then
-    log "KIFAYAH_REBUILD=1: membangun ulang image sebelum restart."
+if [ "${KIFAYAH_REBUILD:-0}" = "1" ] || [ "$needs_rebuild" = "1" ]; then
+	log "Perubahan image/dependensi terdeteksi: membangun ulang image sebelum restart."
     if ! docker compose build --no-cache >>"$LOG" 2>&1; then
         log "GAGAL: build image gagal."
         exit 1
@@ -99,7 +122,7 @@ fi
 # --force-recreate wajib karena volume mount baru hanya berlaku pada container
 # yang benar-benar dibuat ulang, bukan saat restart biasa.
 if docker compose up -d --force-recreate >>"$LOG" 2>&1; then
-    log "Sukses: container dijalankan ulang pada $(git -C "$APP_DIR" rev-parse --short HEAD)."
+	log "Sukses: container dijalankan ulang pada $(git_safe -C "$APP_DIR" rev-parse --short HEAD)."
 else
     log "GAGAL: container gagal dijalankan ulang."
     exit 1
@@ -107,8 +130,12 @@ fi
 
 # Pastikan container benar-benar hidup dan menjawab.
 sleep 8
-if docker compose ps --status running | grep -q kifayah; then
-    log "Verifikasi: container kifayah berjalan pada commit $(git -C "$APP_DIR" rev-parse --short HEAD)."
+expected_build="$(grep -m1 '^APP_BUILD' "$APP_DIR/Kifayah.py" | sed 's/.*"\(.*\)".*/\1/')"
+health="$(curl -fsS --max-time 15 http://127.0.0.1:8081/health 2>>"$LOG" || true)"
+running_build="$(printf '%s' "$health" | sed -n 's/.*"build"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+if docker compose ps --status running | grep -q kifayah && [ -n "$running_build" ] && [ "$running_build" = "$expected_build" ]; then
+	log "Verifikasi: container sehat dan build $running_build sesuai commit $(git_safe -C "$APP_DIR" rev-parse --short HEAD)."
 else
-    log "PERINGATAN: container tidak berjalan setelah update. Cek 'docker compose logs -n 50'."
+	log "GAGAL VERIFIKASI: container/build tidak sesuai (harap $expected_build, respons: ${health:-tidak ada}). Cek 'docker compose logs -n 50'."
+	exit 1
 fi

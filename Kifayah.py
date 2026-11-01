@@ -49,7 +49,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261101-59"
+APP_BUILD = "20261101-60"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -868,6 +868,19 @@ def image_extension(content):
 			if content_type != "image/webp" or content[8:12] == b"WEBP":
 				return extension
 	return None
+
+
+def stored_image_exists(filename):
+	"""Pastikan setelan media menunjuk berkas gambar yang dapat dilayani."""
+	if not filename or Path(str(filename)).name != str(filename):
+		return False
+	path = UPLOAD_DIR / str(filename)
+	if not path.is_file():
+		return False
+	try:
+		return image_extension(path.read_bytes()[:16]) is not None
+	except OSError:
+		return False
 
 
 def optional_import_area_number(value, label, maximum):
@@ -4469,13 +4482,13 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				"hero_image_position": settings["hero_image_position"],
 				"site_icon": settings.get("site_icon", ""),
 				"site_icon_2": settings.get("site_icon_2", ""),
-				"site_icon_ready": bool(settings.get("site_icon")),
-				"site_icon_2_ready": bool(settings.get("site_icon_2")),
+			"site_icon_ready": stored_image_exists(settings.get("site_icon", "")),
+			"site_icon_2_ready": stored_image_exists(settings.get("site_icon_2", "")),
 				"theme_logo_ready": {
 					target: {mode: bool(settings.get(f"theme_logo_{target}_{mode}")) for mode in ("light", "dark")}
 					for target in ("logo1", "logo2", "hero", "slideshow")
 				},
-				"hero_image_ready": bool(settings.get("hero_image")),
+			"hero_image_ready": stored_image_exists(settings.get("hero_image", "")),
 				"hero_playlist": public_hero_playlist(settings),
 				"maintenance_enabled": settings.get("maintenance_enabled") == "1",
 				"maintenance_starts_at": settings.get("maintenance_starts_at", ""),
@@ -6695,6 +6708,29 @@ def ensure_port_free(port):
 		probe.close()
 
 
+def reset_super_admin_password():
+	"""Reset darurat lewat console container dan wajibkan ganti sandi sesudah login."""
+	password = os.environ.get("KIFAYAH_RESET_PASSWORD", "")
+	if not password:
+		raise SystemExit("KIFAYAH_RESET_PASSWORD wajib diisi dan jangan ditulis sebagai argumen perintah.")
+	try:
+		validate_password_strength(password)
+	except ValueError as error:
+		raise SystemExit(str(error))
+	with connect_database() as connection:
+		user = connection.execute(
+			"SELECT id, username FROM admin_users WHERE role = 'Super Admin' AND active = 1 ORDER BY id LIMIT 1"
+		).fetchone()
+		if not user:
+			raise SystemExit("Tidak ditemukan akun Super Admin aktif.")
+		salt, password_hash = hash_password(password)
+		connection.execute(
+			"UPDATE admin_users SET password_salt = ?, password_hash = ?, force_password_change = 1 WHERE id = ?",
+			(salt, password_hash, user["id"]),
+		)
+	print(f"Kata sandi sementara Super Admin '{user['username']}' sudah direset. Login lalu ganti kembali.")
+
+
 def main():
 	ensure_port_free(int(os.environ.get("PORT", "8000")))
 	connect_database().close()
@@ -6720,4 +6756,7 @@ def main():
 
 
 if __name__ == "__main__":
-	main()
+	if len(sys.argv) == 2 and sys.argv[1] == "--reset-super-admin-password":
+		reset_super_admin_password()
+	else:
+		main()
