@@ -1748,7 +1748,7 @@ async function downloadPdf(params, filename, label = "Menyusun PDF...") {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261101-62";
+const EXPECTED_BACKEND_BUILD = "20261101-63";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
