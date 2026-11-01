@@ -58,6 +58,8 @@ let contributionResidents = [];
 let originalContributionResidents = [];
 let contributionResidentsSignature = "";
 let contributionResidentsPromise = null;
+let contributionResidentsLoadedAt = 0;
+const CONTRIBUTION_RESIDENT_CACHE_MS = 15_000;
 const heroImageElement = document.querySelector("#hero-image");
 const THEME_STORAGE_KEY = "kifayah-theme";
 const DARK_BSK_LOGO_URL = new URL("/assets/bsk-logo-dark.webp", document.baseURI).href;
@@ -3394,7 +3396,7 @@ function renderContributionResidents() {
       if (confirm(`Yakin menghapus data warga "${resident.full_name}" dari daftar iuran?`)) {
         try {
           await request("/api/admin/contribution-residents", { method: "DELETE", body: JSON.stringify({ resident_id: resident.id }) });
-          await loadContributionResidents();
+          await loadContributionResidents(true);
         } catch (error) {
           document.querySelector("#contribution-list-status").textContent = error.message;
         }
@@ -3417,8 +3419,13 @@ function renderContributionResidents() {
   if (contributionNext) contributionNext.disabled = contributionResidentsPage >= contributionPageCount - 1;
 }
 
-async function loadContributionResidents() {
+async function loadContributionResidents(force = false) {
   if (contributionResidentsPromise) return contributionResidentsPromise;
+  // Membuka/tutup submenu tidak perlu mengunduh dan membandingkan ribuan
+  // warga berulang kali. Setelah perubahan data, pemanggil memakai force.
+  if (!force && contributionResidentsSignature && (Date.now() - contributionResidentsLoadedAt) < CONTRIBUTION_RESIDENT_CACHE_MS) {
+    return Promise.resolve();
+  }
   const status = document.querySelector("#contribution-list-status");
   const load = async () => {
     status.textContent = "Memuat data warga dan iuran...";
@@ -3435,6 +3442,7 @@ async function loadContributionResidents() {
         // daftar warga memang berubah, bukan setiap klik tab.
         updateDeathResidentOptions();
       }
+      contributionResidentsLoadedAt = Date.now();
       status.textContent = `Data diperbarui ${new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date())}.`;
     } catch (error) {
       status.textContent = error.message;
@@ -3520,7 +3528,7 @@ document.querySelector("#delete-all-records")?.addEventListener("click", () => {
 });
 
 document.querySelector("#delete-all-contributions")?.addEventListener("click", () => {
-  deleteAllList("/api/admin/contribution-residents-all", "Daftar Warga - Iuran", originalContributionResidents.length, loadContributionResidents);
+  deleteAllList("/api/admin/contribution-residents-all", "Daftar Warga - Iuran", originalContributionResidents.length, () => loadContributionResidents(true));
 });
 
 function openContributionResidentDialog(resident = null) {
@@ -3553,7 +3561,7 @@ function openContributionHistoryDialog(resident) {
         const removed = await deleteAdminMedia("contribution_resident", { resident_id: resident.id }, `Hapus foto ${resident.full_name}?`);
         if (removed) {
           dialog.close();
-          await loadContributionResidents();
+          await loadContributionResidents(true);
         }
       } catch (error) {
         document.querySelector("#contribution-list-status").textContent = error.message;
@@ -3627,7 +3635,7 @@ function openContributionHistoryDialog(resident) {
               body: JSON.stringify({ content_type: file.type, content_base64: btoa(binary) }),
             });
             dialog.close();
-            await loadContributionResidents();
+            await loadContributionResidents(true);
           } catch (error) {
             document.querySelector("#contribution-list-status").textContent = error.message;
           } finally {
@@ -3659,7 +3667,7 @@ function openContributionHistoryDialog(resident) {
             try {
               await request(`/api/admin/contribution-payments/${payment.id}`, { method: "DELETE" });
               dialog.close();
-              await loadContributionResidents();
+              await loadContributionResidents(true);
             } catch (error) {
               document.querySelector("#contribution-list-status").textContent = error.message;
             }
@@ -3923,7 +3931,7 @@ document.querySelector("#contribution-resident-form").addEventListener("submit",
       }
     }
     document.querySelector("#contribution-resident-dialog").close();
-    await loadContributionResidents();
+    await loadContributionResidents(true);
     document.querySelector("#contribution-list-status").textContent = message;
   } catch (submitError) {
     error.textContent = submitError.message;
@@ -3963,7 +3971,7 @@ document.querySelector("#contribution-payment-form").addEventListener("submit", 
   try {
     await request("/api/admin/contribution-payments", { method: "POST", body: JSON.stringify(values) });
     document.querySelector("#contribution-payment-dialog").close();
-    await loadContributionResidents();
+    await loadContributionResidents(true);
     document.querySelector("#contribution-list-status").textContent = "Setoran tersimpan; total dan bulan iuran diperbarui.";
   } catch (submitError) {
     error.textContent = submitError.message;
@@ -5025,6 +5033,18 @@ function createAdminTaskLink(item) {
 let adminTaskFocusNodes = [];
 let adminTaskFocusBranches = [];
 let adminTaskFocusTarget = null;
+let adminTaskLoadToken = 0;
+
+// Memulai pengambilan data setelah browser sempat menggambar perpindahan
+// submenu. Pada data warga yang besar, memulai serialisasi JSON dan render
+// pada event klik yang sama membuat tombol terasa tersendat, khususnya pada
+// perangkat CasaOS berdaya rendah.
+function loadAdminTaskAfterPaint(callback) {
+  const token = ++adminTaskLoadToken;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (token === adminTaskLoadToken) callback();
+  }));
+}
 
 function clearAdminTaskFocus() {
   document.querySelectorAll(".admin-task-link.is-active").forEach((link) => {
@@ -5045,27 +5065,31 @@ function clearAdminTaskFocus() {
 
 function focusAdminTask(targetId, label) {
   if (mobileTaskDialog.open && mobileTaskTarget) restoreMobileTaskTarget();
-  if (targetId === "contribution-residents-panel") loadContributionResidents();
-  if (targetId === "record-form") loadContributionResidents();
-  if (targetId === "issues-panel") loadDataIssues();
-  if (["news-form", "news-saved-panel"].includes(targetId)) loadAdminNews();
+  if (targetId === "contribution-residents-panel") loadAdminTaskAfterPaint(() => loadContributionResidents());
+  if (targetId === "record-form") loadAdminTaskAfterPaint(() => loadContributionResidents());
+  if (targetId === "issues-panel") loadAdminTaskAfterPaint(() => loadDataIssues());
+  if (["news-form", "news-saved-panel"].includes(targetId)) loadAdminTaskAfterPaint(() => loadAdminNews());
   if (["contact-form", "contacts-saved-panel", "position-structure-panel", "settings-form"].includes(targetId)) {
-    loadPositionTitles();
-    loadAdminContacts();
+    loadAdminTaskAfterPaint(() => {
+      loadPositionTitles();
+      loadAdminContacts();
+    });
   }
   // Bagian yang pindah menu dimuat saat panelnya dibuka, bukan saat tab ditekan,
   // supaya tidak ada permintaan sia-sia untuk menu yang tidak sedang dipakai.
-  if (targetId === "admin-program-section") loadAdminProgramInfo();
+  if (targetId === "admin-program-section") loadAdminTaskAfterPaint(() => loadAdminProgramInfo());
   if (targetId === "registrations-panel") {
     // Tab antrean pendaftaran baru dibuka sekarang, jadi modulnya dimuat di
     // sini juga. ensureRegistrationModule() mengembalikan skrip yang sama
     // kalau modulnya sudah dimuat oleh langkah lain.
-    ensureRegistrationModule()
-      .then(() => window.loadRegistrations?.())
-      .catch((error) => console.error("Modul pendaftaran gagal dimuat.", error));
+    loadAdminTaskAfterPaint(() => {
+      ensureRegistrationModule()
+        .then(() => window.loadRegistrations?.())
+        .catch((error) => console.error("Modul pendaftaran gagal dimuat.", error));
+    });
   }
-  if (targetId === "admin-finance-section" && hasPermission("finance")) loadAdminFinance();
-  if (targetId === "admin-payments-section" && hasPermission("payments")) loadAdminPayments();
+  if (targetId === "admin-finance-section" && hasPermission("finance")) loadAdminTaskAfterPaint(() => loadAdminFinance());
+  if (targetId === "admin-payments-section" && hasPermission("payments")) loadAdminTaskAfterPaint(() => loadAdminPayments());
   clearAdminTaskFocus();
   const target = document.getElementById(targetId);
   const view = target?.closest(".admin-view");
@@ -5333,9 +5357,14 @@ document.querySelectorAll(".admin-tab").forEach((tab) => {
   tab.addEventListener("click", (event) => {
     event.preventDefault();
     const group = tab.closest(".admin-nav-group");
-    const wasOpen = group.open;
-    setAdminTab(tab.dataset.adminTab, false, false);
-    setAdminGroupOpen(group, !wasOpen);
+    // Klik ulang pada kelompok yang sedang aktif hanya membuka/menutup
+    // submenu. Sebelumnya ia juga mereset seluruh workspace dan membangun
+    // ulang submenu, yang memicu layout ulang panel besar tanpa alasan.
+    if (tab.classList.contains("active")) {
+      setAdminGroupOpen(group, !group.open);
+      return;
+    }
+    setAdminTab(tab.dataset.adminTab, false, true);
   });
 });
 
@@ -6143,7 +6172,7 @@ document.querySelector("#import-commit").addEventListener("click", async () => {
     if (skipRadio) skipRadio.checked = true;
     updateImportSummary();
     importDestinationSelect.disabled = false;
-    if (importDestination === "contributions") await loadContributionResidents();
+    if (importDestination === "contributions") await loadContributionResidents(true);
     else await refreshRecords();
     showImportDone(
       result,

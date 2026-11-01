@@ -1002,7 +1002,10 @@ dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; tr
 .contribution-list-toolbar .filter-select, .contribution-list-toolbar .filter-select select { width: 100%; max-width: none; }
 .contribution-resident-list { display: grid; min-width: 0; gap: 12px; }
 .contribution-empty-state { margin: 0; padding: 28px 18px; border: var(--tp-bw) dashed var(--line); border-radius: var(--radius-control); color: var(--muted); text-align: center; }
-.contribution-resident-card { display: grid; min-width: 0; gap: 8px; padding: 14px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; animation: contribution-card-enter 260ms var(--tp-ease) both; animation-delay: var(--contribution-delay, 0ms); }
+/* Daftar warga bisa berisi ribuan data. Animasi masuk pada setiap kartu
+   membuat compositor bekerja untuk seluruh daftar ketika submenu dibuka.
+   Kartu ditampilkan langsung; detail dan dialog tetap memiliki transisi. */
+.contribution-resident-card { display: grid; min-width: 0; gap: 8px; padding: 14px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; animation: none; }
 .contribution-resident-heading { display: flex; flex-wrap: wrap; min-width: 0; align-items: flex-start; gap: 10px; }
 .contribution-resident-avatar { display: grid; width: 38px; height: 38px; flex: none; place-items: center; overflow: hidden; border-radius: 8px; color: var(--ink); background: var(--surface-soft); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 700; }
 .contribution-resident-avatar img { width: 100%; height: 100%; object-fit: cover; }
