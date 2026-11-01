@@ -25,8 +25,8 @@
        dibaca. Kalau sumber lebih baru dari .min, server otomatis melayani
        sumbernya, jadi kode usang tidak pernah sampai ke peramban. -->
   <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/styles.min.css?v=20261031-47">
-  <script src="/app.min.js?v=20261031-48" defer></script>
+  <link rel="stylesheet" href="/styles.min.css?v=20261101-02">
+  <script src="/app.min.js?v=20261101-02" defer></script>
   <!-- registration.js sengaja tidak dimuat di sini. Modul pendaftaran hanya
        dipakai setelah pengguna masuk, dan seluruh UI-nya ber-atribut hidden
        sampai saat itu. app.js memuatnya lewat ensureRegistrationModule() saat
@@ -279,7 +279,7 @@
         <aside class="admin-sidebar">
         <nav class="admin-nav" aria-label="Menu pengelolaan">
           <details class="admin-nav-group" data-admin-group="records">
-            <summary id="admin-tab-records" class="admin-tab active" aria-current="page" aria-expanded="false" data-admin-tab="records">Data Warga</summary>
+            <summary id="admin-tab-records" class="admin-tab active" aria-current="page" aria-expanded="false" data-admin-tab="records">Daftar Warga</summary>
             <div id="admin-task-nav" class="admin-task-nav" aria-label="Tugas pada menu ini" hidden></div>
           </details>
           <details class="admin-nav-group" data-admin-group="import">
@@ -325,12 +325,16 @@
           </section>
           <section id="admin-view-finance" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="finance" hidden>
             <section id="admin-finance-section" class="admin-section" aria-labelledby="admin-finance-title">
-              <h2 id="admin-finance-title">Data Keuangan</h2>
+              <div class="contribution-page-heading"><div><h2 id="admin-finance-title">Data Keuangan</h2></div><div class="manage-actions"><a class="export-button" href="/api/admin/export/excel?type=finance">Ekspor XLSX</a><button id="finance-print-button" class="action-button" type="button">Pratinjau Cetak</button><button id="add-finance-entry" class="primary-button" type="button">Tambah Catatan <span aria-hidden="true">→</span></button></div></div>
               <p class="form-hint">Catatan di sini dibagikan kepada akun warga. Jangan masukkan NIK, nomor rekening pribadi, atau data sensitif.</p>
-              <form id="finance-entry-form" class="form-stack finance-entry-form">
+              <form id="finance-entry-form" class="form-stack finance-entry-form" hidden>
                 <div class="field-row">
                   <label>Tanggal<input name="entry_date" type="date" required></label>
                   <label>Jenis<select name="entry_type" required><option value="income">Pemasukan</option><option value="expense">Pengeluaran</option></select></label>
+                </div>
+                <div class="field-row">
+                  <label>RT<input name="rt" inputmode="numeric" maxlength="3" placeholder="Contoh: 001"></label>
+                  <label>RW<input name="rw" inputmode="numeric" maxlength="3" placeholder="Contoh: 007"></label>
                 </div>
                 <label>Nama transaksi<input name="title" maxlength="120" required placeholder="Contoh: Iuran bulan Mei"></label>
                 <label>Catatan singkat<textarea name="description" rows="2" maxlength="1000"></textarea></label>
@@ -339,6 +343,11 @@
                 <button class="primary-button" type="submit">Tambah Catatan</button>
               </form>
               <div id="admin-finance-list" class="admin-payments-list" aria-live="polite"></div>
+              <dialog id="finance-print-dialog" class="print-preview-panel" style="max-width:1100px;width:95vw;">
+                <div class="print-preview-header"><div><h3>Data Keuangan</h3><p>Periksa daftar sebelum mencetak.</p></div><div class="print-preview-actions"><button id="finance-print-pdf" class="action-button" type="button">Unduh PDF</button><button id="finance-print-back" class="action-button" type="button">Kembali</button><button id="finance-print-confirm" class="primary-button" type="button">Cetak Daftar <span aria-hidden="true">→</span></button></div></div>
+                <div class="print-preview-banner"><img src="/media/export_logo/1" alt="Logo DKI Jakarta" class="print-banner-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"><div class="print-banner-text"><h2>DATA KEUANGAN</h2><p>RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA</p><p>KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT</p></div><img src="/media/export_logo/2" alt="Logo BSK" class="print-banner-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"></div>
+                <div class="print-preview-scroll"><table class="print-table"><thead><tr><th>NO</th><th>NAMA TRANSAKSI</th><th>RT &amp; RW</th><th>TANGGAL</th><th>NOMINAL</th><th>CATATAN</th></tr></thead><tbody id="finance-print-body"></tbody></table></div>
+              </dialog>
               <dialog id="finance-contribution-dialog" class="print-preview-panel" style="max-width:900px;width:95vw;">
                 <div class="print-preview-header">
                   <div><h3 id="finance-contribution-title">Rincian Iuran</h3><p id="finance-contribution-summary">Memuat…</p></div>
@@ -358,10 +367,10 @@
           <section id="admin-view-contributions" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="contributions" hidden>
             <section id="contribution-residents-panel" class="admin-section contribution-management" aria-labelledby="contribution-residents-title">
               <div class="contribution-page-heading">
-                <div><p class="eyebrow">Data Warga Terpadu</p><h2 id="contribution-residents-title">Data Warga &amp; Status Kartu Keluarga</h2></div>
+                <div><p class="eyebrow">Data dan Setoran</p><h2 id="contribution-residents-title">Daftar Warga</h2></div>
                 <button id="add-contribution-resident" class="primary-button" type="button">Tambah Warga <span aria-hidden="true">→</span></button>
               </div>
-              <p class="form-hint">Data warga, status wafat, status KK, dan riwayat iuran ditampilkan dalam satu daftar. Jika salah satu anggota KK tercatat wafat, seluruh anggota dengan nomor KK yang sama akan diberi penanda.</p>
+              <p class="form-hint">Data iuran diperbarui dari pembayaran terverifikasi dan setoran yang dicatat admin. Nominal total serta jumlah bulan dihitung otomatis.</p>
               <div class="contribution-summary" aria-label="Ringkasan iuran">
                 <article><span>Warga Terdaftar</span><strong id="contribution-resident-count">0</strong></article>
                 <button id="contribution-paid-card" class="stat-card" type="button" title="Lihat daftar warga yang sudah iuran bulan ini" aria-label="Lihat daftar warga yang sudah iuran bulan ini"><span>Sudah Iuran Bulan Ini</span><strong id="contribution-paid-count">0</strong></button>
@@ -373,9 +382,9 @@
               <div class="contribution-list-toolbar">
                 <label class="search-box" for="contribution-search">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.3 4.3"/></svg>
-                  <input id="contribution-search" type="search" placeholder="Cari nama, NIK, nomor KK, alamat, RT, atau RW" autocomplete="off">
+                  <input id="contribution-search" type="search" placeholder="Cari nama, NIK, alamat, RT, atau RW" autocomplete="off">
                 </label>
-                <label class="filter-select"><span class="sr-only">Filter warga</span><select id="contribution-status-filter"><option value="all">Semua Warga</option><option value="paid">Sudah Iuran Bulan Ini</option><option value="unpaid">Belum Iuran Bulan Ini</option><option value="family-deceased">KK Memiliki Anggota Wafat</option></select></label>
+                <label class="filter-select"><span class="sr-only">Filter warga</span><select id="contribution-status-filter"><option value="all">Semua Warga</option><option value="paid">Sudah Iuran Bulan Ini</option><option value="unpaid">Belum Iuran Bulan Ini</option></select></label>
                 <a class="export-button" href="/api/admin/export/excel?type=contributions">Ekspor XLSX Warga Iuran</a>
                 <button id="contribution-print-button" class="action-button" type="button">Pratinjau Cetak</button>
                 <button id="delete-all-contributions" class="delete-button" type="button" hidden>Hapus Semua Data</button>
@@ -445,7 +454,14 @@
             </div>
           </dialog>
           <section id="admin-view-records" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="records">
+            <dialog id="record-dialog" class="dialog contribution-dialog" aria-labelledby="record-dialog-title">
+              <div class="dialog-top"><div><p class="eyebrow">Arsip Status Wafat</p><h2 id="record-dialog-title">Tambah Status Wafat</h2></div></div>
             <form id="record-form" class="form-stack">
+              <label>Cari Data Warga / NIK
+                <input id="death-resident-search" list="death-resident-options" type="search" autocomplete="off" placeholder="Ketik nama atau NIK warga">
+                <datalist id="death-resident-options"></datalist>
+              </label>
+              <p id="death-resident-search-hint" class="form-hint">Pilih warga dari hasil pencarian untuk mengisi data otomatis, lalu lengkapi tanggal wafat.</p>
               <label>Nama Lengkap<input name="full_name" maxlength="120" required placeholder="Nama Warga"></label>
               <label>Jenis Kelamin<select name="gender" required><option value="">Pilih Jenis Kelamin</option><option value="P">P — Perempuan</option><option value="L">L — Laki-laki</option></select></label>
               <div class="field-row">
@@ -453,6 +469,11 @@
                 <label>RW<select name="rw" id="rw-select" required></select></label>
               </div>
               <label>Tanggal Wafat<input name="date_of_death" type="date" required></label>
+              <div class="field-row">
+                <label>Nomor Kartu Keluarga<input name="family_card_number" maxlength="32" inputmode="numeric"></label>
+                <label>Nomor Induk Kependudukan<input name="national_id_number" maxlength="32" inputmode="numeric"></label>
+              </div>
+              <p class="form-hint">Isi nomor KK agar seluruh anggota keluarga langsung mendapat penanda status wafat.</p>
               <label>Alamat Lengkap<textarea name="address" maxlength="300" rows="2" required placeholder="Alamat untuk keperluan keluarga"></textarea></label>
               <label class="check-row"><input name="publish_address" type="checkbox"><span>Tampilkan Alamat Dan Tautan Peta Kepada Publik</span></label>
               <p id="staff-address-hint" class="form-hint" hidden>Alamat tersimpan privat. Staff tidak dapat mempublikasikan alamat.</p>
@@ -462,19 +483,17 @@
               <p id="record-portrait-hint" class="form-hint">Foto maksimal 5 MB. Tanpa memilih foto, data warga tetap bisa disimpan. Foto bersifat privat kecuali disetujui untuk ditampilkan.</p>
               <p id="record-result" class="form-success" role="status" hidden></p>
               <p class="form-error" id="record-error" role="alert"></p>
+              <button id="record-dialog-cancel" class="action-button" type="button">Batal</button>
               <button class="primary-button" type="submit">Tambahkan Entri <span aria-hidden="true">→</span></button>
             </form>
+            </dialog>
             <div id="records-list-panel">
             <div id="records-manage" class="manage-toolbar">
               <div class="manage-toolbar-copy">
                 <h3>Entri Tersimpan</h3>
                 <span id="managed-count" class="managed-count">0 entri</span>
               </div>
-              <div class="manage-actions">
-                <a class="export-button" href="/api/admin/export/excel?type=records">Ekspor XLSX</a>
-                <button id="print-records-button" class="action-button" type="button">Pratinjau Cetak</button>
-                <button id="delete-all-records" class="delete-button" type="button" hidden>Hapus Semua Data</button>
-              </div>
+              <button id="add-record" class="primary-button" type="button">Tambah Status Wafat <span aria-hidden="true">→</span></button>
             </div>
             <p class="form-hint export-warning">Ekspor XLSX memuat alamat dan identitas privat. Simpan file dengan aman.</p>
             <div class="toolbar manage-list-filters">
@@ -484,6 +503,11 @@
                 <kbd>/</kbd>
               </label>
               <label class="filter-select"><span class="sr-only">Urutkan data warga</span><select id="admin-record-sort"><option value="newest">Terbaru dahulu</option><option value="oldest">Terlama dahulu</option><option value="name">Nama A–Z</option></select></label>
+              <div class="manage-actions records-list-actions">
+                <a class="export-button" href="/api/admin/export/excel?type=records">Ekspor XLSX</a>
+                <button id="delete-all-records" class="delete-button" type="button" hidden>Hapus Semua Data</button>
+                <button id="print-records-button" class="action-button" type="button">Pratinjau Cetak</button>
+              </div>
             </div>
             <section id="print-preview-panel" class="print-preview-panel" aria-labelledby="print-preview-title" hidden>
               <div class="print-preview-header">
@@ -556,9 +580,10 @@
               <p class="form-error" id="edit-record-error" role="alert"></p>
               <button class="primary-button" type="submit">Simpan Perubahan <span aria-hidden="true">→</span></button>
             </form>
-            <section id="family-task-panel" class="admin-section" aria-labelledby="private-data-title">
-              <h3 id="private-data-title">Detail Privat Dan Keluarga</h3>
-              <label>Pilih Warga<select id="detail-record-select"><option value="">Pilih Entri</option></select></label>
+            <!-- Identitas privat sudah menyatu pada form Edit Data Warga di atas.
+                 Panel lama dipertahankan tersembunyi hanya untuk kompatibilitas data lama. -->
+            <section id="family-task-panel" class="edit-record-details" hidden aria-hidden="true">
+              <select id="detail-record-select" hidden aria-hidden="true"><option value="">Pilih Entri</option></select>
               <form id="identity-form" class="form-stack" hidden>
                 <div class="field-row">
                   <label>Jenis Kelamin<select name="gender" required><option value="">Pilih Jenis Kelamin</option><option value="P">P — Perempuan</option><option value="L">L — Laki-laki</option></select></label>
@@ -939,7 +964,10 @@
                   <form id="site-icon-form" class="form-stack">
                     <select name="slot" aria-hidden="true" tabindex="-1" hidden><option value="1">Logo Pertama</option><option value="2">Logo Kedua</option></select>
                     <label>Pilih Gambar Logo<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required></label>
-                    <p id="site-icon-status" class="form-hint"></p>
+                                        <p id="site-icon-status" class="form-hint"></p>
+                    <div id="site-icon-preview" class="site-icon-preview" hidden>
+                      <img id="site-icon-preview-img" alt="Pratinjau logo">
+                    </div>
                     <p class="form-hint">Ganti satu logo setiap kali. Keduanya tampil berdampingan dengan pemisah |.</p>
                     <p class="form-error" id="site-icon-error" role="alert"></p>
                     <div class="site-icon-form-actions">
@@ -1176,8 +1204,8 @@
                     <label>Email<input name="email" type="email" maxlength="254" autocomplete="email"></label>
                     <div class="user-identity-column">
                       <label>Nama Pengguna<input name="username" maxlength="40" required autocomplete="username"></label>
-                      <p class="form-hint user-password-default">Username akun Warga dibuat dari nama lengkap. Password awal: <strong>user</strong>; wajib diganti saat login pertama.</p>
-                      <label id="user-edit-password-field" hidden>Kata Sandi Baru<input name="password" type="password" autocomplete="new-password" placeholder="Kosongkan bila tidak diubah"></label>
+                      <p class="form-hint user-password-default">Username akun Warga dibuat dari nama lengkap. Tetapkan kata sandi unik minimal 12 karakter.</p>
+                      <label id="user-edit-password-field">Kata Sandi<input name="password" type="password" minlength="12" autocomplete="new-password" placeholder="Minimal 12 karakter"></label>
                     </div>
                     <label class="user-photo-field">Foto Profil<input name="photo" type="file" accept="image/png,image/jpeg,image/webp"><span class="user-photo-preview" id="user-photo-preview">Foto Opsional · PNG, JPG, WebP · Maks. 5 MB</span></label>
                     <button id="delete-user-photo-button" class="text-button user-photo-delete" type="button" hidden>Hapus Foto Profil</button>
@@ -1348,7 +1376,7 @@
       <label>Agama<input name="religion" maxlength="50"></label>
       <label>Hubungan<input name="relationship" maxlength="80" placeholder="Contoh: KEPALA KEL., ISTERI, ANAK"></label>
       <label>No HP<input name="phone" maxlength="32" inputmode="tel"></label>
-      <label>Status<select name="residence_status"><option value="">Pilih Status</option><option value="TETAP">Tetap</option><option value="KONTRAK">Kontrak</option><option value="KOS">Kos</option></select></label>
+      <label>Status Domisili<select name="residence_status"><option value="">Pilih Status Domisili</option><option value="TETAP">Tetap</option><option value="KONTRAK">Kontrak</option><option value="KOS">Kos</option></select></label>
       <label>Jenis Kelamin<select name="gender"><option value="">Pilih Jenis Kelamin</option><option value="L">Laki-laki</option><option value="P">Perempuan</option></select></label>
       <p id="contribution-resident-error" class="form-error" role="alert"></p>
       <button id="contribution-signature-pad-button" class="action-button" type="button">Tanda Tangan Langsung</button>
@@ -1449,7 +1477,8 @@
             <th>TANGGAL LAHIR</th>
             <th>L/P</th>
             <th>HUBUNGAN</th>
-            <th>KET</th>
+            <th>DOMISILI</th>
+            <th>STATUS HIDUP</th>
           </tr>
         </thead>
         <tbody id="family-table-body"></tbody>
