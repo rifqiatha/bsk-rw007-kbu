@@ -4078,20 +4078,24 @@ document.querySelector("#finance-entry-form").addEventListener("submit", async (
     form.reset();
     form.elements.entry_date.value = new Date().toISOString().slice(0, 10);
     result.textContent = "Catatan keuangan berhasil ditambahkan.";
-    form.hidden = true;
-    document.querySelector("#add-finance-entry").hidden = false;
+    financeEntryDialog.close();
     await loadAdminFinance();
   } catch (error) { result.textContent = error.message; }
 });
 
-document.querySelector('#finance-entry-form [name="entry_date"]').value = new Date().toISOString().slice(0, 10);
+const financeEntryDialog = document.querySelector("#finance-entry-dialog");
+const financeEntryForm = document.querySelector("#finance-entry-form");
+
 document.querySelector("#add-finance-entry")?.addEventListener("click", () => {
-  const form = document.querySelector("#finance-entry-form");
-  form.hidden = false;
-  document.querySelector("#add-finance-entry").hidden = true;
-  form.elements.entry_date.value = new Date().toISOString().slice(0, 10);
-  form.elements.title.focus({ preventScroll: true });
+  financeEntryForm.reset();
+  financeEntryForm.elements.entry_date.value = new Date().toISOString().slice(0, 10);
+  document.querySelector("#finance-entry-result").textContent = "";
+  financeEntryDialog.showModal();
+  financeEntryForm.elements.title.focus({ preventScroll: true });
 });
+
+document.querySelector("#finance-entry-close")?.addEventListener("click", () => financeEntryDialog.close());
+document.querySelector("#finance-entry-cancel")?.addEventListener("click", () => financeEntryDialog.close());
 
 document.querySelector("#finance-print-button")?.addEventListener("click", () => {
   const body = document.querySelector("#finance-print-body");

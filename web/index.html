@@ -8,34 +8,15 @@
   <meta name="description" content="Arsip data kematian warga RW 007 Kelurahan Kota Bambu Utara, program BSK, beserta informasi program, iuran, dan keuangan untuk warga.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Font dimuat tanpa memblokir render. Stylesheet dari Google ini menambah
-       sekitar 1 detik render-blocking pada koneksi 4G lambat, padahal teks
-       sudah bisa tampil memakai font cadangan. "media=print" membuat browser
-       menundanya sebagai stylesheet yang tidak dipakai untuk tampilan; begitu
-       selesai, onload mengaktifkannya. Font cadangan ada di token --tp-font-*,
-       jadi tampilan tetap terbaca saat font belum tiba. -->
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'; this.onload=null;">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
   <link id="dynamic-favicon" rel="icon" href="/favicon.ico">
-  <!-- Logo diambil lebih awal supaya tidak baru tampil setelah app.js dan
-       /api/settings selesai. Kalau pengaturan kosong, permintaan ini 404 dan
-       diabaikan. -->
-  <!-- Berkas .min dihasilkan tools/bangun-min.mjs dari sumber yang bisa
-       dibaca. Kalau sumber lebih baru dari .min, server otomatis melayani
-       sumbernya, jadi kode usang tidak pernah sampai ke peramban. -->
   <link rel="stylesheet" href="/theme.css">
-  <!-- File minified dibangun dari sumber yang sama sebelum setiap rilis;
-       ukurannya lebih kecil agar halaman publik dan panel admin cepat dimuat. -->
   <link rel="stylesheet" href="/styles.min.css?v=20261101-65">
   <script src="/app.min.js?v=20261101-65" defer></script>
-  <!-- registration.js sengaja tidak dimuat di sini. Modul pendaftaran hanya
-       dipakai setelah pengguna masuk, dan seluruh UI-nya ber-atribut hidden
-       sampai saat itu. app.js memuatnya lewat ensureRegistrationModule() saat
-       dashboard warga dibuka atau tab antrean pendaftaran diklik. -->
   <script type="module" src="/reveal.min.js"></script>
 </head>
 <body>
-  <!-- HEADER: identitas situs, status pembaruan, tema, dan akses pengelola -->
   <header class="topbar">
     <!-- Tanpa aria-label: teks "Kifayah" dan nama wilayah yang terlihat sudah
      menjadi nama tautan ini. aria-label yang hanya berisi "Beranda" membuat
@@ -102,7 +83,6 @@
 
   <!-- HALAMAN UTAMA: pengantar dan arsip warga -->
   <main>
-    <!-- COVER / PENGANTAR -->
     <section id="intro-section" class="intro" aria-labelledby="page-title">
       <div class="tp-fx" aria-hidden="true"></div>
       <figure id="hero-visual" class="hero-visual" aria-hidden="true" hidden>
@@ -117,7 +97,6 @@
       </div>
     </section>
 
-    <!-- BERITA TERBARU: artikel dari panel admin -->
     <section id="news-section" class="news-section" aria-labelledby="news-heading" hidden>
       <div class="tp-fx" aria-hidden="true"></div>
       <div class="news-section-heading" data-reveal="theme" data-reveal-index="0"><div><p class="eyebrow">Berita Lingkungan</p><h2 id="news-heading">Berita Terbaru</h2></div></div>
@@ -135,7 +114,6 @@
       </section>
     </section>
 
-    <!-- KONTAK: nomor pengurus RT dan RW dari panel admin -->
     <section id="contacts-section" class="contacts-section" aria-labelledby="contacts-heading" hidden>
       <div class="news-section-heading" data-reveal="theme" data-reveal-index="0"><div><p class="eyebrow">Pengurus Wilayah</p><h2 id="contacts-heading">Nomor Kontak RT / RW</h2></div></div>
       <p class="contacts-hint">Hubungi pengurus wilayah terdekat untuk informasi program, iuran, dan layanan kematian BSK.</p>
@@ -144,7 +122,6 @@
 
   </main>
 
-  <!-- FOOTER: keterangan wilayah dan waktu pembaruan -->
   <footer class="footer" data-reveal="tp-up"><span id="footer-brand">Data Kifayah</span><b>|</b><span id="footer-area">Kota Bambu Utara</span><b>|</b><a id="footer-location" href="https://www.google.com/maps/search/?api=1&amp;query=RT.%20001%20RW%20007%20Kelurahan%20Kota%20Bambu%20Utara" target="_blank" rel="noopener noreferrer">RT. 001 RW 007 Kelurahan Kota Bambu Utara</a></footer>
 
   <dialog id="record-detail-dialog" class="dialog record-detail-dialog" aria-labelledby="record-detail-name">
@@ -174,7 +151,6 @@
     </div>
   </dialog>
 
-  <!-- PANEL PENGELOLA: autentikasi dan seluruh menu administrasi -->
   <dialog id="admin-dialog" class="dialog">
     <div class="dialog-top">
       <div><p class="eyebrow">Ruang Pengelola</p><h2 id="dialog-title">Masuk Pengelola</h2></div>
@@ -272,7 +248,6 @@
         </details>
       </section>
     </section>
-    <!-- WORKSPACE: navigasi peran dan panel fitur -->
     <div id="manager-panel" hidden>
       <div class="admin-workspace">
         <aside class="admin-sidebar">
@@ -326,21 +301,33 @@
             <section id="admin-finance-section" class="admin-section" aria-labelledby="admin-finance-title">
               <div class="contribution-page-heading"><div><h2 id="admin-finance-title">Data Keuangan</h2></div><div class="manage-actions"><a class="export-button" href="/api/admin/export/excel?type=finance">Ekspor XLSX</a><button id="finance-print-button" class="action-button" type="button">Pratinjau Cetak</button><button id="add-finance-entry" class="primary-button" type="button">Tambah Catatan <span aria-hidden="true">→</span></button></div></div>
               <p class="form-hint">Catatan di sini dibagikan kepada akun warga. Jangan masukkan NIK, nomor rekening pribadi, atau data sensitif.</p>
-              <form id="finance-entry-form" class="form-stack finance-entry-form" hidden>
-                <div class="field-row">
-                  <label>Tanggal<input name="entry_date" type="date" required></label>
-                  <label>Jenis<select name="entry_type" required><option value="income">Pemasukan</option><option value="expense">Pengeluaran</option></select></label>
+              <dialog id="finance-entry-dialog" class="dialog">
+                <div class="dialog-top">
+                  <div>
+                    <p class="eyebrow">Data Keuangan</p>
+                    <h2>Tambah Catatan Keuangan</h2>
+                  </div>
+                  <button class="icon-button" id="finance-entry-close" title="Tutup">✕</button>
                 </div>
-                <div class="field-row">
-                  <label>RT<input name="rt" inputmode="numeric" maxlength="3" placeholder="Contoh: 001"></label>
-                  <label>RW<input name="rw" inputmode="numeric" maxlength="3" placeholder="Contoh: 007"></label>
-                </div>
-                <label>Nama transaksi<input name="title" maxlength="120" required placeholder="Contoh: Iuran bulan Mei"></label>
-                <label>Catatan singkat<textarea name="description" rows="2" maxlength="1000"></textarea></label>
-                <label>Nominal<input name="amount" type="number" min="1" step="1" required></label>
-                <p id="finance-entry-result" class="form-hint" role="status"></p>
-                <button class="primary-button" type="submit">Tambah Catatan</button>
-              </form>
+                <form id="finance-entry-form" class="form-stack finance-entry-form">
+                  <div class="field-row">
+                    <label>Tanggal<input name="entry_date" type="date" required></label>
+                    <label>Jenis<select name="entry_type" required><option value="income">Pemasukan</option><option value="expense">Pengeluaran</option></select></label>
+                  </div>
+                  <div class="field-row">
+                    <label>RT<input name="rt" inputmode="numeric" maxlength="3" placeholder="Contoh: 001"></label>
+                    <label>RW<input name="rw" inputmode="numeric" maxlength="3" placeholder="Contoh: 007"></label>
+                  </div>
+                  <label>Nama transaksi<input name="title" maxlength="120" required placeholder="Contoh: Iuran bulan Mei"></label>
+                  <label>Catatan singkat<textarea name="description" rows="2" maxlength="1000"></textarea></label>
+                  <label>Nominal<input name="amount" type="number" min="1" step="1" required></label>
+                  <p id="finance-entry-result" class="form-hint" role="status"></p>
+                  <div class="dialog-top-actions">
+                    <button class="text-button" id="finance-entry-cancel" type="button">Batal</button>
+                    <button class="primary-button" type="submit">Tambah Catatan</button>
+                  </div>
+                </form>
+              </dialog>
               <div id="admin-finance-list" class="admin-payments-list" aria-live="polite"></div>
               <dialog id="finance-print-dialog" class="print-preview-panel" style="max-width:1100px;width:95vw;">
                 <div class="print-preview-header"><div><h3>Data Keuangan</h3><p>Periksa daftar sebelum mencetak.</p></div><div class="print-preview-actions"><button id="finance-print-pdf" class="action-button" type="button">Unduh PDF</button><button id="finance-print-back" class="action-button" type="button">Kembali</button><button id="finance-print-confirm" class="primary-button" type="button">Cetak Daftar <span aria-hidden="true">→</span></button></div></div>
@@ -426,7 +413,6 @@
               </dialog>
             </section>
           </section>
-          <!-- DATA WARGA: tambah, ubah, hapus, cetak, dan ekspor -->
           <dialog id="contribution-print-dialog" class="print-preview-panel" style="max-width:1200px;width:95vw;">
             <div class="print-preview-header">
               <div><h3 id="contribution-print-title">Pratinjau Cetak</h3><p>Periksa daftar ini sebelum membuka dialog printer.</p></div>
@@ -629,7 +615,6 @@
             </section>
             </div>
           </section>
-          <!-- PENDAFTARAN BSK: antrean formulir warga dan penandatanganan satu sesi -->
           <section id="admin-view-registrations" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-import" tabindex="0" data-admin-panel="registrations" hidden>
             <section id="registrations-panel" class="admin-section" aria-labelledby="registrations-title">
               <div class="contribution-page-heading">
@@ -650,7 +635,6 @@
               <div id="registration-list" class="admin-payments-list" aria-live="polite"></div>
             </section>
           </section>
-          <!-- IMPOR: unggah dan tinjau data sebelum disimpan -->
           <section id="admin-view-import" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-import" tabindex="0" data-admin-panel="import" hidden>
             <section id="import-task-panel" class="admin-section import-section" aria-labelledby="import-title">
               <h3 id="import-title">Impor Data Dari File</h3>
@@ -710,7 +694,6 @@
                 </div>
               </div>
             </section>
-            <!-- TINJAUAN DATA: catatan field bermasalah dari hasil impor -->
             <section id="issues-panel" class="admin-section issue-review-section" aria-labelledby="issues-title">
               <h3 id="issues-title">Tinjauan Data</h3>
               <p class="form-hint">Baris yang punya field bermasalah tetap tersimpan. Daftar ini menunjukkan file asal, nomor baris, dan nama warga supaya bisa diperbaiki kemudian.</p>
@@ -749,7 +732,6 @@
               </div>
             </section>
           </section>
-          <!-- BERITA: artikel ditulis dan dikelola Admin atau Super Admin -->
           <section id="admin-view-news" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-news" tabindex="0" data-admin-panel="news" hidden>
             <section class="admin-section news-admin-section" aria-labelledby="news-admin-title">
               <div class="news-admin-heading"><h3 id="news-admin-title">Tambah Berita</h3><p class="form-hint">Berita akan langsung tampil di halaman utama.</p></div>
@@ -805,7 +787,6 @@
               </table>
             </div>
           </dialog>
-          <!-- KONTAK RT/RW: nomor pengurus yang tampil di halaman utama -->
           <section id="admin-view-contacts" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-contacts" tabindex="0" data-admin-panel="contacts" hidden>
             <section class="admin-section contacts-admin-section" aria-labelledby="contacts-admin-title">
               <div class="news-admin-heading"><h3 id="contacts-admin-title">Tambah Nomor Kontak</h3><p class="form-hint">Kontak yang aktif langsung tampil di halaman utama pada menu Kontak.</p></div>
@@ -867,7 +848,6 @@
               </div>
             </section>
           </section>
-          <!-- RT/RW: jumlah wilayah dan pilihan bernomor tiga digit -->
           <section id="admin-view-area" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-contacts" tabindex="0" data-admin-panel="area" hidden>
             <form id="settings-form" class="settings-form">
               <div class="settings-title"><h3>Jumlah RT Dan RW</h3></div>
@@ -879,7 +859,6 @@
               <button class="primary-button" type="submit">Simpan jumlah <span aria-hidden="true">→</span></button>
             </form>
           </section>
-          <!-- MAINTENANCE: dijadwalkan di dalam menu Tampilan Situs -->
           <section id="admin-view-maintenance" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-media" tabindex="0" data-admin-panel="maintenance" hidden>
             <form id="maintenance-form" class="settings-form">
               <div class="settings-title"><h3>Jadwal Maintenance</h3></div>
@@ -951,7 +930,6 @@
               <button class="primary-button" type="submit">Simpan Tipografi <span aria-hidden="true">→</span></button>
             </form>
           </section>
-          <!-- MEDIA SITUS: logo, gambar cover, footer, donasi, dan kop ekspor -->
           <section id="admin-view-media" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-media" tabindex="0" data-admin-panel="media" hidden>
             <section class="admin-section">
               <section id="site-images-panel" class="media-settings-panel" aria-labelledby="site-images-title">
@@ -1171,7 +1149,6 @@
               </section>
             </section>
           </section>
-          <!-- AKUN: buat, atur jabatan, reset sandi, dan hapus -->
           <section id="admin-view-users" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-users" tabindex="0" data-admin-panel="users" hidden>
             <section class="admin-section" aria-labelledby="users-title">
               <div id="users-list-panel">

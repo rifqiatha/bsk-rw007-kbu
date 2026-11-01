@@ -628,6 +628,22 @@ button.record-page-ellipsis:hover, button.record-page-ellipsis:focus-visible { c
 .dialog-top { display: flex; justify-content: space-between; align-items: start; margin-bottom: 18px; }
 /* Judul dialog dengan tombol aksi di kanan, mis. Cetak Formulir. */
 .dialog-top-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+/* Tombol aksi di bawah formulir catatan keuangan di dalam dialog. */
+#finance-entry-dialog .dialog-top-actions {
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: var(--tp-bw) solid var(--line);
+}
+#finance-entry-dialog .dialog-top-actions .text-button {
+  padding: 9px 16px;
+  min-height: 44px;
+}
+#finance-entry-dialog .dialog-top-actions .primary-button {
+  padding: 9px 20px;
+  min-height: 44px;
+}
 .dialog-top .eyebrow { margin-bottom: 6px; }
 .news-detail-dialog .dialog-top { align-items: center; }
 .news-detail-dialog .dialog-top .eyebrow { margin: 0; font-size: calc((13px) * var(--site-font-scale, 1)); letter-spacing: .18em; }
