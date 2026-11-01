@@ -12,7 +12,7 @@ services:
     # Port host 8081 inilah yang harus diarahkan oleh reverse proxy
     # (lihat deploy/nginx-kifayah.conf).
     ports:
-      - "127.0.0.1:8081:8000"
+      - "0.0.0.0:8081:8000"
     volumes:
       # Folder data persisten (database dan foto warga).
       - "/DATA/AppData/nginx/config/www:/app/persist"
