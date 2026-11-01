@@ -49,7 +49,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
 # Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
 # bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
 # naik setiap kali alur impor berubah.
-APP_BUILD = "20261101-66"
+APP_BUILD = "20261101-67"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -171,6 +171,11 @@ def connect_database():
 	connection = sqlite3.connect(DATABASE, timeout=30)
 	connection.row_factory = sqlite3.Row
 	connection.execute("PRAGMA foreign_keys = ON")
+	# CasaOS melayani beberapa request sekaligus (unggah, simpan, dan baca
+	# daftar). WAL mencegah pembaca ikut tertahan saat satu data sedang ditulis;
+	# busy_timeout memberi SQLite waktu menunggu singkat daripada langsung gagal
+	# dengan pesan database terkunci pada penyimpanan disk yang lebih lambat.
+	connection.execute("PRAGMA busy_timeout = 30000")
 	database_path = str(Path(DATABASE).resolve())
 	global SCHEMA_DATABASE
 	if SCHEMA_DATABASE != database_path:
@@ -183,6 +188,13 @@ def connect_database():
 
 # DATABASE: schema creation and safe migrations.
 def _initialize_database(connection):
+	# Pengaturan ini tersimpan di file SQLite dan hanya dilakukan satu kali per
+	# proses. NORMAL aman untuk aplikasi ini (transaksi tetap atomik) dan jauh
+	# mengurangi flush disk saat operator menambah banyak data.
+	connection.execute("PRAGMA journal_mode = WAL")
+	connection.execute("PRAGMA synchronous = NORMAL")
+	connection.execute("PRAGMA temp_store = MEMORY")
+	connection.execute("PRAGMA cache_size = -16000")
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS records (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

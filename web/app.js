@@ -18,6 +18,8 @@ let mobileTaskReturnTab = "records";
 const settingsForm = document.querySelector("#settings-form");
 const records = [];
 let hasRenderedRecords = false;
+let lastRecordsPayload = null;
+let refreshRecordsPromise = null;
 let settingsPayloadSignature = null;
 const settings = { rt_count: 1, rw_count: 7, icon_zoom_1: 100, icon_zoom_2: 100, hero_background_scale: 100, hero_image_position: "right", site_font_preset: "kifayah", site_font_scale: 100, site_font_style: "normal", site_font_style_target: "all", intro_text_alignment: "left", news_text_alignment: "left", directory_text_alignment: "left", export_header_title: "", export_header_line_2: "", export_header_line_3: "", export_header_line_4: "", export_address_lines: "", export_logo_1_size: 74, export_logo_2_size: 74, export_header_title_size: 21, export_header_line_size: 13, export_header_contact_size: 10, signature_place: "", signature_date: "" };
 let familyFilterKK = null;
@@ -55,6 +57,7 @@ const heroFailedMedia = new Set();
 let contributionResidents = [];
 let originalContributionResidents = [];
 let contributionResidentsSignature = "";
+let contributionResidentsPromise = null;
 const heroImageElement = document.querySelector("#hero-image");
 const THEME_STORAGE_KEY = "kifayah-theme";
 const DARK_BSK_LOGO_URL = new URL("/assets/bsk-logo-dark.webp", document.baseURI).href;
@@ -1748,8 +1751,13 @@ async function downloadPdf(params, filename, label = "Menyusun PDF...") {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261101-66";
+const EXPECTED_BACKEND_BUILD = "20261101-67";
 let backendBuildChecked = false;
+
+// Cache hanya hidup selama tab ini terbuka. ETag dari server dipakai agar
+// polling tidak mengunduh dan mengurai ulang daftar warga besar bila isinya
+// belum berubah. Cache langsung dikosongkan setelah operasi tambah/edit/hapus.
+const apiResponseCache = new Map();
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
 function warnOutdatedBackend() {
@@ -1796,12 +1804,27 @@ async function request(url, options = {}) {
   // mengelola satu dialog progresnya sendiri. Opsi ini mencegah dialog saling
   // menutup/menimpa setiap file, tanpa mengubah perilaku request lain.
   const { processing = true, ...fetchOptions } = options;
+  const method = String(fetchOptions.method || "GET").toUpperCase();
+  const cacheable = method === "GET" && !fetchOptions.body;
+  const cached = cacheable ? apiResponseCache.get(url) : null;
+  const requestHeaders = {
+    ...(fetchOptions.body ? { "Content-Type": "application/json" } : {}),
+    ...fetchOptions.headers,
+  };
+  if (cached?.etag) requestHeaders["If-None-Match"] = cached.etag;
   const sendRequest = async () => {
     const response = await fetch(url, {
       ...fetchOptions,
-      headers: { ...(fetchOptions.body ? { "Content-Type": "application/json" } : {}), ...fetchOptions.headers },
+      headers: requestHeaders,
     });
-    return readApiResponse(response, "Permintaan tidak dapat diproses.");
+    if (response.status === 304 && cached) return cached.payload;
+    const payload = await readApiResponse(response, "Permintaan tidak dapat diproses.");
+    if (cacheable) {
+      apiResponseCache.set(url, { etag: response.headers.get("ETag") || "", payload });
+    } else {
+      apiResponseCache.clear();
+    }
+    return payload;
   };
   const processingMessages = {
     "/api/admin/media": "Mengunggah media...",
@@ -2384,22 +2407,33 @@ function showHeroFallback() {
 }
 
 async function refreshRecords(forceRender = false) {
-  try {
-    await loadSettings();
-    const payload = await request(isAdmin ? "/api/admin/records" : "/api/records");
-    const recordsChanged = forceRender || JSON.stringify(records) !== JSON.stringify(payload.records);
+  // Jangan membuat dua pemuatan penuh saat pengguna menekan menu ketika
+  // pemuatan awal atau penyegaran lain masih berjalan.
+  if (refreshRecordsPromise) return refreshRecordsPromise;
+  const refresh = async () => {
+    try {
+    // Dulu empat request dijalankan bergantian. Di koneksi CasaOS melalui
+    // tunnel, waktu tunggunya terakumulasi. Jalankan paralel agar latensi
+    // hanya dibayar sekali, bukan empat kali.
+    const recordsUrl = isAdmin ? "/api/admin/records" : "/api/records";
+    const [payload] = await Promise.all([
+      request(recordsUrl), loadSettings(), loadNews(), loadContacts(),
+    ]);
+    const recordsChanged = forceRender || payload !== lastRecordsPayload;
     if (recordsChanged) {
       records.splice(0, records.length, ...payload.records);
+      lastRecordsPayload = payload;
       render();
     }
-    await loadNews();
-    await loadContacts();
     const contributionView = document.querySelector("#admin-view-contributions");
     if (isAdmin && contributionView && !contributionView.hidden) await loadContributionResidents();
     if (isAdmin && recordsChanged) renderManageList();
-  } catch {
-    // Polling gagal diam-diam; data lama tetap ditampilkan sampai koneksi kembali.
-  }
+    } catch {
+      // Polling gagal diam-diam; data lama tetap ditampilkan sampai koneksi kembali.
+    }
+  };
+  refreshRecordsPromise = refresh().finally(() => { refreshRecordsPromise = null; });
+  return refreshRecordsPromise;
 }
 
 function renderManageList() {
@@ -3380,23 +3414,30 @@ function renderContributionResidents() {
 }
 
 async function loadContributionResidents() {
+  if (contributionResidentsPromise) return contributionResidentsPromise;
   const status = document.querySelector("#contribution-list-status");
-  status.textContent = "Memuat data warga dan iuran...";
-  try {
-    const payload = await request("/api/admin/contribution-residents");
-    const nextResidents = payload.residents || [];
-    const signature = JSON.stringify(nextResidents);
-    if (signature !== contributionResidentsSignature) {
-      contributionResidents = nextResidents;
-      originalContributionResidents = nextResidents;
-      contributionResidentsSignature = signature;
-      renderContributionResidents();
+  const load = async () => {
+    status.textContent = "Memuat data warga dan iuran...";
+    try {
+      const payload = await request("/api/admin/contribution-residents");
+      const nextResidents = payload.residents || [];
+      const signature = JSON.stringify(nextResidents);
+      if (signature !== contributionResidentsSignature) {
+        contributionResidents = nextResidents;
+        originalContributionResidents = nextResidents;
+        contributionResidentsSignature = signature;
+        renderContributionResidents();
+        // Menyusun ribuan option datalist cukup mahal; lakukan hanya bila
+        // daftar warga memang berubah, bukan setiap klik tab.
+        updateDeathResidentOptions();
+      }
+      status.textContent = `Data diperbarui ${new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date())}.`;
+    } catch (error) {
+      status.textContent = error.message;
     }
-    updateDeathResidentOptions();
-    status.textContent = `Data diperbarui ${new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date())}.`;
-  } catch (error) {
-    status.textContent = error.message;
-  }
+  };
+  contributionResidentsPromise = load().finally(() => { contributionResidentsPromise = null; });
+  return contributionResidentsPromise;
 }
 
 // Mencatat wafat selalu dimulai dari warga yang sudah ada. NIK menjadi
@@ -7332,7 +7373,19 @@ if (isAdminPage) {
   isAdmin = false;
   refreshRecords();
 }
-window.setInterval(refreshRecords, 15_000);
+// Panel pengelola selalu menyegarkan data setelah aksi simpan/edit/hapus.
+// Polling 15 detik sebelumnya mengunduh daftar besar ketika admin sedang
+// mengisi formulir. Pengunjung publik cukup diperbarui tiap menit dan hanya
+// ketika tab terlihat.
+if (!isAdminPage) {
+  const refreshPublicWhenVisible = () => {
+    if (!document.hidden) refreshRecords();
+  };
+  window.setInterval(refreshPublicWhenVisible, 60_000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshRecords();
+  });
+}
 
 // Handler untuk filter keluarga saat badge hubung diklik
 document.querySelector("#contribution-resident-list")?.addEventListener("click", (e) => {
