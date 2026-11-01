@@ -1751,7 +1751,7 @@ async function downloadPdf(params, filename, label = "Menyusun PDF...") {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261101-70";
+const EXPECTED_BACKEND_BUILD = "20261101-71";
 let backendBuildChecked = false;
 
 // Cache hanya hidup selama tab ini terbuka. ETag dari server dipakai agar
@@ -5263,9 +5263,9 @@ document.querySelector(".close-button").addEventListener("click", async () => {
     }
     return;
   }
-  // Tombol tutup ini sekaligus mengakhiri sesi, jadi tujuan akhirnya harus
-  // halaman masuk, sama seperti tombol Keluar.
-  window.location.href = "/masuk";
+  // Admin/Staff kembali ke layar login pengelola. Akun Warga mempunyai alur
+  // masuk sendiri sehingga tetap diarahkan ke /masuk.
+  window.location.href = wasResident ? "/masuk" : "/admin";
 });
 const adminProfile = document.querySelector(".admin-header-account");
 const adminProfileToggle = document.querySelector("#admin-profile-toggle");
@@ -5283,10 +5283,9 @@ document.querySelector("#admin-profile-logout").addEventListener("click", async 
   const wasResident = currentUser?.role === "Warga";
   await request("/api/logout", { method: "POST" }).catch(() => {});
   setAdminMode(false);
-  // Keluar dari panel ALWAYS berakhir di halaman masuk, bukan di beranda.
-  // Dulu halaman utama yang dibuka sehingga sulit memastikan sesi benar-benar
-  // sudah berakhir.
-  if (isAdminPage) window.location.href = "/masuk";
+  // Pisahkan layar masuk warga dari layar admin. Sesi sudah dihentikan lebih
+  // dulu, sehingga /admin akan langsung menampilkan formulir login admin.
+  if (isAdminPage) window.location.href = wasResident ? "/masuk" : "/admin";
   else if (wasResident) window.location.href = "/masuk";
   else await refreshRecords().catch(() => {});
 });
