@@ -516,7 +516,7 @@ button.record-page-ellipsis:hover, button.record-page-ellipsis:focus-visible { c
 .footer a:hover { color: var(--green); text-decoration: underline; text-underline-offset: 3px; }
 
 /* DIALOG: panel naik di atas kanvas */
-.dialog { width: min(520px, calc(100% - 30px)); max-height: min(90vh, 900px); max-height: min(90dvh, 900px); padding: 28px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb-color, transparent) transparent; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-large); background: var(--surface); box-shadow: var(--shadow); animation: panel-rise calc(var(--tp-dur) * 2.2) var(--tp-ease) both; }
+.dialog { width: min(520px, calc(100% - 30px)); max-height: min(90vh, 900px); max-height: min(90dvh, 900px); padding: 28px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb-color, transparent) transparent; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-large); background: var(--surface); box-shadow: var(--shadow); contain: layout paint; will-change: transform, opacity; animation: dialog-pop 140ms cubic-bezier(.2, .8, .2, 1) both; }
 .mobile-task-dialog[open] { width: min(720px, calc(100% - 28px)); max-height: min(90vh, 900px); max-height: min(90dvh, 900px); padding: 22px; animation: dialog-pop 260ms cubic-bezier(.2, .8, .2, 1) both; }
 .mobile-task-dialog::backdrop { animation: resident-backdrop-in 180ms ease-out both; }
 .mobile-task-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: var(--tp-bw) solid var(--line); }
@@ -532,11 +532,11 @@ button.record-page-ellipsis:hover, button.record-page-ellipsis:focus-visible { c
 .dialog::-webkit-scrollbar-track-piece:start { margin-top: 16px; }
 .dialog::-webkit-scrollbar-track-piece:end { margin-bottom: 16px; }
 .dialog::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--scrollbar-thumb-color, transparent); background-clip: padding-box; transition: background-color 160ms ease; }
-.dialog::backdrop { background: color-mix(in srgb, var(--tp-ink) 42%, transparent); backdrop-filter: blur(2px); }
+.dialog::backdrop { background: color-mix(in srgb, var(--tp-ink) 42%, transparent); }
 .record-detail-dialog[open], .news-detail-dialog[open] { animation: dialog-pop calc(var(--tp-dur) * 1.6) var(--tp-ease) both; }
 .record-detail-dialog[open]::backdrop, .news-detail-dialog[open]::backdrop { animation: backdrop-fade calc(var(--tp-dur) * 1.6) var(--tp-ease) both; }
 .processing-dialog { width: min(300px, calc(100% - 32px)); max-width: none; max-height: none; margin: auto; padding: 0; overflow: visible; border: 0; background: transparent; box-shadow: none; }
-.processing-dialog::backdrop { background: color-mix(in srgb, var(--tp-ink) 38%, transparent); backdrop-filter: blur(2px); }
+.processing-dialog::backdrop { background: color-mix(in srgb, var(--tp-ink) 38%, transparent); }
 .processing-status { display: flex; min-height: 68px; align-items: center; gap: 13px; padding: 16px 20px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); color: var(--ink); background: var(--surface); box-shadow: var(--shadow); font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 600; }
 .processing-copy { display: grid; min-width: 0; gap: 3px; }
 .processing-status p { margin: 0; overflow-wrap: anywhere; }
