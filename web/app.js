@@ -2582,6 +2582,8 @@ function updateEditPortraitFilename(file = null) {
 
 function openEditRecord(record) {
   const form = document.querySelector("#edit-record-form");
+  const dialog = document.querySelector("#edit-record-dialog");
+  if (!form || !dialog) return;
   const area = String(record.area || "");
   const rt = area.match(/RT\s*0*(\d+)/i);
   const rw = area.match(/RW\s*0*(\d+)/i);
@@ -2605,7 +2607,9 @@ function openEditRecord(record) {
   }
   document.querySelector("#edit-record-error").textContent = "";
   form.hidden = false;
-  focusAdminTask("edit-record-form", "Edit Data Warga");
+  // Form edit arsip selalu memakai dialog native. Pemeriksaan `open` mencegah
+  // klik ganda membuat modal bertumpuk atau melempar InvalidStateError.
+  if (!dialog.open) dialog.showModal();
   form.elements.full_name.focus({ preventScroll: true });
 }
 
@@ -2828,7 +2832,7 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   // Hapus total hanya untuk Super Admin agar tidak salah klik oleh Staff/Admin.
   document.querySelector("#delete-all-records").hidden = !isSuperAdmin;
   document.querySelector("#delete-all-contributions").hidden = !isSuperAdmin;
-  document.querySelector("#edit-record-form").hidden = true;
+  editRecordDialog?.close();
   document.querySelector(".export-warning").hidden = !permissions.has("export");
   document.querySelector(".export-button").hidden = !permissions.has("export");
   if (permissions.has("users")) loadAdminUsers();
@@ -4139,8 +4143,61 @@ function promoteToDocumentDialog(selector) {
   return popup;
 }
 
+// Form tambah tetap berada di halamannya masing-masing, tetapi ketika tombol
+// Edit ditekan form yang sama dipindahkan sementara ke satu dialog native.
+// Satu state per form memastikan listener submit yang sudah terpasang tidak
+// pernah didaftarkan ulang dan klik ganda tidak membuat popup bertumpuk.
+const editFormPopups = new Map();
+
+function ensureEditFormPopup(key, form, title, onClose) {
+  let state = editFormPopups.get(key);
+  if (state) return state;
+  const placeholder = document.createComment(`${key} form position`);
+  form.before(placeholder);
+  const dialog = document.createElement("dialog");
+  dialog.className = "dialog edit-popup-dialog";
+  dialog.id = `${key}-edit-dialog`;
+  dialog.setAttribute("aria-label", title);
+  const heading = document.createElement("div");
+  heading.className = "dialog-top";
+  const headingCopy = document.createElement("div");
+  const headingTitle = document.createElement("h2");
+  headingTitle.textContent = title;
+  const closeButton = document.createElement("button");
+  closeButton.className = "icon-button";
+  closeButton.type = "button";
+  closeButton.textContent = "×";
+  closeButton.title = "Tutup";
+  closeButton.setAttribute("aria-label", `Tutup ${title}`);
+  closeButton.addEventListener("click", () => dialog.close());
+  headingCopy.append(headingTitle);
+  heading.append(headingCopy, closeButton);
+  dialog.append(heading);
+  document.body.append(dialog);
+  state = { dialog, form, placeholder, onClose };
+  dialog.addEventListener("close", () => {
+    if (form.parentElement === dialog) placeholder.after(form);
+    onClose?.();
+  });
+  editFormPopups.set(key, state);
+  return state;
+}
+
+function openEditFormPopup(key, form, title, onClose, focusTarget) {
+  const { dialog } = ensureEditFormPopup(key, form, title, onClose);
+  if (form.parentElement !== dialog) dialog.append(form);
+  if (!dialog.open) dialog.showModal();
+  (focusTarget || form.querySelector("input, select, textarea, button"))?.focus({ preventScroll: true });
+}
+
+function closeEditFormPopup(key) {
+  const dialog = editFormPopups.get(key)?.dialog;
+  if (dialog?.open) dialog.close();
+}
+
 const financeEntryDialog = promoteToDocumentDialog("#finance-entry-dialog");
 const recordsPrintDialog = promoteToDocumentDialog("#print-preview-panel");
+const editRecordDialog = promoteToDocumentDialog("#edit-record-dialog");
 const financeEntryForm = document.querySelector("#finance-entry-form");
 
 document.querySelector("#add-finance-entry")?.addEventListener("click", () => {
@@ -4248,7 +4305,7 @@ function renderAdminNews(articles) {
       newsFormTitle.textContent = "Edit Berita";
       newsSubmitButton.textContent = "Simpan Perubahan";
       newsCancelButton.hidden = false;
-      focusAdminTask("news-form", "Edit Berita");
+      openEditFormPopup("news", newsForm, "Edit Berita", resetNewsForm, newsForm.elements.title);
     });
     const remove = document.createElement("button");
     remove.className = "delete-button";
@@ -4311,8 +4368,8 @@ document.querySelector("#delete-news-image-button").addEventListener("click", as
 
 newsCancelButton.addEventListener("click", () => {
   const wasEditing = editingNewsId !== null;
-  resetNewsForm();
-  if (wasEditing) focusAdminTask("news-saved-panel", "Berita Tersimpan");
+  if (wasEditing) closeEditFormPopup("news");
+  else resetNewsForm();
 });
 newsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -4343,7 +4400,7 @@ newsForm.addEventListener("submit", async (event) => {
     newsResult.hidden = false;
     await loadAdminNews();
     await loadNews();
-    if (editing) focusAdminTask("news-saved-panel", "Berita Tersimpan");
+    if (editing) closeEditFormPopup("news");
   } catch (error) {
     newsError.textContent = error.message;
   }
@@ -4416,7 +4473,7 @@ function renderPositionTitles() {
       positionSubmitButton.replaceChildren("Simpan Jabatan", submitArrow());
       positionCancelButton.hidden = false;
       positionResult.hidden = true;
-      focusAdminTask("position-structure-panel", "Struktur Jabatan");
+      openEditFormPopup("position", positionForm, "Edit Jabatan", resetPositionForm, positionForm.elements.title);
     });
     const remove = document.createElement("button");
     remove.className = "delete-button";
@@ -4471,7 +4528,10 @@ function resetPositionForm() {
   positionError.textContent = "";
 }
 
-positionCancelButton.addEventListener("click", resetPositionForm);
+positionCancelButton.addEventListener("click", () => {
+  if (editingPositionId !== null) closeEditFormPopup("position");
+  else resetPositionForm();
+});
 positionForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   positionError.textContent = "";
@@ -4490,6 +4550,7 @@ positionForm.addEventListener("submit", async (event) => {
     renderPositionTitles();
     await loadAdminContacts();
     await loadContacts();
+    if (editing) closeEditFormPopup("position");
   } catch (error) {
     positionError.textContent = error.message;
   }
@@ -4637,7 +4698,7 @@ function renderAdminContacts(contacts) {
       contactSubmitButton.textContent = "Simpan Perubahan";
       contactCancelButton.hidden = false;
       contactResult.hidden = true;
-      focusAdminTask("contact-form", "Edit Nomor Kontak");
+      openEditFormPopup("contact", contactForm, "Edit Nomor Kontak", resetContactForm, contactForm.elements.contact_name);
     });
     const remove = document.createElement("button");
     remove.className = "delete-button";
@@ -4781,8 +4842,8 @@ function resetContactForm() {
 
 contactCancelButton.addEventListener("click", () => {
   const wasEditing = editingContactId !== null;
-  resetContactForm();
-  if (wasEditing) focusAdminTask("contacts-saved-panel", "Kontak Tersimpan");
+  if (wasEditing) closeEditFormPopup("contact");
+  else resetContactForm();
 });
 
 contactForm.addEventListener("submit", async (event) => {
@@ -4811,7 +4872,7 @@ contactForm.addEventListener("submit", async (event) => {
     contactResult.hidden = false;
     await loadAdminContacts();
     await loadContacts();
-    if (editing) focusAdminTask("contacts-saved-panel", "Kontak Tersimpan");
+    if (editing) closeEditFormPopup("contact");
   } catch (error) {
     contactError.textContent = error.message;
   }
@@ -5068,14 +5129,7 @@ function setAdminTab(name, focus = false, openGroup = true) {
   document.querySelector("#admin-profile-menu").hidden = true;
   document.querySelector("#admin-profile-toggle").setAttribute("aria-expanded", "false");
   const userPanel = document.querySelector("#user-create-dialog");
-  if (userPanel && !userPanel.hidden) {
-    userPanel.hidden = true;
-    document.querySelector("#users-list-panel").hidden = false;
-    createUserForm.reset();
-    resetUserPhotoPreview();
-    editingUser = null;
-    document.querySelector("#add-user-button").setAttribute("aria-expanded", "false");
-  }
+  if (userPanel?.open) userPanel.close();
   const tabs = [...document.querySelectorAll(".admin-tab")];
   for (const tab of tabs) {
     const active = tab.dataset.adminTab === name;
@@ -5395,7 +5449,7 @@ document.querySelector("#change-password-form").addEventListener("submit", async
   }
 });
 // FORMULIR AKUN: pendaftaran user dengan foto profil opsional.
-const userCreatePanel = document.querySelector("#user-create-dialog");
+const userCreatePanel = promoteToDocumentDialog("#user-create-dialog");
 const createUserForm = document.querySelector("#create-user-form");
 const photoInput = createUserForm.elements.photo;
 let userPhotoPreviewUrl = "";
@@ -5448,11 +5502,8 @@ function openUserDialog(user = null) {
   const deletePhotoButton = document.querySelector("#delete-user-photo-button");
   deletePhotoButton.hidden = !user?.avatar_url;
   if (user?.avatar_url) deletePhotoButton.dataset.userId = String(user.id);
-  userCreatePanel.hidden = false;
-  document.querySelector("#users-list-panel").hidden = true;
+  if (!userCreatePanel.open) userCreatePanel.showModal();
   document.querySelector("#add-user-button").setAttribute("aria-expanded", "true");
-  focusAdminTask("user-create-dialog", user ? "Edit Pengguna" : "Tambah Pengguna");
-  userCreatePanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   createUserForm.elements.first_name.focus({ preventScroll: true });
 }
 
@@ -5495,9 +5546,11 @@ document.querySelector("#delete-user-photo-button").addEventListener("click", as
   }
 });
 function closeUserDialog() {
+  if (userCreatePanel.open) {
+    userCreatePanel.close();
+    return;
+  }
   clearAdminTaskFocus();
-  userCreatePanel.hidden = true;
-  document.querySelector("#users-list-panel").hidden = false;
   createUserForm.reset();
   resetUserPhotoPreview();
   editingUser = null;
@@ -5506,6 +5559,7 @@ function closeUserDialog() {
   clearAdminTaskFragment();
   document.querySelector("#admin-tab-users").focus();
 }
+userCreatePanel.addEventListener("close", closeUserDialog);
 document.querySelector("#permission-user-select").addEventListener("change", showPermissionEditor);
 document.querySelector("#permission-editor-save").addEventListener("click", async () => {
   const errorElement = document.querySelector("#permission-editor-error");
@@ -5669,19 +5723,23 @@ recordForm.addEventListener("submit", async (event) => {
   }
 });
 const editRecordForm = document.querySelector("#edit-record-form");
+function resetEditRecordForm() {
+  editRecordForm.reset();
+  delete editRecordForm.dataset.recordId;
+  updateEditPortraitFilename();
+  showEditPortraitPreview(null);
+  document.querySelector("#edit-record-error").textContent = "";
+}
+
 editRecordForm.elements.portrait.addEventListener("change", () => {
   const record = records.find((item) => item.id === Number(editRecordForm.dataset.recordId));
   const file = editRecordForm.elements.portrait.files[0] || null;
   updateEditPortraitFilename(file);
   showEditPortraitPreview(record, file);
 });
-document.querySelector("#cancel-edit-record").addEventListener("click", () => {
-  editRecordForm.reset();
-  updateEditPortraitFilename();
-  showEditPortraitPreview(null);
-  editRecordForm.hidden = true;
-  focusAdminTask("records-list-panel", "Data Tersimpan");
-});
+document.querySelector("#cancel-edit-record").addEventListener("click", () => editRecordDialog?.close());
+document.querySelector("#edit-record-close").addEventListener("click", () => editRecordDialog?.close());
+editRecordDialog?.addEventListener("close", resetEditRecordForm);
 editRecordForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const errorElement = document.querySelector("#edit-record-error");
@@ -5725,12 +5783,8 @@ editRecordForm.addEventListener("submit", async (event) => {
         return;
       }
     }
-    editRecordForm.reset();
-    updateEditPortraitFilename();
-    showEditPortraitPreview(null);
-    editRecordForm.hidden = true;
     await refreshRecords(portraitChanged);
-    focusAdminTask("records-list-panel", "Data Tersimpan");
+    editRecordDialog?.close();
   } catch (error) {
     errorElement.textContent = error.message;
   }

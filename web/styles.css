@@ -556,7 +556,8 @@ button.record-page-ellipsis:hover, button.record-page-ellipsis:focus-visible { c
 .record-detail-address { margin: 0; color: var(--ink); font-size: calc((16px) * var(--site-font-scale, 1)); line-height: 1.65; }
 .record-detail-map-links { display: flex; flex-wrap: wrap; gap: 8px; }
 /* PANEL AKUN: kartu pengguna dan editor hak akses */
-.user-create-panel { display: grid; width: min(100%, 800px); gap: 12px; margin: 16px 0 20px; padding: 18px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-soft); animation: arrive calc(var(--tp-dur) * 1.6) var(--tp-ease) both; }
+.user-create-panel { width: min(800px, calc(100% - 30px)); max-height: min(90vh, 900px); max-height: min(90dvh, 900px); margin: auto; padding: 18px; overflow: auto; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-soft); }
+.user-create-panel[open] { display: grid; gap: 12px; animation: dialog-pop 140ms cubic-bezier(.2, .8, .2, 1) both; }
 .user-create-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .user-create-heading .eyebrow { margin-bottom: 4px; }
 .user-create-heading h3 { margin: 0; color: var(--ink); font-family: var(--site-font-display); font-size: calc((22px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
@@ -763,7 +764,9 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .admin-task-focus[data-task-view="media"] ~ #admin-view-media .export-letterhead-section { border-top: 0; }
 .admin-view { min-width: 0; }
 .admin-page .admin-view select { min-width: 0; max-width: min(100%, 440px); }
-.user-create-panel[hidden] { display: none; }
+.edit-popup-dialog { width: min(760px, calc(100% - 30px)); }
+.edit-popup-dialog .edit-record-form { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.edit-popup-dialog .edit-form-heading { display: none; }
 .admin-view > .settings-form:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .admin-view > .admin-section:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .admin-page .admin-task-focus { border-color: var(--line); }

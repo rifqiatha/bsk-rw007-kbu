@@ -525,7 +525,9 @@
               <div id="admin-records-page-numbers" class="record-page-numbers" role="list" aria-label="Nomor halaman entri"></div>
               <button id="admin-records-next" class="action-button" type="button">Berikutnya</button>
             </div>
-            <form id="edit-record-form" class="edit-record-form" hidden>
+            <dialog id="edit-record-dialog" class="dialog edit-popup-dialog" aria-labelledby="edit-record-title">
+            <form id="edit-record-form" class="edit-record-form">
+              <div class="dialog-top"><div><p class="eyebrow">Arsip Status Wafat</p><h2 id="edit-record-title">Edit Data Warga</h2></div><button id="edit-record-close" class="icon-button" type="button" aria-label="Tutup" title="Tutup">×</button></div>
               <div class="edit-form-heading"><h3>Edit Data Warga</h3><button id="cancel-edit-record" class="text-button" type="button">Batal</button></div>
               <label>Nama Lengkap<input name="full_name" maxlength="120" required></label>
               <label>Jenis Kelamin<select name="gender" required><option value="">Pilih Jenis Kelamin</option><option value="P">P — Perempuan</option><option value="L">L — Laki-laki</option></select></label>
@@ -565,6 +567,7 @@
               <p class="form-error" id="edit-record-error" role="alert"></p>
               <button class="primary-button" type="submit">Simpan Perubahan <span aria-hidden="true">→</span></button>
             </form>
+            </dialog>
             <!-- Identitas privat sudah menyatu pada form Edit Data Warga di atas.
                  Panel lama dipertahankan tersembunyi hanya untuk kompatibilitas data lama. -->
             <section id="family-task-panel" class="edit-record-details" hidden aria-hidden="true">
@@ -1166,7 +1169,7 @@
                   </table>
                 </div>
               </div>
-              <section id="user-create-dialog" class="user-create-panel" aria-labelledby="user-create-title" hidden>
+              <dialog id="user-create-dialog" class="dialog user-create-panel" aria-labelledby="user-create-title">
                 <div class="user-create-heading">
                   <div><p class="eyebrow">Akun Pengelola</p><h3 id="user-create-title">Tambah Pengguna</h3></div>
                   <button id="user-create-close" class="icon-button" type="button" aria-label="Tutup form pengguna">×</button>
@@ -1194,7 +1197,7 @@
                     <button id="user-create-submit" class="primary-button" type="submit">Simpan pengguna <span aria-hidden="true">→</span></button>
                   </div>
                 </form>
-              </section>
+              </dialog>
             <section id="permissions-task-panel" class="admin-section permission-admin-section" aria-labelledby="permissions-title">
               <h3 id="permissions-title">Hak Akses Pengguna</h3>
               <p class="form-hint">Pilih akun dan tentukan menu yang dapat dibuka. Perubahan berlaku setelah disimpan.</p>
