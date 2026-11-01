@@ -206,7 +206,8 @@ body:not(.admin-page) .topbar:has(#mobile-nav-toggle[aria-expanded="true"]) { bo
 /* BERANDA: cover, statistik, toolbar, dan arsip */
 main { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
 main > section { min-width: 0; scroll-margin-top: calc(var(--topbar-height) + 10px); }
-.intro, .news-section, .directory { min-height: calc(100svh - var(--topbar-height)); }
+.news-section, .directory { min-height: calc(100svh - var(--topbar-height)); }
+.intro { min-height: min(calc(78svh - var(--topbar-height)), 720px); }
 .intro { position: relative; isolation: isolate; display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; min-width: 0; padding: 32px 0; }
 /* Hero full-bleed: media menutupi seluruh .intro dan teks ada di atasnya.
    Penting: saat media ada, .intro HARUS berhenti menjadi flex container.
@@ -232,7 +233,7 @@ h1, h2, h3, p { margin-top: 0; }
 h1 { margin-bottom: 20px; font-family: var(--site-font-display); font-size: calc((clamp(40px, 7.6vw, var(--tp-hero))) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); line-height: .98; letter-spacing: var(--tp-track-display); text-transform: capitalize; }
 .intro-description { max-width: 480px; margin: 0; color: var(--muted); font-size: calc((16px) * var(--site-font-scale, 1)); line-height: 1.5; }
 /* Lapisan media full-bleed di belakang teks intro. */
-.hero-visual { position: absolute; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%); z-index: 0; display: grid; min-width: 0; place-items: center; margin: 0; overflow: hidden; border: 0; background: #000; opacity: 1; pointer-events: none; }
+.hero-visual { position: absolute; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%); z-index: 0; display: grid; min-width: 0; place-items: center; margin: 0; overflow: hidden; border: 0; background: linear-gradient(125deg, #171717 0%, #323232 52%, #171717 100%); opacity: 1; pointer-events: none; }
 /* Scrim gelap supaya teks putih tetap terbaca di atas video/foto. Gradien
    dipakai karena teks intro selalu rata kiri: sisi teks digelapkan lebih
    dalam, sedangkan sisi video tetap terlihat jelas. */

@@ -181,7 +181,6 @@ clearAdminTaskFragment();
 
 const publicSectionPaths = {
   "intro-section": "/home",
-  "directory-section": "/daftar-warga",
   "news-section": "/berita",
   "contacts-section": "/kontak",
 };
@@ -203,8 +202,6 @@ function restorePublicRoute() {
   if (/^\/berita\/[^/]+\/?$/.test(window.location.pathname) || (window.location.hash && newsArticleFromLocation())) return;
   const legacySection = {
     "intro-section": "intro-section",
-    "directory-section": "directory-section",
-    "daftar-warga": "directory-section",
     "news-section": "news-section",
     "contacts-section": "contacts-section",
   }[decodeURIComponent(window.location.hash.slice(1)).toLowerCase()];
@@ -1751,7 +1748,7 @@ async function downloadPdf(params, filename, label = "Menyusun PDF...") {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261101-60";
+const EXPECTED_BACKEND_BUILD = "20261101-61";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
