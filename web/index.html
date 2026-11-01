@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="id" data-theme="ceramic" style="--tp-h: 60">
 <head>
   <meta charset="utf-8">
@@ -85,7 +85,7 @@
   <main>
     <section id="intro-section" class="intro" aria-labelledby="page-title">
       <div class="tp-fx" aria-hidden="true"></div>
-      <figure id="hero-visual" class="hero-visual" aria-hidden="true" hidden>
+      <figure id="hero-visual" class="hero-visual" aria-hidden="true">
         <img id="hero-image" alt="">
         <div id="hero-slideshow" class="hero-slideshow" aria-live="off" hidden></div>
       </figure>
@@ -275,7 +275,7 @@
         </aside>
         <div class="admin-views">
           <div id="admin-task-focus" class="admin-task-focus" hidden>
-            <button id="admin-task-return" class="text-button" type="button">← Kembali Ke Menu</button>
+            <button id="admin-task-return" class="text-button" type="button">↓ Kembali Ke Menu</button>
             <h3 id="admin-task-focus-title"></h3>
           </div>
           <section id="admin-view-payments" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="payments" hidden>
@@ -307,7 +307,7 @@
                     <p class="eyebrow">Data Keuangan</p>
                     <h2>Tambah Catatan Keuangan</h2>
                   </div>
-                  <button class="icon-button" id="finance-entry-close" title="Tutup">✕</button>
+                  <button class="icon-button" id="finance-entry-close" title="Tutup">×</button>
                 </div>
                 <form id="finance-entry-form" class="form-stack finance-entry-form">
                   <div class="field-row">
@@ -440,7 +440,7 @@
           </dialog>
           <section id="admin-view-records" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="records">
             <dialog id="record-dialog" class="dialog contribution-dialog" aria-labelledby="record-dialog-title">
-              <div class="dialog-top"><div><p class="eyebrow">Arsip Status Wafat</p><h2 id="record-dialog-title">Tambah Status Wafat</h2></div></div>
+              <div class="dialog-top"><div><p class="eyebrow">Arsip Status Wafat</p><h2 id="record-dialog-title">Tambah Status Wafat</h2></div><button class="icon-button" id="record-dialog-close" type="button" aria-label="Tutup" title="Tutup">×</button></div>
             <form id="record-form" class="form-stack">
               <label>Cari Data Warga / NIK
                 <input id="death-resident-search" list="death-resident-options" type="search" autocomplete="off" placeholder="Ketik nama atau NIK warga">
@@ -1468,3 +1468,4 @@
   </dialog>
 </body>
 </html>
+

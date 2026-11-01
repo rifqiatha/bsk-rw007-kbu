@@ -2744,6 +2744,11 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   loginForm.hidden = enabled;
   document.querySelector("#change-password-form").hidden = !mustChangePassword;
   managerPanel.hidden = !enabled || mustChangePassword || isResident;
+  // Sembunyikan konten publik saat panel pengelola aktif di halaman /admin
+  if (isAdminPage) {
+    const mainContent = document.querySelector("main");
+    if (mainContent) mainContent.hidden = enabled && !mustChangePassword && !isResident;
+  }
   document.querySelector("#resident-dashboard").hidden = !isResident;
   document.querySelector("#resident-dashboard-name").textContent = profileName;
   document.querySelector("#resident-dashboard-username").textContent = currentUser?.username || "";
@@ -3970,7 +3975,7 @@ async function loadAdminFinance() {
       const amount = document.createElement("strong");
       const isIncome = entry.income > 0;
       amount.className = isIncome ? "finance-amount-income" : "finance-amount-expense";
-      amount.textContent = `${isIncome ? "+" : "−"}${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(isIncome ? entry.income : entry.expense)}`;
+      amount.textContent = `${isIncome ? "+" : "’"}${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(isIncome ? entry.income : entry.expense)}`;
       heading.append(title, amount);
       const detail = document.createElement("p");
       detail.textContent = `${entry.entry_date}${entry.description ? ` · ${entry.description}` : ""}`;
@@ -5551,6 +5556,13 @@ document.querySelector("#add-record")?.addEventListener("click", () => {
 // Klik di luar dan Escape tidak membatalkan data yang sedang diisi.
 recordDialog?.addEventListener("cancel", (event) => event.preventDefault());
 document.querySelector("#record-dialog-cancel")?.addEventListener("click", () => {
+  if (!recordForm.querySelector("input[name='full_name']").value.trim() || window.confirm("Batalkan pengisian status wafat? Data yang belum disimpan akan hilang.")) {
+    recordForm.reset();
+    recordDialog.close();
+  }
+});
+
+document.querySelector("#record-dialog-close")?.addEventListener("click", () => {
   if (!recordForm.querySelector("input[name='full_name']").value.trim() || window.confirm("Batalkan pengisian status wafat? Data yang belum disimpan akan hilang.")) {
     recordForm.reset();
     recordDialog.close();

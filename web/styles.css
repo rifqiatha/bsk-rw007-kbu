@@ -1,5 +1,5 @@
 /* ===============================================================
-   DATA KIFAYAH â€” lapisan semantik di atas paket tema CERAMIC.
+   DATA KIFAYAH — lapisan semantik di atas paket tema CERAMIC.
    Setiap nilai diturunkan dari token --tp-* (lihat web/theme.css).
    =============================================================== */
 
@@ -205,14 +205,14 @@ body:not(.admin-page) .topbar:has(#mobile-nav-toggle[aria-expanded="true"]) { bo
 
 /* BERANDA: cover, statistik, toolbar, dan arsip */
 @media (prefers-reduced-motion: no-preference) {
-  html { scroll-snap-type: y proximity; }
+  html { scroll-snap-type: none; }
 }
 main { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
 /* Setiap bagian publik adalah satu layar penuh. Dengan begitu Beranda,
    Berita, dan Kontak berhenti pada batas yang jelas, termasuk saat navigasi
    mengarah langsung ke /berita atau /kontak. Konten yang lebih panjang tetap
    boleh melampaui satu layar—ini minimum, bukan tinggi yang dipotong. */
-main > section { min-width: 0; min-height: 100vh; min-height: 100svh; min-height: 100dvh; scroll-margin-top: 0; scroll-snap-align: start; scroll-snap-stop: always; }
+main > section { min-width: 0; min-height: 100vh; min-height: 100svh; min-height: 100dvh; scroll-margin-top: var(--topbar-height); scroll-snap-align: start; scroll-snap-stop: normal; }
 .news-section, .directory { min-height: 100vh; min-height: 100svh; min-height: 100dvh; }
 /* Intro adalah cover satu halaman utuh. Header berada di atas cover secara
    visual, sehingga pengurangan tinggi header membuat section berikutnya
@@ -307,10 +307,10 @@ kbd { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
 .record-table { width: 100%; min-width: 820px; border-collapse: collapse; font-size: calc((14px) * var(--site-font-scale, 1)); }
 .record-table th { padding: 14px 16px; border-bottom: var(--tp-bw) solid var(--line); color: var(--muted); background: transparent; font-size: calc((11px) * var(--site-font-scale, 1)); font-weight: 700; letter-spacing: .14em; text-align: left; text-transform: uppercase; white-space: nowrap; }
 .record-table th[data-record-sort] { cursor: pointer; transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
-.record-table th[data-record-sort]::after { content: "â†•"; margin-left: 6px; color: var(--line); font-size: calc((11px) * var(--site-font-scale, 1)); }
+.record-table th[data-record-sort]::after { content: "↕"; margin-left: 6px; color: var(--line); font-size: calc((11px) * var(--site-font-scale, 1)); }
 .record-table th[data-record-sort]:hover, .record-table th[data-record-sort]:focus-visible { color: var(--green); background: var(--green-soft); outline: none; }
-.record-table th[data-record-sort][aria-sort="asc"]::after { content: "â†‘"; color: var(--green); }
-.record-table th[data-record-sort][aria-sort="desc"]::after { content: "â†“"; color: var(--green); }
+.record-table th[data-record-sort][aria-sort="asc"]::after { content: "↑"; color: var(--green); }
+.record-table th[data-record-sort][aria-sort="desc"]::after { content: "↓"; color: var(--green); }
 .record-table td { min-height: 56px; padding: 15px 16px; border-bottom: var(--tp-bw) solid var(--line); color: var(--muted); vertical-align: middle; white-space: nowrap; }
 .record-table tbody tr:last-child td { border-bottom: 0; }
 .record-table tbody tr { transition: background-color var(--tp-dur) var(--tp-ease); }
@@ -355,7 +355,7 @@ button.record-page-ellipsis:hover, button.record-page-ellipsis:focus-visible { c
 .record-detail-trigger:hover { color: var(--green); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 .record-detail-trigger:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; border-radius: var(--radius-control); }
 .record-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--muted); font-size: calc((14px) * var(--site-font-scale, 1)); }
-.record-meta span + span::before { content: "Â·"; margin-right: 12px; color: var(--line); }
+.record-meta span + span::before { content: "·"; margin-right: 12px; color: var(--line); }
 .record-links { display: flex; gap: 7px; }
 .map-link { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); color: var(--green); background: var(--surface); font-size: calc((13px) * var(--site-font-scale, 1)); text-decoration: none; white-space: nowrap; transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease), border-color var(--tp-dur) var(--tp-ease), transform var(--tp-dur) var(--tp-ease); }
 .map-link:hover { border-color: var(--green); background: var(--green-soft); }
@@ -413,7 +413,7 @@ button.record-page-ellipsis:hover, button.record-page-ellipsis:focus-visible { c
 .news-article-headline { color: var(--muted); font-size: calc((14px) * var(--site-font-scale, 1)); line-height: 1.65; }
 .news-article-card time { display: block; margin-bottom: 1px; color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); line-height: 1.5; }
 .news-article-author { color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); line-height: 1.5; }
-.contacts-section { position: relative; isolation: isolate; display: grid; min-width: 0; align-content: center; max-width: 1180px; margin: 0 auto; padding: 32px 0; }
+.contacts-section { position: relative; isolation: isolate; display: grid; min-width: 0; align-content: start; max-width: 1180px; margin: 0 auto; padding: 16px 0; }
 .contacts-section::before { content: ""; position: absolute; z-index: -1; inset-block: 0; left: 50%; width: 100vw; transform: translateX(-50%); background: var(--news-band); }
 .contacts-hint { margin: 0 0 22px; color: var(--muted); font-size: calc((15px) * var(--site-font-scale, 1)); line-height: 1.65; }
 /* align-items:start mencegah kartu ikutdiregangkan mengikuti kartu
@@ -736,7 +736,7 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .admin-task-link { display: flex; min-width: 0; min-height: 38px; align-items: center; gap: 7px; padding: 8px 10px; border-radius: var(--radius-control); color: var(--muted); font-size: calc((12.5px) * var(--site-font-scale, 1)); line-height: 1.35; text-align: left; text-decoration: none; overflow-wrap: anywhere; cursor: pointer; }
 .admin-task-group summary { color: var(--ink); font-weight: 400; list-style: none; transition: color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
 .admin-task-group summary::-webkit-details-marker { display: none; }
-.admin-task-group summary::before { content: "â€º"; display: inline-block; width: 12px; flex: none; color: var(--green); font-size: calc((16px) * var(--site-font-scale, 1)); line-height: 1; transition: transform var(--tp-dur) var(--tp-ease); }
+.admin-task-group summary::before { content: "›"; display: inline-block; width: 12px; flex: none; color: var(--green); font-size: calc((16px) * var(--site-font-scale, 1)); line-height: 1; transition: transform var(--tp-dur) var(--tp-ease); }
 .admin-task-group[open] > summary::before { transform: rotate(90deg); }
 .admin-task-group summary:hover,
 .admin-task-link:hover,
@@ -1044,7 +1044,7 @@ dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; tr
 .contribution-resident-details { border-top: var(--tp-bw) solid var(--line); }
 .contribution-resident-details > summary { display: flex; min-height: 38px; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0 0; color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); cursor: pointer; list-style: none; }
 .contribution-resident-details > summary::-webkit-details-marker { display: none; }
-.contribution-resident-details > summary::after { content: "âŒ„"; color: var(--muted); font-size: 16px; transition: transform var(--tp-dur) var(--tp-ease); }
+.contribution-resident-details > summary::after { content: "»"; color: var(--muted); font-size: 16px; transition: transform var(--tp-dur) var(--tp-ease); }
 .contribution-resident-details[open] > summary::after { transform: rotate(180deg); }
 .contribution-resident-details-body { display: grid; gap: 12px; padding: 10px 0 2px; animation: contribution-card-enter 180ms var(--tp-ease) both; }
 .contribution-profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; margin: 0; }
@@ -1878,4 +1878,6 @@ body.site-font-italic.target-body p, body.site-font-italic.target-body li, body.
 @media (max-width: 460px) {
   .registration-member-row { grid-template-columns: minmax(0, 1fr); }
 }
+
+
 
