@@ -1748,7 +1748,7 @@ async function downloadPdf(params, filename, label = "Menyusun PDF...") {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261101-65";
+const EXPECTED_BACKEND_BUILD = "20261101-66";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
@@ -4088,14 +4088,33 @@ document.querySelector("#finance-entry-form").addEventListener("submit", async (
   } catch (error) { result.textContent = error.message; }
 });
 
-const financeEntryDialog = document.querySelector("#finance-entry-dialog");
+// Dialog keuangan awalnya berada di dalam #admin-dialog. Sebagian Chromium
+// gagal menampilkan dialog modal bertingkat: dialog induk menghilang dari
+// fokus, sementara formulir anak tidak pernah terlihat. Promosikan ke body
+// sebelum dibuka supaya selalu menjadi elemen top-layer mandiri.
+function promoteToDocumentDialog(selector) {
+  const popup = document.querySelector(selector);
+  if (popup && popup.parentElement !== document.body) document.body.append(popup);
+  return popup;
+}
+
+const financeEntryDialog = promoteToDocumentDialog("#finance-entry-dialog");
 const financeEntryForm = document.querySelector("#finance-entry-form");
 
 document.querySelector("#add-finance-entry")?.addEventListener("click", () => {
+  if (!financeEntryDialog || !financeEntryForm) return;
   financeEntryForm.reset();
   financeEntryForm.elements.entry_date.value = new Date().toISOString().slice(0, 10);
   document.querySelector("#finance-entry-result").textContent = "";
-  financeEntryDialog.showModal();
+  if (!financeEntryDialog.open) {
+    try {
+      financeEntryDialog.showModal();
+    } catch (error) {
+      // Fallback untuk browser lama: formulir tetap dapat digunakan walau
+      // modal top-layer tidak didukung dengan benar.
+      financeEntryDialog.show();
+    }
+  }
   financeEntryForm.elements.title.focus({ preventScroll: true });
 });
 
