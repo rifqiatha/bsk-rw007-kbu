@@ -760,6 +760,8 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .admin-views.is-idle { display: none; }
 .admin-task-focus { display: flex; min-width: 0; align-items: center; gap: 14px; margin-bottom: 18px; padding-bottom: 12px; border-bottom: var(--tp-bw) solid var(--line); animation: admin-task-reveal calc(var(--tp-dur) * 1.4) var(--tp-ease) both; }
 .admin-task-focus .text-button { flex: none; }
+.admin-task-return { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.admin-task-return svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .admin-task-focus h3 { min-width: 0; margin: 0; color: var(--ink); font-family: var(--site-font-display); font-size: calc((20px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); overflow-wrap: anywhere; }
 .admin-task-focus-branch { margin-top: 0 !important; padding-top: 0 !important; border-top: 0 !important; }
 .admin-task-focus-target { margin-top: 0 !important; }
