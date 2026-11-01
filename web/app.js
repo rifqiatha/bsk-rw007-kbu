@@ -1748,7 +1748,7 @@ async function downloadPdf(params, filename, label = "Menyusun PDF...") {
 // Versi backend yang diharapkan peramban. Nilai ini harus sama dengan
 // APP_BUILD di Kifayah.py. Kalau berbeda, server masih menjalankan kode lama
 // dan beberapa fitur baru tidak akan bekerja.
-const EXPECTED_BACKEND_BUILD = "20261101-64";
+const EXPECTED_BACKEND_BUILD = "20261101-65";
 let backendBuildChecked = false;
 
 // Peringatan tampil sekali saja supaya tidak mengganggu import yang sedang jalan.
@@ -1792,10 +1792,14 @@ async function readApiResponse(response, fallbackMessage) {
 }
 
 async function request(url, options = {}) {
+  // Pratinjau impor menjalankan beberapa unggahan kecil secara paralel dan
+  // mengelola satu dialog progresnya sendiri. Opsi ini mencegah dialog saling
+  // menutup/menimpa setiap file, tanpa mengubah perilaku request lain.
+  const { processing = true, ...fetchOptions } = options;
   const sendRequest = async () => {
     const response = await fetch(url, {
-      ...options,
-      headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
+      ...fetchOptions,
+      headers: { ...(fetchOptions.body ? { "Content-Type": "application/json" } : {}), ...fetchOptions.headers },
     });
     return readApiResponse(response, "Permintaan tidak dapat diproses.");
   };
@@ -1807,13 +1811,13 @@ async function request(url, options = {}) {
     "/api/admin/typography": "Menyimpan pengaturan font...",
     "/api/settings": "Silahkan tunggu...",
   };
-  if (url === "/api/admin/media" && options.method === "DELETE") {
+  if (processing && url === "/api/admin/media" && fetchOptions.method === "DELETE") {
     return withProcessing(sendRequest, "Menghapus media...");
   }
-  if (processingMessages[url] && options.method && options.method !== "GET") {
+  if (processing && processingMessages[url] && fetchOptions.method && fetchOptions.method !== "GET") {
     return withProcessing(sendRequest, processingMessages[url]);
   }
-  if (options.method && options.method !== "GET") {
+  if (processing && fetchOptions.method && fetchOptions.method !== "GET") {
     return withProcessing(sendRequest, "Silahkan tunggu...");
   }
   return sendRequest();
@@ -2677,15 +2681,20 @@ function showSelectedPrivateData() {
   }
 }
 
+function fileBase64(file) {
+  // FileReader melakukan encoding secara native. Implementasi lama membuat
+  // string JavaScript berulang-ulang per potongan 32 KB; pada XLSX/PDF besar
+  // itu menghabiskan CPU dan memori browser sebelum unggahan dimulai.
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("File tidak dapat dibaca dari perangkat ini."));
+    reader.onload = () => resolve(String(reader.result).split(",", 2)[1] || "");
+    reader.readAsDataURL(file);
+  });
+}
+
 async function imageBase64(file, message = "Menyiapkan file...") {
-  return withProcessing(async () => {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let binary = "";
-    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-    }
-    return btoa(binary);
-  }, message);
+  return withProcessing(() => fileBase64(file), message);
 }
 
 async function uploadImage(file, kind, extra = {}) {
@@ -5677,6 +5686,7 @@ const importFileInput = document.querySelector("#import-file");
 const importFileList = document.querySelector("#import-file-list");
 const MAX_IMPORT_FILE_BYTES = 60 * 1024 * 1024;
 const MAX_IMPORT_FILES = 2000;
+const IMPORT_PREVIEW_CONCURRENCY = 2;
 // Tidak ada lagi batas total permintaan: berkas dikirim satu per satu, jadi
 // ukuran POST hanya sebesar satu berkas.
 // File dikumpulkan di sini, bukan langsung dari input, agar file yang sudah dipilih
@@ -5769,28 +5779,43 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
     // sekaligus membuat satu permintaan besar (base64 menambah sekitar 4/3 dari
     // ukuran asli) yang mudah ditolak proxy sebelum sampai ke server, dan
     // satu file bermasalah ikut membatalkan semua file lain.
-    const perFileResults = [];
-    for (const [index, file] of files.entries()) {
-      try {
-        const encoded = await imageBase64(file, `Menyiapkan file ${index + 1} dari ${files.length}...`);
-        const part = await request("/api/admin/import/preview", {
-          method: "POST",
-          body: JSON.stringify({
-            destination: importDestination,
-            files: [{ filename: file.name, content_base64: encoded }],
-          }),
-        });
-        perFileResults.push(part);
-      } catch (error) {
-        // Satu file gagal tidak boleh menghentikan file lain. Kegagalan
-        // dicatat sebagai entri file supaya muncul di panel rincian.
-        perFileResults.push({
-          rows: [],
-          warnings: [`${file.name}: ${error.message}`],
-          files: [{ filename: file.name, rows: 0, status: `gagal: ${error.message}` }],
-        });
-      }
-    }
+    const perFileResults = new Array(files.length);
+    let nextFileIndex = 0;
+    const updateImportProgress = (text) => {
+      const label = document.querySelector("#processing-label");
+      if (label) label.textContent = text;
+    };
+    await withProcessing(async () => {
+      const worker = async () => {
+        while (nextFileIndex < files.length) {
+          const index = nextFileIndex;
+          nextFileIndex += 1;
+          const file = files[index];
+          try {
+            updateImportProgress(`Membaca file ${index + 1} dari ${files.length}: ${file.name}`);
+            const encoded = await fileBase64(file);
+            updateImportProgress(`Memeriksa file ${index + 1} dari ${files.length}: ${file.name}`);
+            perFileResults[index] = await request("/api/admin/import/preview", {
+              method: "POST",
+              processing: false,
+              body: JSON.stringify({
+                destination: importDestination,
+                files: [{ filename: file.name, content_base64: encoded }],
+              }),
+            });
+          } catch (error) {
+            // Satu file gagal tidak boleh menghentikan file lain. Kegagalan
+            // dicatat sebagai entri file supaya muncul di panel rincian.
+            perFileResults[index] = {
+              rows: [],
+              warnings: [`${file.name}: ${error.message}`],
+              files: [{ filename: file.name, rows: 0, status: `gagal: ${error.message}` }],
+            };
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(IMPORT_PREVIEW_CONCURRENCY, files.length) }, worker));
+    }, `Menyiapkan ${files.length} file untuk pratinjau...`);
     const payload = {
       rows: perFileResults.flatMap((part) => part.rows),
       warnings: perFileResults.flatMap((part) => part.warnings || []),

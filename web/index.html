@@ -24,10 +24,10 @@
        dibaca. Kalau sumber lebih baru dari .min, server otomatis melayani
        sumbernya, jadi kode usang tidak pernah sampai ke peramban. -->
   <link rel="stylesheet" href="/theme.css">
-  <!-- Sumber dipakai langsung agar deployment Git yang tidak menjalankan
-       minifier tidak pernah mengirim stylesheet/skrip versi lama. -->
-  <link rel="stylesheet" href="/styles.css?v=20261101-64">
-  <script src="/app.js?v=20261101-64" defer></script>
+  <!-- File minified dibangun dari sumber yang sama sebelum setiap rilis;
+       ukurannya lebih kecil agar halaman publik dan panel admin cepat dimuat. -->
+  <link rel="stylesheet" href="/styles.min.css?v=20261101-65">
+  <script src="/app.min.js?v=20261101-65" defer></script>
   <!-- registration.js sengaja tidak dimuat di sini. Modul pendaftaran hanya
        dipakai setelah pengguna masuk, dan seluruh UI-nya ber-atribut hidden
        sampai saat itu. app.js memuatnya lewat ensureRegistrationModule() saat

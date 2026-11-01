@@ -438,9 +438,17 @@ def _parse_xlsx(content, warnings):
 
 	workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
 	results = []
-	for worksheet in workbook.worksheets:
-		matrix = [list(row) for row in worksheet.iter_rows(values_only=True)]
-		results.extend(_header_row_to_records(matrix, warnings, sheet_name=worksheet.title))
+	try:
+		for worksheet in workbook.worksheets:
+			# read_only sudah menghindari seluruh workbook dimuat ke memori. Matrix
+			# tetap dibutuhkan parser untuk mengenali dua baris kepala kolom, tetapi
+			# dibuat per-sheet agar file besar multi-sheet tidak menahan semuanya
+			# sekaligus di RAM (penting pada ARM CasaOS).
+			matrix = [list(row) for row in worksheet.iter_rows(values_only=True)]
+			if matrix:
+				results.extend(_header_row_to_records(matrix, warnings, sheet_name=worksheet.title))
+	finally:
+		workbook.close()
 	return results
 
 
@@ -507,7 +515,24 @@ def _tokens_to_rows(tokens, image_height, warnings):
 	results = []
 	for row in row_groups:
 		cells = {field: [] for field in anchors}
+		# PDF sering tidak memberi lebar kolom; nama belakang dapat sedikit
+		# melewati titik tengah menuju kolom RT. Selama tokennya masih berupa
+		# huruf dan belum melewati awal kolom setelah Nama, ia tetap bagian dari
+		# nama—bukan nilai RT/RW.
+		name_anchor = anchors.get("full_name")
+		name_next_anchor = next((x for field, x in ordered_anchors if x > name_anchor), None) if name_anchor is not None else None
+		name_column_open = name_anchor is not None
 		for token in sorted(row, key=lambda item: item["x"]):
+			if (
+				name_column_open
+				and name_next_anchor is not None
+				and token["x"] <= name_next_anchor + 4
+				and re.search(r"[A-Za-z]", token["text"])
+			):
+				cells["full_name"].append(token["text"])
+				continue
+			if name_next_anchor is not None and token["x"] > name_next_anchor + 4:
+				name_column_open = False
 			field, anchor_x = min(ordered_anchors, key=lambda item: abs(item[1] - token["x"]))
 			position = ordered_anchors.index((field, anchor_x))
 			neighbor_gaps = []
@@ -515,7 +540,11 @@ def _tokens_to_rows(tokens, image_height, warnings):
 				neighbor_gaps.append(anchor_x - ordered_anchors[position - 1][1])
 			if position + 1 < len(ordered_anchors):
 				neighbor_gaps.append(ordered_anchors[position + 1][1] - anchor_x)
-			limit = min(85, min(neighbor_gaps) * 0.55) if neighbor_gaps else 45
+			# Nama sering terdiri dari dua atau tiga token. Batas lama 55% dari
+			# jarak antar kolom dapat membuang nama belakang pada PDF ekspor yang
+			# kolom "Nama"-nya cukup lebar. Tetap dibatasi di bawah titik tengah
+			# kolom tetangga agar teks tidak berpindah kolom.
+			limit = min(110, min(neighbor_gaps) * 0.65) if neighbor_gaps else 55
 			if abs(anchor_x - token["x"]) <= max(14, limit):
 				cells[field].append(token["text"])
 		source = {field: " ".join(values) for field, values in cells.items() if values}
@@ -594,39 +623,51 @@ def _parse_pdf(content, warnings):
 	except Exception as error:
 		raise ImportFormatError(f"PDF tidak dapat dibuka: {error}") from error
 	last_header_fields = None
-	for page_number, page in enumerate(document, start=1):
-		page_results = []
-		try:
-			for table in page.find_tables().tables:
-				matrix = table.extract()
-				found = _header_row_to_records(matrix, warnings, sheet_name=f"Halaman {page_number}")
-				if found:
-					page_header = [_field_for_header(v) for v in matrix[0]] if matrix else []
-					if "full_name" in page_header:
-						last_header_fields = page_header
-					page_results.extend(found)
-				elif last_header_fields:
-					page_results.extend(_records_with_known_fields(matrix, last_header_fields, warnings))
-		except Exception:
+	try:
+		for page_number, page in enumerate(document, start=1):
+			# find_tables() sangat mahal untuk PDF banyak halaman. Sebagian besar
+			# ekspor Excel/PDF sudah memiliki text layer; baca tokennya lebih dulu.
+			# Deteksi tabel lengkap hanya menjadi fallback ketika posisi teks tidak
+			# cukup untuk menentukan kolom, sehingga ketelitian lama tetap ada.
+			words = page.get_text("words", sort=True)
+			if words:
+				tokens = [
+					{"x": (word[0] + word[2]) / 2, "y": (word[1] + word[3]) / 2,
+					 "height": word[3] - word[1], "text": word[4], "confidence": 1.0}
+					for word in words
+				]
+				page_rows = _tokens_to_rows(tokens, page.rect.height, warnings)
+				if page_rows:
+					results.extend(page_rows)
+					continue
+				labeled = _parse_labeled_text(page.get_text("text", sort=True), warnings)
+				if labeled:
+					results.extend(labeled)
+					continue
+
 			page_results = []
-		if page_results:
-			results.extend(page_results)
-			continue
-		words = page.get_text("words")
-		if words:
-			tokens = [
-				{"x": (word[0] + word[2]) / 2, "y": (word[1] + word[3]) / 2,
-				 "height": word[3] - word[1], "text": word[4], "confidence": 1.0}
-				for word in words
-			]
-			page_rows = _tokens_to_rows(tokens, page.rect.height, warnings)
-			if not page_rows:
-				page_rows = _parse_labeled_text(page.get_text("text"), warnings)
-			results.extend(page_rows)
-		else:
-			pixmap = page.get_pixmap(dpi=180, alpha=False)
-			results.extend(_ocr_image(pixmap.tobytes("png"), warnings))
-	document.close()
+			try:
+				for table in page.find_tables().tables:
+					matrix = table.extract()
+					found = _header_row_to_records(matrix, warnings, sheet_name=f"Halaman {page_number}")
+					if found:
+						page_header = [_field_for_header(v) for v in matrix[0]] if matrix else []
+						if "full_name" in page_header:
+							last_header_fields = page_header
+						page_results.extend(found)
+					elif last_header_fields:
+						page_results.extend(_records_with_known_fields(matrix, last_header_fields, warnings))
+			except Exception:
+				page_results = []
+			if page_results:
+				results.extend(page_results)
+			elif not words:
+				# PDF scan tidak punya text layer, jadi OCR hanya dijalankan pada
+				# kasus ini—bukan untuk setiap PDF biasa.
+				pixmap = page.get_pixmap(dpi=180, alpha=False)
+				results.extend(_ocr_image(pixmap.tobytes("png"), warnings))
+	finally:
+		document.close()
 	return results
 
 
