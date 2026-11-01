@@ -31,8 +31,11 @@ Kalau salah satu sumber diedit, bangun ulang salinannya:
 node tools/bangun-min.mjs
 ```
 
-Lalu naikkan nomor `?v=` di `web/index.html` dan `web/login.html` supaya
-peramban mengambil berkas yang baru.
+Nomor rilis memakai format mingguan `YYYY-Www`, misalnya `2026-W44`. Gunakan
+satu nomor yang sama pada `APP_BUILD`, `EXPECTED_BACKEND_BUILD`, dan parameter
+`?v=` di HTML selama minggu tersebut; jangan menaikkannya untuk setiap commit.
+Server akan memvalidasi ETag aset versi itu pada setiap kunjungan. Jadi perubahan
+dalam minggu yang sama tetap langsung terbaca tanpa membuat nomor versi baru.
 
 Sebagai pengaman, `Kifayah.py` membandingkan waktu modifikasi berkas sumber
 dengan berkas `.min`. Kalau sumbernya lebih baru, server **otomatis melayani

@@ -46,10 +46,10 @@ ALLOWED_VARIANT_WIDTHS = (160, 240, 320, 480, 640, 800, 1024, 1280, 1600)
 # proxy (lihat deploy/nginx-kifayah.conf), kalau tidak proxy membalas 413 lebih
 # dulu dan aplikasi tidak pernah menerima datanya.
 MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", 96 * 1024 * 1024))
-# Nomor versi backend. Nilai ini dikirim ke peramban lewat /api/session supaya
-# bisa dipastikan apakah server sudah menjalankan kode terbaru. Nilainya dibuat
-# naik setiap kali alur impor berubah.
-APP_BUILD = "20261101-72"
+# Label rilis backend. Nilai ini dikirim ke peramban lewat /api/session supaya
+# bisa dipastikan apakah server sudah menjalankan kode terbaru. Gunakan satu
+# label per minggu dengan format tahun-minggu ISO (YYYY-Www), bukan per commit.
+APP_BUILD = "2026-W44"
 MAX_PAYMENT_PROOF_SIZE = 5 * 1024 * 1024
 
 IMAGE_TYPES = {
@@ -4771,9 +4771,10 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			# jadi selalu divalidasi; gzip membuat ukurannya tetap kecil.
 			cache_control = "no-cache"
 		elif "v=" in self.path:
-			# CSS dan JS sudah diberi nomor versi (?v=...). URL yang berbeda
-			# berarti isi yang berbeda, jadi aman disimpan lama di browser.
-			cache_control = "public, max-age=31536000, immutable"
+			# Label rilis hanya berubah mingguan. Dalam minggu yang sama berkas
+			# dapat diperbarui, maka browser wajib memvalidasi ETag terlebih dahulu.
+			# Jika tidak berubah, server cukup membalas 304 tanpa mengirim isi lagi.
+			cache_control = "public, max-age=0, must-revalidate"
 		else:
 			# Aset statis tanpa nomor versi (theme.css, reveal.js, favicon).
 			cache_control = "public, max-age=3600"
