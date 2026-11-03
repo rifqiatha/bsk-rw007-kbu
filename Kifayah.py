@@ -28,6 +28,9 @@ BASE_DIR = Path(__file__).resolve().parent
 WEB_DIR = BASE_DIR / "web"
 DATABASE = BASE_DIR / "kifayah.sqlite3"
 UPLOAD_DIR = BASE_DIR / "uploads"
+# Varian "light" dipakai di atas kertas/latar putih karena tulisan lingkar
+# logo BSK berwarna hitam. Varian dark dipakai khusus di latar gelap situs.
+DEFAULT_EXPORT_BSK_LOGO = WEB_DIR / "assets" / "bsk-logo-light.webp"
 # Theme pack (token --tp-*) disisipkan langsung ke HTML supaya tidak menambah
 # permintaan yang memblokir render. Isinya dibaca sekali lalu disimpan di sini,
 # dan dibaca ulang hanya kalau berkas theme.css berubah di disk.
@@ -64,6 +67,23 @@ PAYMENT_PROOF_TYPES = {
 	"image/webp": (".webp", lambda data: data.startswith(b"RIFF") and data[8:12] == b"WEBP"),
 	"application/pdf": (".pdf", lambda data: data.startswith(b"%PDF-")),
 }
+
+
+def export_logo_path(settings, key):
+	"""Kembalikan berkas logo kop yang aman digunakan.
+
+	Logo kanan mempunyai cadangan resmi BSK bertulisan hitam agar dokumen
+	tidak terlihat kosong pada instalasi baru sebelum pengelola mengunggah
+	logo. Logo unggahan pengelola tetap menjadi prioritas bila tersedia.
+	"""
+	filename = str(settings.get(key, "") or "").strip()
+	if filename and Path(filename).name == filename:
+		candidate = UPLOAD_DIR / filename
+		if candidate.is_file():
+			return candidate
+	if key == "export_logo_2" and DEFAULT_EXPORT_BSK_LOGO.is_file():
+		return DEFAULT_EXPORT_BSK_LOGO
+	return None
 
 
 def save_payment_proof(encoded, content_type, prefix):
@@ -3649,9 +3669,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				for column, width in {"A": 7, "B": 34, "C": 18, "D": 16, "E": 18, "F": 48}.items():
 					sheet.column_dimensions[column].width = width
 				for key, anchor in (("export_logo_1", "A1"), ("export_logo_2", "F1")):
-					filename = settings.get(key, "")
-					logo_path = UPLOAD_DIR / filename
-					if not filename or Path(filename).name != filename or not logo_path.is_file():
+					logo_path = export_logo_path(settings, key)
+					if logo_path is None:
 						continue
 					try:
 						with PILImage.open(logo_path) as image:
@@ -3747,9 +3766,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				for column, width in {"A": 7, "B": 34, "C": 45, "D": 22, "E": 18}.items():
 					sheet.column_dimensions[column].width = width
 				for key, anchor in (("export_logo_1", "A1"), ("export_logo_2", "E1")):
-					filename = str(settings.get(key, "") or "")
-					logo_path = UPLOAD_DIR / filename
-					if not filename or Path(filename).name != filename or not logo_path.is_file():
+					logo_path = export_logo_path(settings, key)
+					if logo_path is None:
 						continue
 					try:
 						with PILImage.open(logo_path) as image:
@@ -3833,11 +3851,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				residents.column_dimensions[column].width = width
 			logo_buffers = []
 			for setting_key, anchor in (("export_logo_1", "A1"), ("export_logo_2", "M1")):
-				filename = export_settings.get(setting_key, "")
-				if not filename or Path(filename).name != filename:
-					continue
-				logo_path = UPLOAD_DIR / filename
-				if not logo_path.is_file():
+				logo_path = export_logo_path(export_settings, setting_key)
+				if logo_path is None:
 					continue
 				try:
 					with PILImage.open(logo_path) as source_image:
@@ -4004,15 +4019,25 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				page = doc.new_page(width=420, height=595)
 				bold = pymupdf.Font("hebo")
 				regular = pymupdf.Font("helv")
-				logo_name = str(site.get("export_logo_1", "") or "")
-				logo_path = UPLOAD_DIR / logo_name
-				if logo_name and Path(logo_name).name == logo_name and logo_path.is_file():
+				# Kop struk mengikuti dokumen ekspor: DKI kiri, teks hitam di
+				# tengah, lalu emblem BSK bertulisan hitam di kanan.
+				for key, rect in (
+					("export_logo_1", pymupdf.Rect(28, 24, 74, 70)),
+					("export_logo_2", pymupdf.Rect(346, 24, 392, 70)),
+				):
+					logo_path = export_logo_path(site, key)
+					if logo_path is None:
+						continue
 					try:
-						page.insert_image(pymupdf.Rect(34, 28, 76, 70), filename=str(logo_path), keep_proportion=True)
+						page.insert_image(rect, filename=str(logo_path), keep_proportion=True)
 					except Exception:
 						pass
-				page.insert_text((92, 43), "BADAN SOSIAL KEMATIAN", fontsize=13, fontname="hebo")
-				page.insert_text((92, 59), "RW 007 KOTA BAMBU UTARA", fontsize=8.5, fontname="helv")
+				for text, y, size, font in (
+					("BADAN SOSIAL KEMATIAN", 40, 11.5, "hebo"),
+					("RW 007 KOTA BAMBU UTARA", 55, 7.8, "helv"),
+				):
+					width = (bold if font == "hebo" else regular).text_length(text, fontsize=size)
+					page.insert_text(((420 - width) / 2, y), text, fontsize=size, fontname=font, color=(0.05, 0.05, 0.05))
 				page.draw_line((32, 84), (388, 84), color=(.1, .3, .24), width=1)
 				page.insert_text((32, 112), "STRUK PEMBAYARAN IURAN", fontsize=15, fontname="hebo")
 				rows = [
@@ -4053,11 +4078,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				page = doc.new_page(width=842, height=595)
 				bold = pymupdf.Font("hebo")
 				regular = pymupdf.Font("helv")
-				# Kop memakai dua logo ekspor yang sama seperti Data Warga.
+				# Kop memakai DKI kiri dan BSK bertulisan hitam kanan, sama
+				# seperti Data Warga dan struk iuran.
 				for key, rect in (("export_logo_1", pymupdf.Rect(52, 20, 98, 66)), ("export_logo_2", pymupdf.Rect(744, 20, 790, 66))):
-					filename = str(site.get(key, "") or "")
-					logo_path = UPLOAD_DIR / filename
-					if filename and Path(filename).name == filename and logo_path.is_file():
+					logo_path = export_logo_path(site, key)
+					if logo_path is not None:
 						try: page.insert_image(rect, filename=str(logo_path), keep_proportion=True)
 						except Exception: pass
 				for text, y, size in (("DATA KEUANGAN", 30, 14), ("RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA", 46, 10), ("KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT", 61, 10)):
@@ -4323,11 +4348,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			# Data logo dibaca sekali, lalu dipakai ulang di setiap halaman.
 			letterhead_logos = []
 			for logo_index, logo_key in enumerate(("export_logo_1", "export_logo_2")):
-				logo_name = str(site.get(logo_key, "") or "").strip()
-				if not logo_name or Path(logo_name).name != logo_name:
-					continue
-				logo_path = UPLOAD_DIR / logo_name
-				if not logo_path.is_file():
+				logo_path = export_logo_path(site, logo_key)
+				if logo_path is None:
 					continue
 				try:
 					logo_stream = None
