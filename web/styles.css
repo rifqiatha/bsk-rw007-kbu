@@ -125,8 +125,6 @@ body:not(.admin-page) .topbar:has(#mobile-nav-toggle[aria-expanded="true"]) { bo
 .brand-mark .brand-logo-group img { flex: none; border-radius: 0; object-fit: contain; transition: width var(--tp-dur) var(--tp-ease), height var(--tp-dur) var(--tp-ease); }
 #brand-icon { width: calc(28px * var(--brand-logo-zoom-1, 1)); height: calc(37px * var(--brand-logo-zoom-1, 1)); }
 #brand-icon-secondary { width: calc(28px * var(--brand-logo-zoom-2, 1)); height: calc(37px * var(--brand-logo-zoom-2, 1)); }
-.brand-logo-group:has(#brand-icon-secondary:not([hidden])) #brand-icon,
-.brand-logo-group:has(#brand-icon-secondary:not([hidden])) #brand-icon-secondary { width: 34px; height: 40px; }
 .brand-logo-group:has(#brand-icon-secondary[hidden]) #brand-icon { width: calc(40px * var(--brand-logo-single-zoom, 1)); height: calc(44px * var(--brand-logo-single-zoom, 1)); }
 .brand-logo-divider { display: block; width: 2px; height: 28px; flex: none; margin: 0 5px; overflow: hidden; color: transparent; background: var(--line); opacity: 1; font-size: 0; }
 .brand-copy { display: grid; gap: 2px; }
@@ -1148,6 +1146,9 @@ dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; tr
 .export-letterhead-section h3 { margin: 0; color: var(--ink); font-family: var(--site-font-display); font-size: calc((20px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
 .export-letterhead-section > .form-hint { margin: -8px 0 0; }
 .export-letterhead-section .field-row > .form-stack { min-width: 0; }
+.export-letterhead-section .settings-actions { justify-content: flex-start; gap: 10px; }
+.export-letterhead-section .settings-actions .primary-button { min-width: 0; }
+.export-letterhead-section .settings-actions .text-button { padding-inline: 8px; }
 .news-admin-heading { display: grid; gap: 4px; }
 .news-admin-heading h3, .news-list-heading { margin: 0; color: var(--ink); font-family: var(--site-font-display); font-size: calc((20px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
 .news-admin-heading .form-hint { margin: 0; }
@@ -1324,8 +1325,6 @@ dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; tr
   .brand:has(.brand-mark.has-icon) { gap: 8px; }
   .brand-logo-group { gap: 4px; }
   #brand-icon, #brand-icon-secondary { width: 20px; height: 28px; }
-  .brand-logo-group:has(#brand-icon-secondary:not([hidden])) #brand-icon,
-  .brand-logo-group:has(#brand-icon-secondary:not([hidden])) #brand-icon-secondary { width: 23px; height: 29px; }
   .brand-logo-group:has(#brand-icon-secondary[hidden]) #brand-icon { width: calc(28px * var(--brand-logo-single-zoom, 1)); height: calc(34px * var(--brand-logo-single-zoom, 1)); }
   .brand-logo-divider { height: 22px; margin: 0 2px; }
   .brand-copy { min-width: 0; }
