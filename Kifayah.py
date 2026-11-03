@@ -31,6 +31,9 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 # Varian "light" dipakai di atas kertas/latar putih karena tulisan lingkar
 # logo BSK berwarna hitam. Varian dark dipakai khusus di latar gelap situs.
 DEFAULT_EXPORT_BSK_LOGO = WEB_DIR / "assets" / "bsk-logo-light.webp"
+# Berkas ini ikut dilacak Git agar logo DKI tetap tersedia bila instalasi
+# CasaOS masih menyimpan nama unggahan lama yang sudah tidak ada.
+DEFAULT_DKI_LOGO = UPLOAD_DIR / "ff61a380fc24c3c08ac1b27bbe595a63.webp"
 # Theme pack (token --tp-*) disisipkan langsung ke HTML supaya tidak menambah
 # permintaan yang memblokir render. Isinya dibaca sekali lalu disimpan di sini,
 # dan dibaca ulang hanya kalau berkas theme.css berubah di disk.
@@ -85,12 +88,23 @@ def export_logo_path(settings, key):
 	# dipakai sebagai ikon situs. Ini membuat logo kiri tetap hadir pada
 	# pratinjau cetak dan PDF baru.
 	if key == "export_logo_1":
-		site_icon = str(settings.get("site_icon", "") or "").strip()
-		if site_icon and Path(site_icon).name == site_icon:
-			candidate = UPLOAD_DIR / site_icon
-			if candidate.is_file():
-				return candidate
+		return site_icon_path(settings, 1)
 	if key == "export_logo_2" and DEFAULT_EXPORT_BSK_LOGO.is_file():
+		return DEFAULT_EXPORT_BSK_LOGO
+	return None
+
+
+def site_icon_path(settings, slot):
+	"""Ambil logo header dengan cadangan yang ikut tersedia di repository."""
+	key = "site_icon" if slot == 1 else "site_icon_2"
+	filename = str(settings.get(key, "") or "").strip()
+	if filename and Path(filename).name == filename:
+		candidate = UPLOAD_DIR / filename
+		if candidate.is_file():
+			return candidate
+	if slot == 1 and DEFAULT_DKI_LOGO.is_file():
+		return DEFAULT_DKI_LOGO
+	if slot == 2 and DEFAULT_EXPORT_BSK_LOGO.is_file():
 		return DEFAULT_EXPORT_BSK_LOGO
 	return None
 
@@ -106,18 +120,20 @@ def insert_pdf_logo(page, rectangle, logo_path):
 	if not logo_path:
 		return False
 	try:
-		page.insert_image(rectangle, filename=str(logo_path), keep_proportion=True)
+		from PIL import Image
+		with Image.open(logo_path) as image:
+			# Emblem BSK memiliki margin transparan bawaan. Crop alpha membuat
+			# ukuran visual BSK dan DKI seimbang pada kotak PDF yang sama.
+			image = image.convert("RGBA")
+			content_box = image.getchannel("A").getbbox()
+			if content_box:
+				image = image.crop(content_box)
+			buffer = io.BytesIO()
+			image.save(buffer, format="PNG")
+		page.insert_image(rectangle, stream=buffer.getvalue(), keep_proportion=True)
 		return True
 	except Exception:
-		try:
-			from PIL import Image
-			with Image.open(logo_path) as image:
-				buffer = io.BytesIO()
-				image.convert("RGBA").save(buffer, format="PNG")
-			page.insert_image(rectangle, stream=buffer.getvalue(), keep_proportion=True)
-			return True
-		except Exception:
-			return False
+		return False
 
 
 def save_payment_proof(encoded, content_type, prefix):
@@ -2136,11 +2152,9 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				settings = get_settings(connection)
 		except sqlite3.Error:
 			return body
-		first = str(settings.get("site_icon", "") or "")
-		second = str(settings.get("site_icon_2", "") or "")
 		payload = {
-			"siteIconReady": bool(first) and (UPLOAD_DIR / Path(first).name).is_file(),
-			"siteIcon2Ready": bool(second) and (UPLOAD_DIR / Path(second).name).is_file(),
+			"siteIconReady": site_icon_path(settings, 1) is not None,
+			"siteIcon2Ready": site_icon_path(settings, 2) is not None,
 			"iconZoom1": settings.get("icon_zoom_1", 100),
 			"iconZoom2": settings.get("icon_zoom_2", 100),
 			"brandArea": settings.get("footer_area", ""),
@@ -4054,10 +4068,12 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				bold = pymupdf.Font("hebo")
 				regular = pymupdf.Font("helv")
 				# Kop struk mengikuti dokumen ekspor: DKI kiri, teks hitam di
-				# tengah, lalu emblem BSK bertulisan hitam di kanan.
+				# tengah, lalu emblem BSK bertulisan hitam di kanan. Kedua logo
+				# memakai kotak yang sama; ruang transparan BSK sudah dipangkas
+				# oleh insert_pdf_logo sebelum disisipkan.
 				for key, rect in (
-					("export_logo_1", pymupdf.Rect(24, 17, 78, 76)),
-					("export_logo_2", pymupdf.Rect(342, 17, 396, 76)),
+					("export_logo_1", pymupdf.Rect(70, 12, 128, 76)),
+					("export_logo_2", pymupdf.Rect(292, 12, 350, 76)),
 				):
 					logo_path = export_logo_path(site, key)
 					if logo_path is None:
@@ -4725,8 +4741,17 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		if path in ("/media/site-icon", "/media/site-icon/2", "/media/hero"):
 			key = {"/media/site-icon": "site_icon", "/media/site-icon/2": "site_icon_2", "/media/hero": "hero_image"}[path]
 			with connect_database() as connection:
-				filename = get_settings(connection).get(key, "")
-				return self.send_stored_media(filename)
+				settings = get_settings(connection)
+			if path == "/media/hero":
+				return self.send_stored_media(settings.get(key, ""))
+			logo_path = site_icon_path(settings, 1 if path == "/media/site-icon" else 2)
+			if logo_path is None:
+				self.send_error(404)
+				return
+			if logo_path.parent == UPLOAD_DIR:
+				return self.send_stored_media(logo_path.name)
+			self.send_bytes(logo_path.read_bytes(), "image/webp", "public, max-age=3600")
+			return
 		if path.startswith("/media/signature/"):
 			role = path.rsplit("/", 1)[1]
 			if role not in ("maker", "rt", "lmk", "rw", "bsk"):
