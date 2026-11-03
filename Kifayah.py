@@ -3325,7 +3325,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				rows = connection.execute(
 					"SELECT p.id, p.period, p.amount, p.paid_at, p.method, p.status, p.admin_note, "
 					"p.proof_file, p.created_at, p.source, "
-					"COALESCE(NULLIF(r.full_name, ''), u.display_name) AS display_name, r.rt, r.rw "
+					"COALESCE(NULLIF(r.full_name, ''), u.display_name) AS display_name, "
+					"COALESCE(NULLIF(p.family_card_number, ''), r.family_card_number) AS family_card_number, r.rt, r.rw "
 					"FROM contribution_payments p "
 					"JOIN contribution_residents r ON r.id = p.resident_id "
 					"LEFT JOIN admin_users u ON u.id = r.account_id " + where + " "

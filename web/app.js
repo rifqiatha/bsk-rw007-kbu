@@ -3097,7 +3097,8 @@ async function loadAdminPayments() {
       heading.append(name, status);
       const detail = document.createElement("p");
       const area = [item.rt && `RT ${item.rt}`, item.rw && `RW ${item.rw}`].filter(Boolean).join(" / ");
-      detail.textContent = [item.period, contributionMoney.format(item.amount), item.paid_at, item.method, area].filter(Boolean).join(" · ");
+      const familyCard = String(item.family_card_number || "").trim();
+      detail.textContent = [familyCard && `KK ${familyCard}`, item.period, contributionMoney.format(item.amount), item.paid_at, item.method, area].filter(Boolean).join(" · ");
       card.append(heading, detail);
       /* BUKTI OPSIONAL: setoran tanpa bukti tetap sah, jadi yang ditampilkan
          hanya lencana status, bukan tautan gambar yang tidak ada. */
@@ -3148,6 +3149,19 @@ async function loadAdminPayments() {
         fileInput.click();
       });
       proofRow.append(upload);
+      if (item.status === "Terverifikasi") {
+        const receipt = document.createElement("button");
+        receipt.type = "button";
+        receipt.className = "action-button";
+        receipt.textContent = "Pratinjau Struk PDF";
+        receipt.addEventListener("click", () => openContributionReceiptPreview({
+          full_name: item.display_name,
+          family_card_number: familyCard,
+          rt: item.rt,
+          rw: item.rw,
+        }, item));
+        proofRow.append(receipt);
+      }
       card.append(proofRow);
       if (item.status === "Menunggu Verifikasi" || item.status === "Sedang Direview") {
         const hint = document.createElement("p");
@@ -3403,11 +3417,6 @@ function renderContributionResidents() {
     editResident.className = "action-button";
     editResident.textContent = "Edit Data";
     editResident.addEventListener("click", () => openContributionResidentDialog(resident));
-    const addFamilyMember = document.createElement("button");
-    addFamilyMember.type = "button";
-    addFamilyMember.className = "action-button";
-    addFamilyMember.textContent = "Tambah Anggota";
-    addFamilyMember.addEventListener("click", () => openContributionFamilyPage(resident.family_card_number));
     const historyButton = document.createElement("button");
     historyButton.type = "button";
     historyButton.className = "action-button";
@@ -3427,7 +3436,7 @@ function renderContributionResidents() {
         }
       }
     });
-    actions.append(addPayment, editResident, addFamilyMember, historyButton, deleteResident);
+    actions.append(addPayment, editResident, historyButton, deleteResident);
     card.append(heading, actions);
     container.append(card);
   });
@@ -3713,12 +3722,6 @@ function openContributionHistoryDialog(resident) {
          pengelola kapan saja, jadi tombolnya selalu tersedia. */
       const proofActions = document.createElement("div");
       proofActions.className = "contribution-payment-proof";
-      const receipt = document.createElement("button");
-      receipt.type = "button";
-      receipt.className = "action-button";
-      receipt.textContent = "Pratinjau Struk PDF";
-      receipt.addEventListener("click", () => openContributionReceiptPreview(resident, payment));
-      proofActions.append(receipt);
       if (payment.proof_url) {
         const proof = document.createElement("a");
         proof.href = payment.proof_url;
