@@ -95,6 +95,31 @@ def export_logo_path(settings, key):
 	return None
 
 
+def insert_pdf_logo(page, rectangle, logo_path):
+	"""Sisipkan logo ke PDF, termasuk unggahan WebP.
+
+	PyMuPDF pada sejumlah instalasi tidak mengenali WebP sebagai input
+	``filename``. Jangan menelan error tersebut: ubah WebP melalui Pillow ke
+	PNG di memori, lalu sisipkan hasilnya. Fungsi mengembalikan status supaya
+	pemanggil dapat tetap melanjutkan pembuatan dokumen bila berkas logo rusak.
+	"""
+	if not logo_path:
+		return False
+	try:
+		page.insert_image(rectangle, filename=str(logo_path), keep_proportion=True)
+		return True
+	except Exception:
+		try:
+			from PIL import Image
+			with Image.open(logo_path) as image:
+				buffer = io.BytesIO()
+				image.convert("RGBA").save(buffer, format="PNG")
+			page.insert_image(rectangle, stream=buffer.getvalue(), keep_proportion=True)
+			return True
+		except Exception:
+			return False
+
+
 def save_payment_proof(encoded, content_type, prefix):
 	"""Simpan bukti pembayaran dan kembalikan nama filenya.
 
@@ -4037,10 +4062,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					logo_path = export_logo_path(site, key)
 					if logo_path is None:
 						continue
-					try:
-						page.insert_image(rect, filename=str(logo_path), keep_proportion=True)
-					except Exception:
-						pass
+					insert_pdf_logo(page, rect, logo_path)
 				for text, y, size, font in (
 					("DATA BADAN SOSIAL KEMATIAN (BSK)", 34, 8.6, "hebo"),
 					("RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA", 47, 5.8, "helv"),
@@ -4093,8 +4115,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				for key, rect in (("export_logo_1", pymupdf.Rect(52, 20, 98, 66)), ("export_logo_2", pymupdf.Rect(744, 20, 790, 66))):
 					logo_path = export_logo_path(site, key)
 					if logo_path is not None:
-						try: page.insert_image(rect, filename=str(logo_path), keep_proportion=True)
-						except Exception: pass
+						insert_pdf_logo(page, rect, logo_path)
 				for text, y, size in (("DATA KEUANGAN", 30, 14), ("RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA", 46, 10), ("KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT", 61, 10)):
 					width = bold.text_length(text, fontsize=size)
 					page.insert_text(((842 - width) / 2, y), text, fontsize=size, fontname="hebo")
