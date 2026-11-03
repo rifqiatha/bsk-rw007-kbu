@@ -883,10 +883,12 @@ html[data-mode="dark"] .admin-profile-avatar .theme-profile-logo { display: bloc
 .import-warnings li.is-ok { color: var(--ink); }
 .import-warnings li.is-error { color: #b3261e; }
 .print-banner-logo { width: 104px; height: 104px; object-fit: contain; flex: none; }
-.print-banner-text { width: min(380px, 48vw); text-align: center; color: #111; font-weight: 600; font-size: 14px; line-height: 1.4; }
+.print-banner-text { width: min(620px, 62vw); text-align: center; color: #111; font-weight: 600; font-size: 14px; line-height: 1.4; }
 .print-banner-text h2 { margin: 0; color: #111; font-size: 16px; line-height: 1.16; }
-.print-banner-text h2 span, .print-banner-text p span { display: block; }
+.print-banner-text h2 span, .print-banner-text p span { display: inline; }
 .print-banner-text p { margin: 2px 0 0; color: #555; font-size: 12px; line-height: 1.32; }
+@media (min-width: 721px) { .print-banner-text h2, .print-banner-text p { white-space: nowrap; } }
+@media (max-width: 720px) { .print-preview-banner { gap: 6px; } .print-banner-logo { width: 66px; height: 66px; } .print-banner-text { width: calc(100% - 144px); min-width: 0; } .print-banner-text h2 { font-size: 13px; } .print-banner-text p { font-size: 10px; } }
 
 dialog:not([open]) { display: none !important; }
 

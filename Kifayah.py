@@ -4042,17 +4042,14 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					except Exception:
 						pass
 				for text, y, size, font in (
-					("DATA BADAN SOSIAL KEMATIAN", 30, 9.6, "hebo"),
-					("(BSK)", 41, 9.6, "hebo"),
-					("RT. 001 RW 007 KELURAHAN KOTA BAMBU", 53, 6.6, "helv"),
-					("UTARA", 62, 6.6, "helv"),
-					("KECAMATAN PALMERAH KOTA ADMINISTRASI", 71, 6.6, "helv"),
-					("JAKARTA BARAT", 80, 6.6, "helv"),
+					("DATA BADAN SOSIAL KEMATIAN (BSK)", 34, 8.6, "hebo"),
+					("RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA", 47, 5.8, "helv"),
+					("KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT", 59, 5.8, "helv"),
 				):
 					width = (bold if font == "hebo" else regular).text_length(text, fontsize=size)
 					page.insert_text(((420 - width) / 2, y), text, fontsize=size, fontname=font, color=(0.05, 0.05, 0.05))
-				page.draw_line((24, 96), (396, 96), color=(.1, .3, .24), width=1)
-				page.insert_text((32, 124), "STRUK PEMBAYARAN IURAN", fontsize=15, fontname="hebo")
+				page.draw_line((24, 80), (396, 80), color=(.1, .3, .24), width=1)
+				page.insert_text((32, 108), "STRUK PEMBAYARAN IURAN", fontsize=15, fontname="hebo")
 				rows = [
 					("Nomor transaksi", f"IURAN-{payment['id']:06d}"),
 					("Nama warga", payment["full_name"] or "-"),
@@ -4063,7 +4060,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					("Nominal", f"Rp{int(payment['amount'] or 0):,}".replace(",", ".")),
 					("Catatan", payment["note"] or "-"),
 				]
-				y = 156
+				y = 140
 				for label, value in rows:
 					page.insert_text((36, y), label, fontsize=8.5, fontname="helv", color=(.32, .32, .32))
 					text = str(value)
