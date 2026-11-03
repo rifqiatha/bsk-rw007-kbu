@@ -4074,8 +4074,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				# oleh insert_pdf_logo sebelum disisipkan. Kedua kotak digeser
 				# keluar dari blok teks agar kop tidak terlihat terlalu rapat.
 				for key, rect in (
-					("export_logo_1", pymupdf.Rect(58, 12, 116, 76)),
-					("export_logo_2", pymupdf.Rect(304, 12, 362, 76)),
+					("export_logo_1", pymupdf.Rect(42, 12, 100, 76)),
+					("export_logo_2", pymupdf.Rect(320, 12, 378, 76)),
 				):
 					logo_path = export_logo_path(site, key)
 					if logo_path is None:
@@ -4634,8 +4634,12 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				"hero_image_position": settings["hero_image_position"],
 				"site_icon": settings.get("site_icon", ""),
 				"site_icon_2": settings.get("site_icon_2", ""),
-			"site_icon_ready": stored_image_exists(settings.get("site_icon", "")),
-			"site_icon_2_ready": stored_image_exists(settings.get("site_icon_2", "")),
+				# Jangan hanya memeriksa nama unggahan dalam database. Pada CasaOS,
+				# berkas lama bisa tidak ikut terbawa saat deployment; site_icon_path
+				# lalu memilih logo cadangan yang dilacak Git. API harus melaporkan
+				# cadangan itu sebagai siap agar app.js tidak menggantinya dengan "K".
+				"site_icon_ready": site_icon_path(settings, 1) is not None,
+				"site_icon_2_ready": site_icon_path(settings, 2) is not None,
 				"theme_logo_ready": {
 					target: {mode: bool(settings.get(f"theme_logo_{target}_{mode}")) for mode in ("light", "dark")}
 					for target in ("logo1", "logo2", "hero", "slideshow")
