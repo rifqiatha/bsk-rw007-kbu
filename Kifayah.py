@@ -81,6 +81,15 @@ def export_logo_path(settings, key):
 		candidate = UPLOAD_DIR / filename
 		if candidate.is_file():
 			return candidate
+	# Bila kop belum dikonfigurasi, gunakan lambang DKI yang memang sudah
+	# dipakai sebagai ikon situs. Ini membuat logo kiri tetap hadir pada
+	# pratinjau cetak dan PDF baru.
+	if key == "export_logo_1":
+		site_icon = str(settings.get("site_icon", "") or "").strip()
+		if site_icon and Path(site_icon).name == site_icon:
+			candidate = UPLOAD_DIR / site_icon
+			if candidate.is_file():
+				return candidate
 	if key == "export_logo_2" and DEFAULT_EXPORT_BSK_LOGO.is_file():
 		return DEFAULT_EXPORT_BSK_LOGO
 	return None
@@ -4022,8 +4031,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				# Kop struk mengikuti dokumen ekspor: DKI kiri, teks hitam di
 				# tengah, lalu emblem BSK bertulisan hitam di kanan.
 				for key, rect in (
-					("export_logo_1", pymupdf.Rect(28, 24, 74, 70)),
-					("export_logo_2", pymupdf.Rect(346, 24, 392, 70)),
+					("export_logo_1", pymupdf.Rect(24, 17, 78, 76)),
+					("export_logo_2", pymupdf.Rect(342, 17, 396, 76)),
 				):
 					logo_path = export_logo_path(site, key)
 					if logo_path is None:
@@ -4033,13 +4042,17 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					except Exception:
 						pass
 				for text, y, size, font in (
-					("BADAN SOSIAL KEMATIAN", 40, 11.5, "hebo"),
-					("RW 007 KOTA BAMBU UTARA", 55, 7.8, "helv"),
+					("DATA BADAN SOSIAL KEMATIAN", 30, 9.6, "hebo"),
+					("(BSK)", 41, 9.6, "hebo"),
+					("RT. 001 RW 007 KELURAHAN KOTA BAMBU", 53, 6.6, "helv"),
+					("UTARA", 62, 6.6, "helv"),
+					("KECAMATAN PALMERAH KOTA ADMINISTRASI", 71, 6.6, "helv"),
+					("JAKARTA BARAT", 80, 6.6, "helv"),
 				):
 					width = (bold if font == "hebo" else regular).text_length(text, fontsize=size)
 					page.insert_text(((420 - width) / 2, y), text, fontsize=size, fontname=font, color=(0.05, 0.05, 0.05))
-				page.draw_line((32, 84), (388, 84), color=(.1, .3, .24), width=1)
-				page.insert_text((32, 112), "STRUK PEMBAYARAN IURAN", fontsize=15, fontname="hebo")
+				page.draw_line((24, 96), (396, 96), color=(.1, .3, .24), width=1)
+				page.insert_text((32, 124), "STRUK PEMBAYARAN IURAN", fontsize=15, fontname="hebo")
 				rows = [
 					("Nomor transaksi", f"IURAN-{payment['id']:06d}"),
 					("Nama warga", payment["full_name"] or "-"),
@@ -4050,7 +4063,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					("Nominal", f"Rp{int(payment['amount'] or 0):,}".replace(",", ".")),
 					("Catatan", payment["note"] or "-"),
 				]
-				y = 144
+				y = 156
 				for label, value in rows:
 					page.insert_text((36, y), label, fontsize=8.5, fontname="helv", color=(.32, .32, .32))
 					text = str(value)
@@ -4832,8 +4845,15 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				return
 			key = f"export_logo_{slot}"
 			with connect_database() as connection:
-				filename = get_settings(connection).get(key, "")
-			return self.send_stored_media(filename)
+				logo_path = export_logo_path(get_settings(connection), key)
+			if logo_path is None:
+				self.send_error(404)
+				return
+			if logo_path.parent == UPLOAD_DIR:
+				return self.send_stored_media(logo_path.name)
+			# Cadangan BSK adalah aset aplikasi, bukan berkas unggahan.
+			self.send_bytes(logo_path.read_bytes(), "image/webp", "public, max-age=3600")
+			return
 		if path == "/maintenance.html":
 			self.send_error(404)
 			return
