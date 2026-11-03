@@ -4068,49 +4068,63 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				page = doc.new_page(width=420, height=595)
 				bold = pymupdf.Font("hebo")
 				regular = pymupdf.Font("helv")
-				# Kop struk mengikuti dokumen ekspor: DKI kiri, teks hitam di
-				# tengah, lalu emblem BSK bertulisan hitam di kanan. Kedua logo
-				# memakai kotak yang sama; ruang transparan BSK sudah dipangkas
-				# oleh insert_pdf_logo sebelum disisipkan. Kedua kotak digeser
-				# keluar dari blok teks agar kop tidak terlihat terlalu rapat.
+				# Kop memakai tiga zona tetap: logo kiri, teks tengah, lalu logo
+				# kanan. Batas zona sengaja lebih kecil daripada area logo agar
+				# emblem tidak pernah menutupi teks, termasuk pada PDF yang dibuka
+				# dengan skala besar.
 				for key, rect in (
-					("export_logo_1", pymupdf.Rect(42, 12, 100, 76)),
-					("export_logo_2", pymupdf.Rect(320, 12, 378, 76)),
+					("export_logo_1", pymupdf.Rect(28, 14, 76, 62)),
+					("export_logo_2", pymupdf.Rect(344, 14, 392, 62)),
 				):
 					logo_path = export_logo_path(site, key)
 					if logo_path is None:
 						continue
 					insert_pdf_logo(page, rect, logo_path)
 				for text, y, size, font in (
-					("DATA BADAN SOSIAL KEMATIAN (BSK)", 34, 8.6, "hebo"),
-					("RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA", 47, 5.8, "helv"),
-					("KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT", 59, 5.8, "helv"),
+					("DATA BADAN SOSIAL KEMATIAN (BSK)", 29, 8.0, "hebo"),
+					("RT. 001 RW 007 KELURAHAN KOTA BAMBU UTARA", 40, 5.3, "helv"),
+					("KECAMATAN PALMERAH KOTA ADMINISTRASI JAKARTA BARAT", 50, 5.1, "helv"),
 				):
-					width = (bold if font == "hebo" else regular).text_length(text, fontsize=size)
-					page.insert_text(((420 - width) / 2, y), text, fontsize=size, fontname=font, color=(0.05, 0.05, 0.05))
-				page.draw_line((24, 80), (396, 80), color=(.1, .3, .24), width=1)
-				page.insert_text((32, 108), "STRUK PEMBAYARAN IURAN", fontsize=15, fontname="hebo")
+					font_obj = bold if font == "hebo" else regular
+					width = font_obj.text_length(text, fontsize=size)
+					# Blok tengah aman: x=94 sampai x=326, jauh dari dua logo.
+					page.insert_text((max(94, min((420 - width) / 2, 326 - width)), y), text, fontsize=size, fontname=font, color=(0.05, 0.05, 0.05))
+				page.draw_line((28, 72), (392, 72), color=(.08, .31, .24), width=1.25)
+				page.draw_rect(pymupdf.Rect(28, 88, 392, 124), color=None, fill=(.94, .97, .95))
+				page.insert_text((42, 106), "STRUK PEMBAYARAN IURAN", fontsize=14, fontname="hebo", color=(.06, .08, .07))
+				page.insert_text((42, 117), "BUKTI SETORAN TERKONFIRMASI", fontsize=6.8, fontname="hebo", color=(.08, .31, .24))
+				transaction_id = f"IURAN-{payment['id']:06d}"
+				transaction_width = regular.text_length(transaction_id, fontsize=7.5)
+				page.insert_text((378 - transaction_width, 107), transaction_id, fontsize=7.5, fontname="helv", color=(.25, .25, .25))
 				rows = [
-					("Nomor transaksi", f"IURAN-{payment['id']:06d}"),
 					("Nama warga", payment["full_name"] or "-"),
 					("Nomor KK", payment["family_card_number"] or "Belum diisi (per warga)"),
 					("RT / RW", f"RT {int(payment['rt']):03d} / RW {int(payment['rw']):03d}" if str(payment["rt"] or "").isdigit() and str(payment["rw"] or "").isdigit() else "-"),
 					("Periode iuran", payment["period"] or "-"),
 					("Tanggal pembayaran", date_label(payment["paid_at"])),
-					("Nominal", f"Rp{int(payment['amount'] or 0):,}".replace(",", ".")),
-					("Catatan", payment["note"] or "-"),
 				]
-				y = 140
+				y = 151
 				for label, value in rows:
-					page.insert_text((36, y), label, fontsize=8.5, fontname="helv", color=(.32, .32, .32))
+					page.insert_text((42, y), label.upper(), fontsize=6.8, fontname="hebo", color=(.32, .32, .32))
 					text = str(value)
-					while text and regular.text_length(text + "...", fontsize=9.5) > 190:
+					while text and regular.text_length(text + "...", fontsize=9.5) > 182:
 						text = text[:-1]
-					page.insert_text((196, y), text if text == str(value) else text + "...", fontsize=9.5, fontname="hebo")
-					page.draw_line((36, y + 8), (384, y + 8), color=(.82, .82, .82), width=.35)
-					y += 35
-				page.insert_text((36, 520), "Dokumen ini dibuat oleh sistem Kifayah.", fontsize=8, fontname="helv", color=(.35, .35, .35))
-				page.insert_text((36, 535), "Simpan struk ini sebagai bukti pembayaran iuran.", fontsize=8, fontname="helv", color=(.35, .35, .35))
+					page.insert_text((194, y), text if text == str(value) else text + "...", fontsize=9.5, fontname="hebo", color=(.08, .08, .08))
+					page.draw_line((42, y + 10), (378, y + 10), color=(.84, .87, .85), width=.4)
+					y += 31
+				page.draw_rect(pymupdf.Rect(28, 315, 392, 370), color=(.08, .31, .24), fill=(.08, .31, .24), width=.5)
+				page.insert_text((42, 336), "NOMINAL DITERIMA", fontsize=7.2, fontname="hebo", color=(.88, .95, .9))
+				amount_text = f"Rp{int(payment['amount'] or 0):,}".replace(",", ".")
+				amount_width = bold.text_length(amount_text, fontsize=16)
+				page.insert_text((378 - amount_width, 344), amount_text, fontsize=16, fontname="hebo", color=(1, 1, 1))
+				note_text = str(payment["note"] or "Tidak ada catatan")
+				while note_text and regular.text_length(note_text + "...", fontsize=8.5) > 318:
+					note_text = note_text[:-1]
+				page.insert_text((42, 397), "CATATAN", fontsize=6.8, fontname="hebo", color=(.32, .32, .32))
+				page.insert_text((42, 411), note_text if note_text == str(payment["note"] or "Tidak ada catatan") else note_text + "...", fontsize=8.5, fontname="helv", color=(.14, .14, .14))
+				page.draw_line((42, 422), (378, 422), color=(.84, .87, .85), width=.4)
+				page.insert_text((42, 540), "Dokumen ini dibuat secara otomatis oleh sistem Kifayah.", fontsize=7.5, fontname="helv", color=(.35, .35, .35))
+				page.insert_text((42, 552), "Simpan struk ini sebagai bukti pembayaran iuran.", fontsize=7.5, fontname="helv", color=(.35, .35, .35))
 				body = doc.tobytes(garbage=4, deflate=True)
 				doc.close()
 				self.send_bytes(body, "application/pdf", "no-store", 200, {"Content-Disposition": f'attachment; filename="struk-iuran-{payment_id}.pdf"'})
