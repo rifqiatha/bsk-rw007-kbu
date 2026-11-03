@@ -4071,10 +4071,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				# Kop struk mengikuti dokumen ekspor: DKI kiri, teks hitam di
 				# tengah, lalu emblem BSK bertulisan hitam di kanan. Kedua logo
 				# memakai kotak yang sama; ruang transparan BSK sudah dipangkas
-				# oleh insert_pdf_logo sebelum disisipkan.
+				# oleh insert_pdf_logo sebelum disisipkan. Kedua kotak digeser
+				# keluar dari blok teks agar kop tidak terlihat terlalu rapat.
 				for key, rect in (
-					("export_logo_1", pymupdf.Rect(70, 12, 128, 76)),
-					("export_logo_2", pymupdf.Rect(292, 12, 350, 76)),
+					("export_logo_1", pymupdf.Rect(58, 12, 116, 76)),
+					("export_logo_2", pymupdf.Rect(304, 12, 362, 76)),
 				):
 					logo_path = export_logo_path(site, key)
 					if logo_path is None:
