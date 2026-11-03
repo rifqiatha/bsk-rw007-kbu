@@ -980,10 +980,32 @@ dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; tr
    padding atas, hanya jarak agar tidak menempel ke section induknya. */
 .admin-section.permission-admin-section { margin-top: 30px; padding-top: 0; border-top: 0; }
 .contribution-management { gap: 17px; }
+.payment-status { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 9px; border: var(--tp-bw) solid var(--line); border-radius: 999px; color: var(--muted); background: var(--surface-soft); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 650; }
+.payment-status-verified { border-color: var(--green); color: var(--green); }
+.payment-status-rejected { border-color: var(--danger, #a33434); color: var(--danger, #a33434); }
+.payment-status-reviewing { border-color: var(--ink); color: var(--ink); background: var(--surface); }
 .contribution-page-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; }
 .contribution-page-heading h2 { margin: 0; color: var(--ink); font-family: var(--site-font-display); font-size: calc((24px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
 .contribution-page-heading .eyebrow { margin: 0 0 5px; }
 .contribution-page-heading .primary-button { width: auto; min-width: 160px; }
+.contribution-page-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
+.contribution-family-page { display: grid; gap: 18px; }
+.contribution-family-picker { display: grid; gap: 12px; max-width: 900px; padding: 18px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); }
+.contribution-family-select-label { display: grid; gap: 8px; color: var(--muted); font-size: calc((14px) * var(--site-font-scale, 1)); font-weight: 650; }
+.contribution-family-select-label select { width: 100%; min-height: 330px; padding: 8px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); color: var(--ink); background: var(--surface); font: inherit; }
+.contribution-family-select-label option { padding: 11px 12px; border-radius: 7px; line-height: 1.35; }
+.contribution-family-select-label option:checked { color: var(--on-action); background: var(--action); }
+.contribution-family-picker .primary-button { justify-self: start; min-width: 280px; }
+.contribution-receipt-dialog { width: min(620px, calc(100% - 30px)); }
+.contribution-receipt-content { display: grid; gap: 0; margin-top: 18px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); overflow: hidden; }
+.contribution-receipt-content > header { padding: 18px; color: var(--on-action); background: var(--action); }
+.contribution-receipt-content > header strong, .contribution-receipt-content > header span { display: block; }
+.contribution-receipt-content > header span { margin-top: 4px; font-size: calc((12px) * var(--site-font-scale, 1)); opacity: .82; }
+.contribution-receipt-rows { display: grid; }
+.contribution-receipt-row { display: grid; grid-template-columns: minmax(130px, .75fr) minmax(0, 1.25fr); gap: 14px; padding: 12px 16px; border-top: var(--tp-bw) solid var(--line); }
+.contribution-receipt-row span { color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); }
+.contribution-receipt-row strong { text-align: right; overflow-wrap: anywhere; }
+@media (max-width: 520px) { .contribution-page-actions { justify-content: stretch; width: 100%; } .contribution-page-actions > * { flex: 1 1 180px; } .contribution-family-picker { padding: 14px; } .contribution-family-picker .primary-button { width: 100%; min-width: 0; } .contribution-receipt-row { grid-template-columns: minmax(0, 1fr); gap: 3px; } .contribution-receipt-row strong { text-align: left; } }
 .contribution-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .contribution-summary article { display: grid; min-width: 0; gap: 6px; padding: 15px 17px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); animation: contribution-card-enter 380ms var(--tp-ease) both; }
 .contribution-summary article:nth-child(2) { animation-delay: 45ms; }

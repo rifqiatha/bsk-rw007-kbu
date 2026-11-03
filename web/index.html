@@ -12,8 +12,8 @@
   <noscript><link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
   <link id="dynamic-favicon" rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/styles.min.css?v=2026-W44&amp;asset=submenu-performance">
-  <script src="/app.min.js?v=2026-W44&amp;asset=submenu-performance" defer></script>
+  <link rel="stylesheet" href="/styles.min.css?v=2026-W44&amp;asset=family-receipt">
+  <script src="/app.min.js?v=2026-W44&amp;asset=family-receipt" defer></script>
   <script type="module" src="/reveal.min.js"></script>
 </head>
 <body>
@@ -299,8 +299,8 @@
           </section>
           <section id="admin-view-finance" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="finance" hidden>
             <section id="admin-finance-section" class="admin-section" aria-labelledby="admin-finance-title">
-              <div class="contribution-page-heading"><div><h2 id="admin-finance-title">Data Keuangan</h2></div><div class="manage-actions"><a class="export-button" href="/api/admin/export/excel?type=finance">Ekspor XLSX</a><button id="finance-print-button" class="action-button" type="button">Pratinjau Cetak</button><button id="add-finance-entry" class="primary-button" type="button">Tambah Catatan <span aria-hidden="true">→</span></button></div></div>
-              <p class="form-hint">Catatan di sini dibagikan kepada akun warga. Jangan masukkan NIK, nomor rekening pribadi, atau data sensitif.</p>
+              <div class="contribution-page-heading"><div><h2 id="admin-finance-title">Data Keuangan BSK</h2></div><div class="manage-actions"><a class="export-button" href="/api/admin/export/excel?type=finance">Ekspor XLSX</a><button id="finance-print-button" class="action-button" type="button">Pratinjau Cetak</button><button id="add-finance-entry" class="primary-button" type="button">Tambah Catatan <span aria-hidden="true">→</span></button></div></div>
+              <p class="form-hint">Catat iuran manual, donasi, pengeluaran operasional, atau biaya pelayanan kematian. Jangan masukkan NIK, nomor rekening pribadi, atau data sensitif.</p>
               <dialog id="finance-entry-dialog" class="dialog">
                 <div class="dialog-top">
                   <div>
@@ -313,6 +313,7 @@
                   <div class="field-row">
                     <label>Tanggal<input name="entry_date" type="date" required></label>
                     <label>Jenis<select name="entry_type" required><option value="income">Pemasukan</option><option value="expense">Pengeluaran</option></select></label>
+                    <label>Kategori BSK<select name="category" required><option value="Iuran">Iuran</option><option value="Donasi">Donasi</option><option value="Operasional">Operasional</option><option value="Pelayanan Kematian">Pelayanan Kematian</option><option value="Lainnya">Lainnya</option></select></label>
                   </div>
                   <div class="field-row">
                     <label>RT<input name="rt" inputmode="numeric" maxlength="3" placeholder="Contoh: 001"></label>
@@ -354,12 +355,12 @@
             <section id="contribution-residents-panel" class="admin-section contribution-management" aria-labelledby="contribution-residents-title">
               <div class="contribution-page-heading">
                 <div><p class="eyebrow">Data dan Setoran</p><h2 id="contribution-residents-title">Daftar Warga</h2></div>
-                <button id="add-contribution-resident" class="primary-button" type="button">Tambah Warga <span aria-hidden="true">→</span></button>
+                <div class="contribution-page-actions"><button id="add-contribution-resident" class="primary-button" type="button">Tambah Warga <span aria-hidden="true">→</span></button></div>
               </div>
               <p class="form-hint">Data iuran diperbarui dari pembayaran terverifikasi dan setoran yang dicatat admin. Nominal total serta jumlah bulan dihitung otomatis.</p>
               <div class="contribution-summary" aria-label="Ringkasan iuran">
                 <article><span>Warga Terdaftar</span><strong id="contribution-resident-count">0</strong></article>
-                <button id="contribution-paid-card" class="stat-card" type="button" title="Lihat daftar warga yang sudah iuran bulan ini" aria-label="Lihat daftar warga yang sudah iuran bulan ini"><span>Sudah Iuran Bulan Ini</span><strong id="contribution-paid-count">0</strong></button>
+                <button id="contribution-paid-card" class="stat-card" type="button" title="Lihat daftar KK yang sudah iuran bulan ini" aria-label="Lihat daftar KK yang sudah iuran bulan ini"><span>KK Sudah Iuran Bulan Ini</span><strong id="contribution-paid-count">0</strong></button>
                 <button id="contribution-total-card" class="stat-card" type="button" title="Lihat rincian setoran setiap warga" aria-label="Lihat rincian setoran setiap warga"><span>Total Setoran</span><strong id="contribution-total-amount">Rp0</strong></button>
                 <button id="contribution-male-card" class="stat-card" type="button" aria-pressed="false" aria-label="Filter Laki-Laki"><span>Laki-Laki</span><strong id="contribution-male-count">0</strong></button>
                 <button id="contribution-female-card" class="stat-card" type="button" aria-pressed="false" aria-label="Filter Perempuan"><span>Perempuan</span><strong id="contribution-female-count">0</strong></button>
@@ -411,6 +412,23 @@
                   </table>
                 </div>
               </dialog>
+            </section>
+            <section id="contribution-family-page" class="admin-section contribution-family-page" aria-labelledby="contribution-family-page-title" hidden>
+              <div class="contribution-page-heading">
+                <div><p class="eyebrow">Keluarga dan Kartu Keluarga</p><h2 id="contribution-family-page-title">Tambah Anggota Keluarga</h2></div>
+              </div>
+              <p class="form-hint">Pilih nomor KK terlebih dahulu. Satu kali pembayaran iuran berlaku untuk seluruh anggota pada KK yang sama dalam periode tersebut.</p>
+              <div class="contribution-family-picker">
+                <label class="search-box" for="contribution-family-search">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.3 4.3"/></svg>
+                  <input id="contribution-family-search" type="search" placeholder="Cari nomor KK, nama kepala keluarga, RT, atau RW" autocomplete="off">
+                </label>
+                <label class="contribution-family-select-label" for="contribution-family-select">Nomor KK tersedia
+                  <select id="contribution-family-select" size="12" aria-describedby="contribution-family-selection-hint"></select>
+                </label>
+                <p id="contribution-family-selection-hint" class="form-hint">Memuat daftar keluarga…</p>
+                <button id="contribution-family-add-member" class="primary-button" type="button" disabled>Tambah Anggota ke KK Terpilih <span aria-hidden="true">→</span></button>
+              </div>
             </section>
           </section>
           <dialog id="contribution-print-dialog" class="print-preview-panel" style="max-width:1200px;width:95vw;">
@@ -1349,7 +1367,7 @@
       <label>Disetorkan Kepada<input name="payment_recipient" maxlength="120" autocomplete="name"></label>
       <label>Alamat Lengkap<textarea name="address" maxlength="300" rows="2"></textarea></label>
       <label>Foto Warga<input name="photo" type="file" accept="image/png,image/jpeg,image/webp"></label>
-      <label>Nomor Kartu Keluarga<input name="family_card_number" maxlength="32" inputmode="numeric"></label>
+      <label>Nomor Kartu Keluarga<input name="family_card_number" minlength="16" maxlength="16" inputmode="numeric" pattern="[0-9]{16}" title="Nomor KK harus terdiri dari 16 digit"><span class="form-hint">Kosongkan hanya bila data KK belum tersedia. Nomor KK yang diisi wajib 16 digit.</span></label>
       <label>Nomor Induk Kependudukan<input name="national_id_number" maxlength="32" inputmode="numeric"></label>
       <label>Tempat Lahir<input name="birthplace" maxlength="100"></label>
       <label>Agama<input name="religion" maxlength="50"></label>
@@ -1377,6 +1395,10 @@
       <p id="contribution-payment-error" class="form-error" role="alert"></p>
       <div class="contribution-dialog-actions"><button id="contribution-payment-cancel" class="action-button" type="button">Batal</button><button class="primary-button" type="submit">Simpan Iuran <span aria-hidden="true">→</span></button></div>
     </form>
+  </dialog>
+  <dialog id="contribution-receipt-dialog" class="print-preview-panel contribution-receipt-dialog" aria-labelledby="contribution-receipt-title">
+    <div class="print-preview-header"><div><h3 id="contribution-receipt-title">Pratinjau Struk Iuran</h3><p>Periksa rincian transaksi sebelum mengunduh PDF.</p></div><div class="print-preview-actions"><button id="contribution-receipt-download" class="primary-button" type="button">Unduh Struk PDF <span aria-hidden="true">→</span></button><button id="contribution-receipt-close" class="action-button" type="button">Tutup</button></div></div>
+    <section id="contribution-receipt-content" class="contribution-receipt-content" aria-live="polite"></section>
   </dialog>
   <dialog id="processing-dialog" class="processing-dialog" aria-labelledby="processing-label" tabindex="-1">
     <div class="processing-status" role="status" aria-live="polite" aria-atomic="true">
