@@ -1141,6 +1141,8 @@ dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; tr
 #site-media-manager > #theme-logo-target-controls,
 #site-media-manager > #hero-target-controls { margin: 0; padding-top: 0; border-top: 0; }
 .media-settings-panel { display: grid; min-width: 0; gap: 16px; }
+.site-icon-preview { display: flex; min-height: 180px; align-items: center; justify-content: center; padding: 16px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); }
+.site-icon-preview img { display: block; width: auto; max-width: min(180px, 100%); height: auto; max-height: 180px; object-fit: contain; }
 .template-link { justify-self: start; color: var(--green); font-size: calc((13.5px) * var(--site-font-scale, 1)); font-weight: 500; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 .export-letterhead-section { display: grid; gap: 16px; margin-top: 12px; padding-top: 21px; border-top: var(--tp-bw) solid var(--line); }
 .export-letterhead-section h3 { margin: 0; color: var(--ink); font-family: var(--site-font-display); font-size: calc((20px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
@@ -1912,3 +1914,13 @@ body.site-font-italic.target-body p, body.site-font-italic.target-body li, body.
 
 
 
+/* Formulir pendaftaran hanya menampilkan pratinjau tanda tangan unggahan.
+   Aturan tegas ini juga melindungi tampilan bila browser masih menyimpan
+   skrip pendaftaran versi lama yang pernah membuat tombol gambar langsung. */
+#registration-signature-grid .registration-signature-cell > input,
+#registration-signature-grid .registration-signature-actions,
+#registration-signature-grid .registration-signature-secondary,
+#registration-signature-grid .signature-draw,
+#registration-signature-grid .signature-clear {
+  display: none !important;
+}

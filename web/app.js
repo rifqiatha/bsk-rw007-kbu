@@ -575,7 +575,7 @@ function updateImportSummary() {
 function formatImportRowList(names, limit = 40) {
   if (names.length <= limit) return names.join(", ");
   const shown = names.slice(0, limit);
-  return `${shown.join(", ")}, …dan ${names.length - limit} baris lain`;
+  return `${shown.join(", ")}, dan ${names.length - limit} baris lain`;
 }
 
 // Kumpulkan masalah per baris lengkap dengan nama file dan nomor baris di file.
@@ -693,8 +693,8 @@ function renderImportRows() {
       const input = type === "gender" ? document.createElement("select") : document.createElement("input");
       if (type === "gender") {
         input.add(new Option("Pilih Jenis Kelamin", ""));
-        input.add(new Option("P — Perempuan", "P"));
-        input.add(new Option("L — Laki-laki", "L"));
+        input.add(new Option("P - Perempuan", "P"));
+        input.add(new Option("L - Laki-laki", "L"));
       } else {
         input.type = type;
       }
@@ -725,7 +725,7 @@ function renderImportRows() {
   const status = document.querySelector("#import-preview-page-status");
   if (status) {
     status.textContent = pageCount > 1
-      ? `Halaman ${importPreviewPage + 1} dari ${pageCount} · baris ${pageStart + 1}–${pageStart + pageRows.length} dari ${importRows.length}`
+      ? `Halaman ${importPreviewPage + 1} dari ${pageCount} | baris ${pageStart + 1}-${pageStart + pageRows.length} dari ${importRows.length}`
       : "";
   }
   renderImportPageNumbers();
@@ -852,7 +852,7 @@ function openRecordDetail(record, index) {
   if (record.gender === "L") details.push("Laki-Laki");
   if (record.gender === "P") details.push("Perempuan");
   if (record.date_of_death) details.push(formatDate(record.date_of_death));
-  metadata.textContent = details.join(" · ");
+  metadata.textContent = details.join(" | ");
   dialogContent.append(title, metadata);
   if (portrait) dialogContent.append(portrait);
   if (record.address) {
@@ -1209,7 +1209,7 @@ function openNewsArticle(article, updateLocation = true) {
   headline.textContent = article.headline;
   const metadata = document.createElement("div");
   metadata.className = "news-detail-meta";
-  metadata.textContent = `${article.author} · ${formatNewsDate(article.uploaded_at)}`;
+  metadata.textContent = `${article.author} | ${formatNewsDate(article.uploaded_at)}`;
   const body = document.createElement("p");
   body.className = "news-detail-body";
   body.textContent = article.body;
@@ -1243,7 +1243,7 @@ function renderDonationDialog() {
   const entries = [
     ["Dana", donationSettings.donation_dana, donationSettings.donation_dana_link],
     ["OVO", donationSettings.donation_ovo, donationSettings.donation_ovo_link],
-    [donationSettings.donation_bank_name || "Bank", donationSettings.donation_bank_account ? `${donationSettings.donation_bank_account}${donationSettings.donation_bank_holder ? ` · ${donationSettings.donation_bank_holder}` : ""}` : "", donationSettings.donation_bank_link],
+    [donationSettings.donation_bank_name || "Bank", donationSettings.donation_bank_account ? `${donationSettings.donation_bank_account}${donationSettings.donation_bank_holder ? ` | ${donationSettings.donation_bank_holder}` : ""}` : "", donationSettings.donation_bank_link],
   ].filter(([, value]) => value);
   if (!entries.length) {
     const empty = document.createElement("p");
@@ -1422,7 +1422,7 @@ function renderAreaContacts(contacts) {
     const chevron = document.createElement("span");
     chevron.className = "contact-card-chevron";
     chevron.setAttribute("aria-hidden", "true");
-    chevron.textContent = "›";
+    chevron.textContent = ">";
     const head = document.createElement("span");
     head.className = "contact-card-head";
     head.append(heading, summary);
@@ -2238,7 +2238,7 @@ function renderHeroPlaylistItems(items) {
   items.forEach((item, index) => {
     const row = document.createElement("li");
     const label = document.createElement("span");
-    label.textContent = `${index + 1}. ${item.name || (item.type === "video" ? "Video" : "Foto")} · ${item.type === "video" ? "Video" : "Foto"}`;
+    label.textContent = `${index + 1}. ${item.name || (item.type === "video" ? "Video" : "Foto")} | ${item.type === "video" ? "Video" : "Foto"}`;
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "text-button";
@@ -2471,7 +2471,7 @@ function renderManageList() {
     const text = document.createElement("span");
     text.textContent = record.full_name || `Nama belum dilengkapi (ID ${record.id})`;
     const detail = document.createElement("small");
-    detail.textContent = [formatAreaLabel(record.area), record.date_of_death ? `Wafat ${formatDate(record.date_of_death)}` : "Tanggal wafat belum dilengkapi", record.publish_address ? "Alamat tampil untuk publik" : "Alamat hanya untuk pengelola"].join(" · ");
+    detail.textContent = [formatAreaLabel(record.area), record.date_of_death ? `Wafat ${formatDate(record.date_of_death)}` : "Tanggal wafat belum dilengkapi", record.publish_address ? "Alamat tampil untuk publik" : "Alamat hanya untuk pengelola"].join(" | ");
     if (record.issue_count) {
       const flag = document.createElement("span");
       flag.className = "manage-item-issue";
@@ -2656,7 +2656,7 @@ function showSelectedPrivateData() {
   for (const relative of record.family || []) {
     const item = document.createElement("li");
     const label = document.createElement("span");
-    label.textContent = `${relative.full_name || "Nama belum diisi"} · ${relative.relationship || "Hubungan belum diisi"}`;
+    label.textContent = `${relative.full_name || "Nama belum diisi"} | ${relative.relationship || "Hubungan belum diisi"}`;
     const actions = document.createElement("div");
     actions.className = "manage-item-actions";
     const edit = document.createElement("button");
@@ -2802,13 +2802,8 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   document.querySelector("#resident-dashboard").hidden = !isResident;
   document.querySelector("#resident-dashboard-name").textContent = profileName;
   document.querySelector("#resident-dashboard-username").textContent = currentUser?.username || "";
-  if (isResident) {
-    // Modul pendaftaran baru dimuat sekarang; form dan daftar statusnya memang
-    // baru terlihat sejak dashboard warga ini dibuka.
-    ensureRegistrationModule()
-      .then(() => window.loadResidentRegistrations?.())
-      .catch((error) => console.error("Modul pendaftaran gagal dimuat.", error));
-  }
+  // Panel warga dinonaktifkan; pendaftaran dan koreksi data dilayani
+  // pengurus dari menu Data Masuk & Tinjauan.
   document.querySelector("#dialog-title").textContent = mustChangePassword
     ? "Ganti Kata Sandi Awal"
     : isResident ? "Dashboard Warga" : enabled ? "Kelola Daftar Warga" : "Masuk Pengelola";
@@ -2872,7 +2867,7 @@ function renderPermissionEditorUsers() {
   if (!select) return;
   const selected = select.value;
   select.replaceChildren(new Option("Pilih Pengguna", ""));
-  adminUsers.forEach((user) => select.add(new Option(`${user.display_name} · ${user.role}`, String(user.id))));
+  adminUsers.forEach((user) => select.add(new Option(`${user.display_name} | ${user.role}`, String(user.id))));
   if (adminUsers.some((user) => String(user.id) === selected)) select.value = selected;
   showPermissionEditor();
 }
@@ -2919,15 +2914,15 @@ function renderAdminUsers(users) {
     const name = document.createElement("strong");
     name.textContent = user.display_name;
     const username = document.createElement("small");
-    username.textContent = `${user.username}${user.force_password_change ? " · Wajib Ganti Sandi" : ""}`;
+    username.textContent = `${user.username}${user.force_password_change ? " (Wajib Ganti Sandi)" : ""}`;
     userCopy.append(name, username);
     userMain.append(avatar, userCopy);
     userCell.append(userMain);
 
     const phone = document.createElement("td");
-    phone.textContent = user.phone || "—";
+    phone.textContent = user.phone || "Belum diisi";
     const email = document.createElement("td");
-    email.textContent = user.email || "—";
+    email.textContent = user.email || "Belum diisi";
     const levelCell = document.createElement("td");
     const role = document.createElement("select");
     role.className = "user-level-select";
@@ -3076,7 +3071,7 @@ newsImageInput.addEventListener("change", () => {
 
 async function loadAdminPayments() {
   const container = document.querySelector("#admin-payments-list");
-  container.replaceChildren(document.createTextNode("Memuat pembayaran…"));
+  container.replaceChildren(document.createTextNode("Memuat pembayaran..."));
   try {
     const { payments: items } = await request("/api/admin/payments");
     container.replaceChildren();
@@ -3098,7 +3093,7 @@ async function loadAdminPayments() {
       const detail = document.createElement("p");
       const area = [item.rt && `RT ${item.rt}`, item.rw && `RW ${item.rw}`].filter(Boolean).join(" / ");
       const familyCard = String(item.family_card_number || "").trim();
-      detail.textContent = [familyCard && `KK ${familyCard}`, item.period, contributionMoney.format(item.amount), item.paid_at, item.method, area].filter(Boolean).join(" · ");
+      detail.textContent = [familyCard && `KK ${familyCard}`, item.period, contributionMoney.format(item.amount), item.paid_at, item.method, area].filter(Boolean).join(" | ");
       card.append(heading, detail);
       /* BUKTI OPSIONAL: setoran tanpa bukti tetap sah, jadi yang ditampilkan
          hanya lencana status, bukan tautan gambar yang tidak ada. */
@@ -3378,7 +3373,7 @@ function renderContributionResidents() {
     // Warga yang tanggal wafatnya sudah diisi di Daftar Warga Wafat ditandai di
     // sini. Datanya tetap dihitung seperti biasa, hanya diberi tanda.
     const deceasedBadge = resident.deceased
-      ? `<span class="contribution-deceased-badge" title="Warga ini tercatat meninggal di Daftar Warga Wafat">Meninggal${resident.date_of_death ? ` · ${formatDate(resident.date_of_death)}` : ""}</span>`
+      ? `<span class="contribution-deceased-badge" title="Warga ini tercatat meninggal di Daftar Warga Wafat">Meninggal${resident.date_of_death ? ` | ${formatDate(resident.date_of_death)}` : ""}</span>`
       : "";
     const familyDeceasedBadge = !resident.deceased && resident.family_deceased_count
       ? `<span class="contribution-deceased-badge" title="${resident.family_deceased_names || "Salah satu anggota keluarga"} tercatat wafat">Keluarga: ${resident.family_deceased_count} anggota wafat</span>`
@@ -3577,7 +3572,7 @@ function populateContributionFamilyCardOptions() {
   families.forEach((item, cardNumber) => {
     const option = document.createElement("option");
     option.value = cardNumber;
-    option.label = `${item.full_name || "Keluarga"} · RT ${String(item.rt || "-").padStart(3, "0")} / RW ${String(item.rw || "-").padStart(3, "0")}`;
+    option.label = `${item.full_name || "Keluarga"} | RT ${String(item.rt || "-").padStart(3, "0")} / RW ${String(item.rw || "-").padStart(3, "0")}`;
     fragment.append(option);
   });
   options.replaceChildren(fragment);
@@ -3634,7 +3629,7 @@ function renderContributionFamilyPicker() {
     const lead = family.head || family.members[0];
     const option = document.createElement("option");
     option.value = family.cardNumber;
-    option.textContent = `${family.cardNumber} — ${lead?.full_name || "Keluarga"} · RT ${String(lead?.rt || "-").padStart(3, "0")} / RW ${String(lead?.rw || "-").padStart(3, "0")} · ${family.members.length} anggota`;
+    option.textContent = `${family.cardNumber} | ${lead?.full_name || "Keluarga"} | RT ${String(lead?.rt || "-").padStart(3, "0")} / RW ${String(lead?.rw || "-").padStart(3, "0")} | ${family.members.length} anggota`;
     option.selected = family.cardNumber === selected;
     fragment.append(option);
   });
@@ -3839,7 +3834,7 @@ function openFamilyDialog(familyCardNumber, currentResident) {
   familyMembers.forEach((member, index) => {
     const row = document.createElement('tr');
     const deathStatus = member.deceased
-      ? `Wafat${member.date_of_death ? ` · ${formatDate(member.date_of_death)}` : ""}`
+      ? `Wafat${member.date_of_death ? ` | ${formatDate(member.date_of_death)}` : ""}`
       : "Aktif";
     row.innerHTML = `
       <td>${index + 1}</td>
@@ -3866,8 +3861,8 @@ function openContributionPaymentDialog(resident, payment = null) {
   document.querySelector("#contribution-payment-title").textContent = payment ? "Edit Iuran" : "Tambah Iuran";
   const familyCard = String(resident.family_card_number || "").trim();
   document.querySelector("#contribution-payment-resident").textContent = familyCard
-    ? `${resident.full_name} · Pembayaran untuk seluruh KK ${familyCard}`
-    : `${resident.full_name} · KK belum diisi, pembayaran dicatat per warga`;
+    ? `${resident.full_name} | Pembayaran untuk seluruh KK ${familyCard}`
+    : `${resident.full_name} | KK belum diisi, pembayaran dicatat per warga`;
   form.elements.payment_id.value = payment?.id || "";
   form.elements.resident_id.value = resident.id;
   form.elements.payment_source.value = payment?.source || "admin";
@@ -3922,7 +3917,7 @@ function openContributionReceiptPreview(resident, payment) {
   const title = document.createElement("strong");
   title.textContent = "STRUK PEMBAYARAN IURAN";
   const subtitle = document.createElement("span");
-  subtitle.textContent = "Badan Sosial Kematian · RW 007 Kota Bambu Utara";
+  subtitle.textContent = "Badan Sosial Kematian | RW 007 Kota Bambu Utara";
   header.append(title, subtitle);
   const list = document.createElement("div");
   list.className = "contribution-receipt-rows";
@@ -4053,7 +4048,7 @@ function renderPayersTable() {
   const total = rows.reduce((sum, resident) => sum + (resident.total_paid || 0), 0);
   const scope = [chosenRt ? `RT ${chosenRt}` : "", chosenRw ? `RW ${chosenRw}` : ""].filter(Boolean).join(" / ");
   document.querySelector("#contribution-payers-summary").textContent = rows.length
-    ? `${rows.length} warga${scope ? ` di ${scope}` : ""} · total ${contributionMoney.format(total)}`
+    ? `${rows.length} warga${scope ? ` di ${scope}` : ""} | total ${contributionMoney.format(total)}`
     : "Tidak ada warga yang cocok dengan filter ini.";
   body.replaceChildren();
   if (!rows.length) {
@@ -4199,7 +4194,7 @@ document.querySelector("#program-info-form").addEventListener("submit", async (e
   event.preventDefault();
   const form = event.currentTarget;
   const result = document.querySelector("#program-info-result");
-  result.textContent = "Menyimpan…";
+  result.textContent = "Menyimpan...";
   try {
     await request("/api/admin/program-info", {
       method: "POST",
@@ -4215,7 +4210,7 @@ let financeEntries = [];
 
 async function loadAdminFinance() {
   const container = document.querySelector("#admin-finance-list");
-  container.replaceChildren(document.createTextNode("Memuat data keuangan…"));
+  container.replaceChildren(document.createTextNode("Memuat data keuangan..."));
   try {
     const { entries } = await request("/api/admin/finance");
     financeEntries = entries;
@@ -4234,10 +4229,10 @@ async function loadAdminFinance() {
       const amount = document.createElement("strong");
       const isIncome = entry.income > 0;
       amount.className = isIncome ? "finance-amount-income" : "finance-amount-expense";
-      amount.textContent = `${isIncome ? "+" : "’"}${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(isIncome ? entry.income : entry.expense)}`;
+      amount.textContent = `${isIncome ? "+" : "-"}${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(isIncome ? entry.income : entry.expense)}`;
       heading.append(title, amount);
       const detail = document.createElement("p");
-      detail.textContent = `${entry.entry_date}${entry.category ? ` · ${entry.category}` : ""}${entry.description ? ` · ${entry.description}` : ""}`;
+      detail.textContent = `${entry.entry_date}${entry.category ? ` | ${entry.category}` : ""}${entry.description ? ` | ${entry.description}` : ""}`;
       /* Baris pemasukan iuran dibuat otomatis dari setoran warga, jadi
          ditambahkan tombol untuk melihat siapa saja yang sudah menyetor.
          Badge dan tombol dikumpulkan di satu baris kaki; sebelumnya keduanya
@@ -4260,7 +4255,7 @@ async function loadAdminFinance() {
       remove.className = "text-button finance-remove-button";
       remove.textContent = "Hapus Catatan";
       remove.addEventListener("click", async () => {
-        if (!window.confirm(`Hapus catatan keuangan “${entry.title}”?`)) return;
+        if (!window.confirm(`Hapus catatan keuangan: ${entry.title}?`)) return;
         try {
           await request(`/api/admin/finance/${entry.id}`, { method: "DELETE" });
           await loadAdminFinance();
@@ -4280,15 +4275,15 @@ async function openContributionDetail(period, title) {
   const heading = document.querySelector("#finance-contribution-title");
   if (!dialog || !body) return;
   heading.textContent = title || "Rincian Iuran";
-  summary.textContent = "Memuat…";
+  summary.textContent = "Memuat...";
   body.replaceChildren();
   if (!dialog.open) dialog.showModal();
   try {
     const data = await request(`/api/admin/finance/contributions?period=${encodeURIComponent(period)}`);
     const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
     summary.textContent = data.label
-      ? `${data.label} · ${data.count} warga · total ${rupiah.format(data.total)}`
-      : `${data.count} warga · total ${rupiah.format(data.total)}`;
+      ? `${data.label} | ${data.count} warga | total ${rupiah.format(data.total)}`
+      : `${data.count} warga | total ${rupiah.format(data.total)}`;
     body.replaceChildren();
     if (!data.payments.length) {
       const row = document.createElement("tr");
@@ -4325,7 +4320,7 @@ document.querySelector("#finance-entry-form").addEventListener("submit", async (
   event.preventDefault();
   const form = event.currentTarget;
   const result = document.querySelector("#finance-entry-result");
-  result.textContent = "Menyimpan…";
+  result.textContent = "Menyimpan...";
   try {
     await request("/api/admin/finance", {
       method: "POST",
@@ -4528,10 +4523,10 @@ function renderAdminNews(articles) {
     headline.textContent = article.headline;
     const excerpt = document.createElement("p");
     excerpt.className = "admin-news-excerpt";
-    excerpt.textContent = article.body.length > 260 ? `${article.body.slice(0, 260)}…` : article.body;
+    excerpt.textContent = article.body.length > 260 ? `${article.body.slice(0, 260)}...` : article.body;
     const metadata = document.createElement("small");
     metadata.className = "admin-news-meta";
-    metadata.textContent = `${article.author} · ${formatNewsDate(article.uploaded_at)}`;
+    metadata.textContent = `${article.author} | ${formatNewsDate(article.uploaded_at)}`;
     copy.append(title, headline, excerpt, metadata);
     const actions = document.createElement("div");
     actions.className = "admin-news-actions";
@@ -4561,7 +4556,7 @@ function renderAdminNews(articles) {
     remove.type = "button";
     remove.textContent = "Hapus";
     remove.addEventListener("click", async () => {
-      if (!window.confirm(`Hapus berita “${article.title}”?`)) return;
+      if (!window.confirm(`Hapus berita: ${article.title}?`)) return;
       try {
         await request(`/api/admin/news/${article.id}`, { method: "DELETE" });
         await loadAdminNews();
@@ -4671,7 +4666,7 @@ const positionCancelButton = document.querySelector("#position-cancel-edit");
 function submitArrow() {
   const arrow = document.createElement("span");
   arrow.setAttribute("aria-hidden", "true");
-  arrow.textContent = "→";
+  arrow.textContent = ">";
   return arrow;
 }
 
@@ -4729,7 +4724,7 @@ function renderPositionTitles() {
     remove.type = "button";
     remove.textContent = "Hapus";
     remove.addEventListener("click", async () => {
-      if (!window.confirm(`Hapus jabatan “${item.title}”?`)) return;
+      if (!window.confirm(`Hapus jabatan: ${item.title}?`)) return;
       try {
         await request(`/api/admin/position-titles/${item.id}`, { method: "DELETE" });
         await loadPositionTitles();
@@ -4894,10 +4889,10 @@ function renderAdminContacts(contacts) {
     const copy = document.createElement("div");
     copy.className = "admin-news-copy";
     const title = document.createElement("h4");
-    title.textContent = `${contactUnitLabel(contact)} · ${contact.contact_name}`;
+    title.textContent = `${contactUnitLabel(contact)} | ${contact.contact_name}`;
     const meta = document.createElement("small");
     meta.className = "admin-news-meta";
-    meta.textContent = `${contact.position_name || "Pengurus"} · ${contact.phone}${contact.active ? "" : " · disembunyikan"}`;
+    meta.textContent = `${contact.position_name || "Pengurus"} | ${contact.phone}${contact.active ? "" : " | disembunyikan"}`;
     copy.append(title, meta);
     if (contact.rank_order && contact.rank_order > 90) {
       const custom = document.createElement("small");
@@ -5134,11 +5129,11 @@ function renderAdminTaskNavigation(name) {
   const menus = {
     records: [
       {
-        label: "Data Warga dan Iuran",
+        label: "Data KK, Keluarga, dan Setoran",
         children: [
-          { label: "Daftar Warga & Setoran", target: "contribution-residents-panel", permission: "payments" },
-          { label: "Tambah Anggota Keluarga", target: "contribution-family-page", permission: "payments" },
-          { label: "Verifikasi Iuran Warga", target: "admin-payments-section", permission: "payments" },
+          { label: "Data Kartu Keluarga", target: "contribution-residents-panel", permission: "payments" },
+          { label: "Family Connection", target: "contribution-family-page", permission: "payments" },
+          { label: "Verifikasi Setoran KK", target: "admin-payments-section", permission: "payments" },
           { label: "Arsip Status Wafat & Layanan", target: "records-list-panel" },
           { label: "Data Keuangan BSK", target: "admin-finance-section", permission: "finance" },
         ],
@@ -5146,14 +5141,14 @@ function renderAdminTaskNavigation(name) {
     ],
     import: [
       {
-        label: "Impor File",
+        label: "Data Issue",
         children: [
-          { label: "Pilih File dan Pratinjau", target: "import-task-panel" },
-          { label: "Tinjauan Data", target: "issues-panel" },
+          { label: "Data Masuk & Pratinjau", target: "import-task-panel" },
+          { label: "Data Issue / Perbaikan", target: "issues-panel" },
         ],
       },
       {
-        label: "Pendaftaran BSK",
+        label: "Registrasi BSK (masuk ke Data KK)",
         permission: "registration",
         children: [{ label: "Antrean Formulir", target: "registrations-panel" }],
       },
@@ -5182,9 +5177,7 @@ function renderAdminTaskNavigation(name) {
       { label: "Atur Footer dan Skala Logo", target: "footer-settings-form", permission: "media" },
       { label: "Atur Dana Apresiasi", target: "donation-settings-form", permission: "media" },
       { label: "Kop Ekspor dan Tanda Tangan", target: "export-letterhead-section", permission: "media" },
-      { label: "Informasi Program", target: "admin-program-section", permission: "program" },
       { label: "Font Dan Tipografi", target: "typography-form", permission: "typography" },
-      { label: "Atur Jadwal Maintenance", target: "maintenance-form", permission: "maintenance" },
     ],
     users: [{ label: "Daftar Pengguna", target: "users-list-panel" }],
   };
@@ -5451,7 +5444,7 @@ function updateImportTabTitle() {
   const parts = [];
   if (importBadgeCounts.issues) parts.push(`${importBadgeCounts.issues} field bermasalah belum diperbaiki`);
   if (importBadgeCounts.registrations) parts.push(`${importBadgeCounts.registrations} formulir menunggu verifikasi`);
-  tab.setAttribute("title", parts.length ? parts.join(" · ") : "Tidak ada hal yang menunggu");
+  tab.setAttribute("title", parts.length ? parts.join(" | ") : "Tidak ada hal yang menunggu");
 }
 window.setImportBadgeCount = (key, total) => {
   importBadgeCounts[key] = Number(total) || 0;
@@ -5509,8 +5502,8 @@ function renderDataIssues(payload) {
       issue.raw_value || "-",
       issue.message || "-",
       issue.resolved
-        ? `Selesai${issue.resolved_by ? ` oleh ${issue.resolved_by}` : ""} · ${formatIssueTimestamp(issue.resolved_at)}`
-        : `Menunggu · ${formatIssueTimestamp(issue.created_at)}`,
+        ? `Selesai${issue.resolved_by ? ` oleh ${issue.resolved_by}` : ""} | ${formatIssueTimestamp(issue.resolved_at)}`
+        : `Menunggu | ${formatIssueTimestamp(issue.created_at)}`,
     ];
     for (const value of values) {
       const cell = document.createElement("td");
@@ -5663,7 +5656,9 @@ for (const popup of document.querySelectorAll("dialog")) {
 // ke sana. Karena itu penangan popup ini dihapus agar kedua tombol "Masuk"
 // berperilaku sama.
 if (isAdminPage) {
-  document.querySelector("#resident-login-open").hidden = true;
+  // Tombol warga memang telah dihapus dari header. Gunakan optional chaining
+  // karena halaman /admin tetap memuat berkas HTML yang sama.
+  document.querySelector("#resident-login-open")?.setAttribute("hidden", "");
 }
 document.querySelector("#login-password-toggle").addEventListener("click", (event) => {
   const button = event.currentTarget;
@@ -5736,7 +5731,7 @@ function resetUserPhotoPreview() {
   if (userPhotoPreviewUrl) URL.revokeObjectURL(userPhotoPreviewUrl);
   userPhotoPreviewUrl = "";
   const preview = document.querySelector("#user-photo-preview");
-  preview.replaceChildren(document.createTextNode("Foto opsional · PNG, JPG, WebP · maks. 5 MB"));
+  preview.replaceChildren(document.createTextNode("Foto opsional | PNG, JPG, WebP | maks. 5 MB"));
   document.querySelector("#delete-user-photo-button").hidden = true;
   delete document.querySelector("#delete-user-photo-button").dataset.userId;
 }
@@ -5772,7 +5767,7 @@ function openUserDialog(user = null) {
     image.src = user.avatar_url;
     image.alt = "Foto pengguna saat ini";
     const label = document.createElement("span");
-    label.textContent = "Foto saat ini · pilih file untuk mengganti";
+    label.textContent = "Foto saat ini | pilih file untuk mengganti";
     preview.append(image, label);
   }
   const deletePhotoButton = document.querySelector("#delete-user-photo-button");
@@ -6284,7 +6279,7 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
     if (payload.warnings.length > shownWarnings.length) {
       const item = document.createElement("li");
       item.className = "is-more";
-      item.textContent = `…dan ${payload.warnings.length - shownWarnings.length} catatan lain.`;
+      item.textContent = `Dan ${payload.warnings.length - shownWarnings.length} catatan lain.`;
       warningList.append(item);
     }
     notice.hidden = false;
@@ -7181,7 +7176,7 @@ document.querySelectorAll(".signature-draw-button").forEach((button) => {
     signaturePadDialog.showModal();
   });
 });
-document.querySelector("#contribution-signature-pad-button").addEventListener("click", () => {
+document.querySelector("#contribution-signature-pad-button")?.addEventListener("click", () => {
   signaturePadRoleName = "maker";
   document.querySelector("#signature-pad-role-select").value = "maker";
   signaturePadRole.textContent = "Menggambar tanda tangan untuk: Yang membuat / pengisi data";
@@ -7647,7 +7642,7 @@ recordsPrevBtn.addEventListener("click", () => {
   recordsPage = Math.max(0, recordsPage - 1);
   render();
 });
-recordsPrevBtn.textContent = "‹";
+recordsPrevBtn.textContent = "<";
 recordsPrevBtn.setAttribute("aria-label", "Halaman sebelumnya");
 recordsPrevBtn.title = "Halaman sebelumnya";
 }
@@ -7657,7 +7652,7 @@ recordsNextBtn.addEventListener("click", () => {
   recordsPage += 1;
   render();
 });
-recordsNextBtn.textContent = "›";
+recordsNextBtn.textContent = ">";
 recordsNextBtn.setAttribute("aria-label", "Halaman berikutnya");
 recordsNextBtn.title = "Halaman berikutnya";
 }
@@ -7671,10 +7666,10 @@ document.querySelector("#admin-records-next").addEventListener("click", () => {
 });
 adminRecordSearchInput.addEventListener("input", () => { adminRecordsPage = 0; renderManageList(); });
 adminRecordSortSelect.addEventListener("change", () => { adminRecordsPage = 0; renderManageList(); });
-document.querySelector("#admin-records-previous").textContent = "‹";
+document.querySelector("#admin-records-previous").textContent = "<";
 document.querySelector("#admin-records-previous").setAttribute("aria-label", "Halaman entri sebelumnya");
 document.querySelector("#admin-records-previous").title = "Halaman entri sebelumnya";
-document.querySelector("#admin-records-next").textContent = "›";
+document.querySelector("#admin-records-next").textContent = ">";
 document.querySelector("#admin-records-next").setAttribute("aria-label", "Halaman entri berikutnya");
 document.querySelector("#admin-records-next").title = "Halaman entri berikutnya";
 document.addEventListener("keydown", (event) => {

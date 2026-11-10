@@ -1376,21 +1376,37 @@ MAX_REGISTRATION_MEMBERS = 20
 
 
 def registration_signature_payload(connection, registration_id):
-	"""Susun blok tanda tangan satu formulir untuk dikirim ke antrean admin."""
-	rows = connection.execute(
-		"SELECT role, name, image_file, signed_at FROM bsk_registration_signatures "
-		"WHERE registration_id = ? ORDER BY id",
-		(registration_id,),
-	).fetchall()
-	signatures = {row["role"]: dict(row) for row in rows}
+	"""Ambil seluruh tanda tangan otomatis dari Kop Ekspor.
+
+	Formulir bersifat baca-saja: tidak ada data tanda tangan per-pendaftaran
+	dan tidak ada gambar langsung. Satu perubahan unggahan di Kop Ekspor
+	berlaku konsisten untuk semua formulir.
+	"""
+	registration = connection.execute(
+		"SELECT rt FROM bsk_registrations WHERE id = ?", (registration_id,)
+	).fetchone()
+	rt_unit = str(registration["rt"] or "").strip().zfill(3) if registration else ""
+	settings = get_settings(connection)
+	signatures = []
 	for role in REGISTRATION_SIGNATURE_ROLES:
-		signatures.setdefault(role, {"role": role, "name": "", "image_file": "", "signed_at": ""})
-	for item in signatures.values():
-		item["label"] = REGISTRATION_ROLE_LABELS.get(item["role"], item["role"])
-		item["has_image"] = bool(item["image_file"])
-		item["image_url"] = f"/media/registration-signature/{registration_id}/{item['role']}" if item["image_file"] else ""
-		item.pop("image_file", None)
-	return [signatures[role] for role in REGISTRATION_SIGNATURE_ROLES]
+		name_key = f"signature_{role}_name"
+		file_key = f"signature_{role}"
+		if role == "rt" and rt_unit:
+			name_key, file_key = f"signature_rt_name_{rt_unit}", f"signature_rt_{rt_unit}"
+			name = settings.get(name_key) or settings.get("signature_rt_name", "")
+			image_file = settings.get(file_key) or settings.get("signature_rt", "")
+		else:
+			name, image_file = settings.get(name_key, ""), settings.get(file_key, "")
+		url = f"/media/signature/{role}"
+		if role == "rt" and rt_unit and settings.get(file_key):
+			url += f"?unit={rt_unit}"
+		signatures.append({
+			"role": role, "label": REGISTRATION_ROLE_LABELS.get(role, role),
+			"name": name, "has_image": bool(image_file),
+			"image_url": url if image_file else "", "signed_at": "global",
+			"resident_direct": False,
+		})
+	return signatures
 
 
 def registration_payload_for(connection, registration_id):
@@ -2507,10 +2523,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		self.send_json(201, {"registration": registration, "saved": True})
 
 	def handle_registration_signature(self):
-		"""Simpan satu tanda tangan formulir. Semua jabatan bisa ditandatangani
-		dalam satu sesi di tempat, jadi tidak ada urutan antar jabatan."""
+		"""Endpoint lama dinonaktifkan: semua tanda tangan pendaftaran offline."""
 		if not self.require_admin("Admin"):
 			return
+		self.send_json(410, {"error": "Tanda tangan pendaftaran dilakukan secara offline pada formulir cetak."})
+		return
 		try:
 			payload = self.read_json()
 			registration_id = payload.get("registration_id")
@@ -2520,8 +2537,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			encoded = payload.get("content_base64", "")
 			if type(registration_id) is not int:
 				raise ValueError("Pilih formulir dengan benar.")
-			if role not in REGISTRATION_SIGNATURE_ROLES:
-				raise ValueError("Pilih jabatan penandatangan yang benar.")
+			if role != "maker":
+				raise ValueError("Tanda tangan pengurus diambil otomatis dari Kop Ekspor dan Tanda Tangan.")
 			if payload.get("name_only") is True:
 				# Menyimpan nama penandatangan tanpa menyentuh gambar. Dipakai
 				# saat jabatan berganti orang, jadi nama di cetakan ikut berubah
@@ -2614,11 +2631,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		self.send_json(200, {"registration": registration, "saved": True})
 
 	def handle_registration_review(self):
-		"""Setujui atau tolak satu formulir.
+		"""Setujui atau tolak satu formulir dan masukkan ke Data KK.
 
-		Persetujuan baru memindahkan data ke daftar warga bila semua
-		penandatangan sudah ada. Tanpa tanda tangan lengkap, formulir tetap
-		antre supayaecutor tidak sempat menyalin data setengah jadi.
+		Tanda tangan adalah lampiran pendukung, bukan syarat relasional.
+		Ini menjaga alur tetap ringkas: pengurus dapat mengoreksi data KK dan
+		Family Connection tanpa terhambat berkas tanda tangan yang menyusul.
 		"""
 		if not self.require_admin("Admin"):
 			return
@@ -2644,20 +2661,6 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Pendaftaran ini sudah disetujui sebelumnya.")
 				reviewer = self.editor_label()
 				if decision == "approve":
-					signed_count = connection.execute(
-						"SELECT COUNT(*) FROM bsk_registration_signatures WHERE registration_id = ? AND image_file != ''",
-						(registration_id,),
-					).fetchone()[0]
-					if signed_count < len(REGISTRATION_SIGNATURE_ROLES):
-						missing = [
-							REGISTRATION_ROLE_LABELS[role]
-							for role in REGISTRATION_SIGNATURE_ROLES
-							if not connection.execute(
-								"SELECT 1 FROM bsk_registration_signatures WHERE registration_id = ? AND role = ? AND image_file != ''",
-								(registration_id, role),
-							).fetchone()
-						]
-						raise ValueError(f"Lengkapi tanda tangan terlebih dahulu: {', '.join(missing)}.")
 					promote_registration_to_residents(connection, registration_id, reviewer)
 				else:
 					if not note.strip():
@@ -4780,7 +4783,10 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			if not self.require_admin("Admin"):
 				return
 			with connect_database() as connection:
-				filename = get_settings(connection).get(f"signature_{role}", "")
+				settings = get_settings(connection)
+				unit = self.query_param("unit", "")
+				filename = settings.get(f"signature_rt_{unit}", "") if role == "rt" and re.fullmatch(r"\d{3}", unit) else ""
+				filename = filename or settings.get(f"signature_{role}", "")
 			return self.send_stored_image(filename)
 		if path.startswith("/media/registration-signature/"):
 			parts = [part for part in path.split("/") if part]
@@ -5346,6 +5352,9 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				self.record_login_failure()
 				self.send_json(401, {"error": "Nama akun atau kata sandi tidak sesuai."})
 				return
+			if user["role"] == "Warga":
+				self.send_json(403, {"error": "Panel warga sedang dinonaktifkan. Pengelolaan data dan setoran dilayani oleh pengurus BSK."})
+				return
 			self.clear_login_failures()
 			token = secrets.token_urlsafe(32)
 			with self.server.session_lock:
@@ -5363,7 +5372,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			)
 			return
 		if path == "/api/resident/registrations":
-			return self.handle_resident_registration_submit()
+			self.send_json(410, {"error": "Panel warga dinonaktifkan. Gunakan menu Data Masuk & Tinjauan pada panel admin."})
+			return
 		if path == "/api/admin/registrations":
 			return self.handle_registration_create()
 		if path == "/api/admin/registration-signature":

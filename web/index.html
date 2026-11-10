@@ -64,7 +64,6 @@
           <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="dark">Gelap</button>
         </div>
       </div>
-      <a id="resident-login-open" class="resident-login-button" href="/masuk">Masuk</a>
       <button id="mobile-nav-toggle" class="icon-button mobile-nav-toggle" type="button" aria-label="Buka menu" aria-expanded="false" aria-controls="mobile-nav-menu" title="Buka menu">
         <svg class="mobile-menu-open-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         <svg class="mobile-menu-close-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
@@ -77,7 +76,6 @@
       <a href="/kontak" data-section-link="contacts-section" hidden>Kontak</a>
     </nav>
       <div class="mobile-nav-divider" aria-hidden="true"></div>
-      <a id="mobile-resident-login-open" class="mobile-nav-action" href="/masuk">Masuk <span aria-hidden="true">→</span></a>
     </div>
   </header>
 
@@ -187,7 +185,10 @@
       <p class="form-error" id="change-password-error" role="alert"></p>
       <button class="primary-button" type="submit">Ganti Kata Sandi <span aria-hidden="true">→</span></button>
     </form>
-    <section id="resident-dashboard" class="resident-dashboard" hidden aria-labelledby="resident-dashboard-title">
+    <!-- Panel warga dinonaktifkan. Pengelolaan data keluarga dan iuran kini
+         dilakukan satu pintu oleh pengurus dari panel admin. Markup lama tetap
+         disimpan sementara agar pembaruan tidak merusak data/formulir lama. -->
+    <section id="resident-dashboard" class="resident-dashboard" hidden aria-hidden="true" aria-labelledby="resident-dashboard-title">
       <p class="eyebrow">Dashboard Warga</p>
       <h2 id="resident-dashboard-title">Selamat datang, <span id="resident-dashboard-name"></span></h2>
       <p>Username Anda: <strong id="resident-dashboard-username"></strong></p>
@@ -253,11 +254,11 @@
         <aside class="admin-sidebar">
         <nav class="admin-nav" aria-label="Menu pengelolaan">
           <details class="admin-nav-group" data-admin-group="records">
-            <summary id="admin-tab-records" class="admin-tab active" aria-current="page" aria-expanded="false" data-admin-tab="records">Daftar Warga</summary>
+            <summary id="admin-tab-records" class="admin-tab active" aria-current="page" aria-expanded="false" data-admin-tab="records">Data KK, Setoran &amp; Arsip</summary>
             <div id="admin-task-nav" class="admin-task-nav" aria-label="Tugas pada menu ini" hidden></div>
           </details>
           <details class="admin-nav-group" data-admin-group="import">
-            <summary id="admin-tab-import" class="admin-tab" aria-expanded="false" data-admin-tab="import">Impor Data <span id="issue-tab-badge" class="issue-tab-badge" hidden>0</span><span id="registration-tab-badge" class="issue-tab-badge" hidden>0</span></summary>
+            <summary id="admin-tab-import" class="admin-tab" aria-expanded="false" data-admin-tab="import">Data Masuk &amp; Tinjauan <span id="issue-tab-badge" class="issue-tab-badge" hidden>0</span><span id="registration-tab-badge" class="issue-tab-badge" hidden>0</span></summary>
           </details>
           <details class="admin-nav-group" data-admin-group="news">
             <summary id="admin-tab-news" class="admin-tab" aria-expanded="false" data-admin-tab="news">Berita</summary>
@@ -354,10 +355,10 @@
           <section id="admin-view-contributions" class="admin-view" role="tabpanel" aria-labelledby="admin-tab-records" tabindex="0" data-admin-panel="contributions" hidden>
             <section id="contribution-residents-panel" class="admin-section contribution-management" aria-labelledby="contribution-residents-title">
               <div class="contribution-page-heading">
-                <div><p class="eyebrow">Data dan Setoran</p><h2 id="contribution-residents-title">Daftar Warga</h2></div>
-                <div class="contribution-page-actions"><button id="add-contribution-resident" class="primary-button" type="button">Tambah Warga <span aria-hidden="true">→</span></button></div>
+                <div><p class="eyebrow">Family Connection &amp; Setoran</p><h2 id="contribution-residents-title">Data Kartu Keluarga</h2></div>
+                <div class="contribution-page-actions"><button id="add-contribution-resident" class="primary-button" type="button">Tambah Data KK <span aria-hidden="true">→</span></button></div>
               </div>
-              <p class="form-hint">Data iuran diperbarui dari pembayaran terverifikasi dan setoran yang dicatat admin. Nominal total serta jumlah bulan dihitung otomatis.</p>
+              <p class="form-hint">Nomor KK adalah identitas utama keluarga. Tambahkan kepala keluarga lebih dahulu, lalu anggota pada nomor KK yang sama. Setoran dicatat satu kali per KK untuk setiap periode.</p>
               <div class="contribution-summary" aria-label="Ringkasan iuran">
                 <article><span>Warga Terdaftar</span><strong id="contribution-resident-count">0</strong></article>
                 <button id="contribution-paid-card" class="stat-card" type="button" title="Lihat daftar KK yang sudah iuran bulan ini" aria-label="Lihat daftar KK yang sudah iuran bulan ini"><span>KK Sudah Iuran Bulan Ini</span><strong id="contribution-paid-count">0</strong></button>
@@ -1105,7 +1106,7 @@
                 </form>
                   <form id="signature-settings-form" class="form-stack">
                     <h3 id="signature-settings-title">Tanda Tangan Digital</h3>
-                    <p class="form-hint">Isi nama penandatangan dan unggah gambar tanda tangan. Blok ini tercetak di akhir setiap wilayah RT pada ekspor PDF, bukan hanya di sheet XLSX.</p>
+                    <p class="form-hint">Isi nama penandatangan dan unggah gambar tanda tangan. Tanda tangan langsung tidak tersedia di pengaturan ini. Blok ini tercetak di akhir setiap wilayah RT pada ekspor PDF, bukan hanya di sheet XLSX.</p>
                     <fieldset class="permission-fieldset">
                       <legend>Jabatan Yang Dicetak</legend>
                       <p class="form-hint">Centang jabatan yang perlu muncul di blok tanda tangan. Jabatan yang tidak dicentang disembunyikan dari PDF.</p>
@@ -1133,7 +1134,6 @@
                       <p id="signature-maker-status" class="form-hint"></p>
                       <button type="button" class="text-button signature-delete-button" data-role="maker" hidden>Hapus Tanda Tangan</button>
                     </div>
-                <button type="button" class="action-button signature-draw-button" data-role="maker">Tanda Tangan Langsung - Maker</button>
                     <label>Simpan Tanda Tangan Ketua RT Untuk<select name="signature_rt_unit" id="signature-rt-unit-select"></select></label>
                     <p class="form-hint">Tiap RT punya tanda tangannya sendiri. Pilih "Semua RT" memakai nama Ketua RT umum, atau pilih satu RT untuk menyimpannya khusus wilayah tersebut.</p>
                     <label>Nama Ketua RT<input name="signature_rt_name" maxlength="120"></label>
@@ -1142,28 +1142,24 @@
                       <p id="signature-rt-status" class="form-hint"></p>
                       <button type="button" class="text-button signature-delete-button" data-role="rt" hidden>Hapus Tanda Tangan</button>
                     </div>
-                <button type="button" class="action-button signature-draw-button" data-role="rt">Tanda Tangan Langsung - Ketua RT</button>
                     <label>Nama LMK RW<input name="signature_lmk_name" maxlength="120"></label>
                     <label>Gambar Tanda Tangan LMK RW<input name="signature_lmk" type="file" accept="image/png,image/jpeg,image/webp"></label>
                     <div class="signature-status-row">
                       <p id="signature-lmk-status" class="form-hint"></p>
                       <button type="button" class="text-button signature-delete-button" data-role="lmk" hidden>Hapus Tanda Tangan</button>
                     </div>
-                <button type="button" class="action-button signature-draw-button" data-role="lmk">Tanda Tangan Langsung - LMK</button>
                     <label>Nama Ketua RW<input name="signature_rw_name" maxlength="120"></label>
                     <label>Gambar Tanda Tangan Ketua RW<input name="signature_rw" type="file" accept="image/png,image/jpeg,image/webp"></label>
                     <div class="signature-status-row">
                       <p id="signature-rw-status" class="form-hint"></p>
                       <button type="button" class="text-button signature-delete-button" data-role="rw" hidden>Hapus Tanda Tangan</button>
                     </div>
-                <button type="button" class="action-button signature-draw-button" data-role="rw">Tanda Tangan Langsung - Ketua RW</button>
                     <label>Nama Ketua BSK<input name="signature_bsk_name" maxlength="120"></label>
                     <label>Gambar Tanda Tangan Ketua BSK<input name="signature_bsk" type="file" accept="image/png,image/jpeg,image/webp"></label>
                     <div class="signature-status-row">
                       <p id="signature-bsk-status" class="form-hint"></p>
                       <button type="button" class="text-button signature-delete-button" data-role="bsk" hidden>Hapus Tanda Tangan</button>
                     </div>
-                <button type="button" class="action-button signature-draw-button" data-role="bsk">Tanda Tangan Langsung - Ketua BSK</button>
                     <p id="signature-error" class="form-error" role="alert"></p>
                     <button class="primary-button" type="submit">Simpan Tanda Tangan <span aria-hidden="true">→</span></button>
                   </form>
@@ -1294,10 +1290,9 @@
       </div>
     </form>
     <div class="registration-signature-block">
-      <h3>Tanda tangan di tempat</h3>
-      <p class="form-hint">Lima jabatan ini menandatangani formulir yang sama dalam satu sesi. Pilih jabatan, isi nama, lalu tekan Tanda Tangan Langsung. Sudah punya gambar? Tekan Simpan Nama bila hanya nama yang berubah, atau Hapus untuk membuang gambar lalu menggambar ulang. Bagian ini tetap bisa diubah walaupun formulir sudah disetujui.</p>
+      <h3>Tanda Tangan Otomatis</h3>
+      <p class="form-hint">Nama dan gambar tanda tangan diambil otomatis dari Tampilan Situs → Kop Ekspor dan Tanda Tangan. Untuk mengubahnya, unggah berkas baru dari menu tersebut; formulir ini tidak menyediakan tanda tangan langsung.</p>
       <div id="registration-signature-grid" class="registration-signature-grid"></div>
-      <p id="registration-signature-error" class="form-error" role="alert"></p>
     </div>
     <div class="registration-review-block">
       <h3>Keputusan</h3>
@@ -1376,7 +1371,6 @@
       <label>Status Domisili<select name="residence_status"><option value="">Pilih Status Domisili</option><option value="TETAP">Tetap</option><option value="KONTRAK">Kontrak</option><option value="KOS">Kos</option></select></label>
       <label>Jenis Kelamin<select name="gender"><option value="">Pilih Jenis Kelamin</option><option value="L">Laki-laki</option><option value="P">Perempuan</option></select></label>
       <p id="contribution-resident-error" class="form-error" role="alert"></p>
-      <button id="contribution-signature-pad-button" class="action-button" type="button">Tanda Tangan Langsung</button>
       <div class="contribution-dialog-actions"><button id="contribution-resident-cancel" class="action-button" type="button">Batal</button><button class="primary-button" type="submit">Simpan Data Warga <span aria-hidden="true">→</span></button></div>
     </form>
   </dialog>

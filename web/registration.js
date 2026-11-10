@@ -230,16 +230,15 @@
       const detail = document.createElement("p");
       const parts = [
         `Anggota keluarga: ${item.members.length}`,
-        `Tanda tangan: ${item.signed_count}/${item.required_signature_count}`,
+        `Tanda tangan otomatis: ${item.signed_count}/${item.required_signature_count}`,
         `RT ${item.rt || "-"} / RW ${item.rw || "-"}`,
       ];
-      detail.textContent = parts.join(" · ");
+      detail.textContent = parts.join(" | ");
       card.append(heading, detail);
       if (item.status === "Menunggu Verifikasi") {
         const waiting = document.createElement("p");
         waiting.className = "form-hint";
-        waiting.textContent = "Menunggu tanda tangan Ketua RT, LMK, Ketua RW, dan Ketua BSK.";
-        waiting.textContent = "Menungguaparkan ditandatangani oleh Ketua RT, LMK, Ketua RW, dan Ketua BSK.";
+        waiting.textContent = "Menunggu peninjauan pengurus. Tanda tangan tampil otomatis dari Kop Ekspor.";
         card.append(waiting);
       }
       if (item.status === "Ditolak" && item.review_note) {
@@ -448,19 +447,8 @@
     const grid = byId("registration-signature-grid");
     if (!grid) return;
     grid.replaceChildren();
-    const suggested = signatureAvailability();
-    /* Tanda tangan TIDAK dikunci setelah formulir disetujui.
-
-       Koreksi data warga memang dialihkan ke menu Data Warga (lihat
-       openRegistrationEditor), karena data sudah disalin ke tabel warga.
-       Berbeda dengan nama dan gambar penandatangan: keduanya hanya dipakai
-       untuk blok tanda tangan pada formulir yang dicetak, belum masuk ke
-       mana-mana, jadi tetap boleh diperbaiki di sini.
-
-       Server memang mengizinkan penyimpanan dan penghapusan tanpa memeriksa
-       status, dan persetujuan yang sudah diberikan tidak ikut batal, jadi
-       membuka kunci ini tidak menimbulkan data yang berbeda antara formulir
-       dan daftar warga. */
+    // Seluruh tanda tangan hanya dibaca dari unggahan Kop Ekspor. Formulir
+    // pendaftaran tidak menyediakan pengubahan ataupun gambar langsung.
     for (const meta of SIGNATURE_ROLES) {
       const signature =
         (registration.signatures || []).find((item) => item.role === meta.role) || {};
@@ -468,13 +456,10 @@
       cell.className = "registration-signature-cell";
       cell.dataset.role = meta.role;
       const heading = document.createElement("strong");
-      heading.textContent = meta.label;
-      const name = document.createElement("input");
-      name.type = "text";
-      name.maxLength = 120;
-      name.value = signature.name || suggested[meta.role] || "";
-      name.placeholder = `Nama ${meta.label}`;
-      name.setAttribute("aria-label", `Nama ${meta.label}`);
+      heading.textContent = signature.label || meta.label;
+      const name = document.createElement("p");
+      name.className = "registration-signature-name";
+      name.textContent = signature.name || "Nama belum diatur";
       const preview = document.createElement("div");
       preview.className = "registration-signature-preview";
       if (signature.has_image) {
@@ -484,94 +469,10 @@
         preview.append(image);
       } else {
         const empty = document.createElement("span");
-        empty.textContent = "Belum ada tanda tangan";
+        empty.textContent = "Berkas tanda tangan belum diunggah";
         preview.append(empty);
       }
-      const actions = document.createElement("div");
-      actions.className = "registration-signature-actions";
-      const saveName = document.createElement("button");
-      saveName.type = "button";
-      saveName.className = "action-button signature-action";
-      appendSignatureIcon(saveName, "check");
-      saveName.append(document.createTextNode("Simpan Nama"));
-      saveName.title = "Simpan nama penandatangan tanpa menggambar ulang.";
-      saveName.addEventListener("click", async () => {
-        const typed = name.value.trim();
-        const errorElement = byId("registration-signature-error");
-        if (typed.length < 2) {
-          errorElement.textContent = `Isi nama ${meta.label} minimal 2 karakter.`;
-          name.focus();
-          name.scrollIntoView({ block: "center", behavior: "smooth" });
-          return;
-        }
-        errorElement.textContent = "";
-        try {
-          const result = await request("/api/admin/registration-signature", {
-            method: "POST",
-            body: JSON.stringify({
-              registration_id: registration.id,
-              role: meta.role,
-              name: typed,
-              name_only: true,
-            }),
-          });
-          applyRegistration(result.registration);
-        } catch (error) {
-          errorElement.textContent = error.message;
-        }
-      });
-      const draw = document.createElement("button");
-      draw.type = "button";
-      draw.className = "signature-draw";
-      appendSignatureIcon(draw, "pen");
-      draw.append(document.createTextNode("Tanda Tangan Langsung"));
-      draw.title = "Gambar tanda tangan baru. Nama di atas ikut tersimpan.";
-      draw.addEventListener("click", () => {
-        // Nama wajib diisi sebelum menggambar. Tanpa pemeriksaan di sini,
-        // pengguna menggambar dulu lalu baru mendapat penolakan dari
-        // server tanpa tahu apa yang kurang.
-        const typed = name.value.trim();
-        if (!typed) {
-          const errorElement = byId("registration-signature-error");
-          errorElement.textContent =
-            `Isi nama ${meta.label} terlebih dahulu, baru gambar tanda tangannya.`;
-          name.focus();
-          name.scrollIntoView({ block: "center", behavior: "smooth" });
-          return;
-        }
-        const errorElement = byId("registration-signature-error");
-        errorElement.textContent = "";
-        window.openRegistrationSignaturePad(meta.role, typed);
-      });
-      const clear = document.createElement("button");
-      clear.type = "button";
-      clear.className = "signature-clear";
-      appendSignatureIcon(clear, "trash");
-      clear.append(document.createTextNode("Hapus"));
-      clear.hidden = !signature.has_image;
-      clear.addEventListener("click", async () => {
-        if (!window.confirm(`Hapus gambar tanda tangan ${meta.label}? Nama penandatangan tetap tersimpan.`)) return;
-        const errorElement = byId("registration-signature-error");
-        errorElement.textContent = "";
-        try {
-          const result = await request("/api/admin/registration-signature", {
-            method: "POST",
-            body: JSON.stringify({ registration_id: registration.id, role: meta.role, clear: true }),
-          });
-          applyRegistration(result.registration);
-        } catch (error) {
-          errorElement.textContent = error.message;
-        }
-      });
-      /* Aksi utama (gambar tanda tangan) mengisi baris penuh, sedangkan "Simpan
-         Nama" dan "Hapus" Masuk satu baris pendukung. Sebelumnya ketiganya
-         ditumpuk menjadi baris penuh karena labelnya panjang dan selnya sempit,
-         sehingga terlihat berantakan. */
-      const secondary = document.createElement("div");
-      secondary.className = "registration-signature-secondary";
-      secondary.append(saveName, clear);
-      actions.append(draw, secondary);
-      cell.append(heading, name, preview, actions);
+      cell.append(heading, name, preview);
       grid.append(cell);
     }
   }
@@ -674,7 +575,7 @@
     if (approveButton) {
       approveButton.disabled = registration.status === "Disetujui";
       approveButton.textContent =
-        registration.status === "Disetujui" ? "Sudah Disetujui" : "Setujui dan Masukkan ke Data Warga →";
+        registration.status === "Disetujui" ? "Sudah Disetujui" : "Setujui dan Masukkan ke Data Warga ->";
     }
     if (rejectButton) rejectButton.disabled = registration.status === "Disetujui";
     if (noteInput) noteInput.disabled = registration.status === "Disetujui";
@@ -939,17 +840,17 @@
         `KK ${item.family_card_number || "-"}`,
         `RT ${item.rt || "-"} / RW ${item.rw || "-"}`,
         `${item.member_count} anggota`,
-        `tanda tangan ${item.signed_count}/5`,
+        "tanda tangan otomatis dari Kop Ekspor",
         item.submitter_name ? `pengisi ${item.submitter_name}` : "",
       ]
         .filter(Boolean)
-        .join(" · ");
+        .join(" | ");
       const actions = document.createElement("div");
       actions.className = "registration-card-actions";
       const review = document.createElement("button");
       review.type = "button";
       review.className = "action-button";
-      review.textContent = "Tinjau dan Tandatangan";
+      review.textContent = "Tinjau Formulir";
       review.addEventListener("click", () => openRegistration(item.id));
       actions.append(review);
       if (item.status !== "Disetujui") {
@@ -1060,7 +961,7 @@
     for (const option of RESIDENCE_STATUS_OPTIONS) {
       const item = document.createElement("span");
       item.className = "registration-print-choice";
-      item.textContent = `${normalized === option.toLowerCase() ? "☒" : "☐"} ${option.toUpperCase()}`;
+      item.textContent = `${normalized === option.toLowerCase() ? "[x]" : "[ ]"} ${option.toUpperCase()}`;
       wrapper.append(item);
     }
     return wrapper;
@@ -1415,7 +1316,7 @@
       const place = (printPlaceInput?.value || "").trim();
       const date = (printDateInput?.value || "").trim();
       const size = Number.parseFloat(printSizeInput?.value || "");
-      if (printSettingsStatus) printSettingsStatus.textContent = "Menyimpan…";
+      if (printSettingsStatus) printSettingsStatus.textContent = "Menyimpan...";
       printSettingsSave.disabled = true;
       try {
         if (Number.isFinite(size) && size >= 7 && size <= 24) {
@@ -1597,7 +1498,7 @@
         <span></span>
         <small></small>`;
       button.querySelector("strong").textContent = family.full_name || "(tanpa nama)";
-      button.querySelector("span").textContent = `${area} · ${meta.join(" · ")}`;
+      button.querySelector("span").textContent = `${area} | ${meta.join(" | ")}`;
       button.querySelector("small").textContent = family.members.length
         ? family.members.map((member) => `${member.full_name}${member.relationship ? ` (${member.relationship})` : ""}`).join(", ")
         : "Tidak ada anggota lain di data iuran.";
