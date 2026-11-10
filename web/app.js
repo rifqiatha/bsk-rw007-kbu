@@ -3069,6 +3069,9 @@ newsImageInput.addEventListener("change", () => {
   showNewsImagePreview(URL.createObjectURL(file), file.name);
 });
 
+const ADMIN_PAYMENTS_PER_PAGE = 5;
+let adminPaymentsPage = 0;
+
 async function loadAdminPayments() {
   const container = document.querySelector("#admin-payments-list");
   container.replaceChildren(document.createTextNode("Memuat pembayaran..."));
@@ -3079,7 +3082,11 @@ async function loadAdminPayments() {
       container.textContent = "Belum ada setoran yang perlu diverifikasi. Data di sini sama dengan menu Warga dan Setoran.";
       return;
     }
-    for (const item of items) {
+    const pageCount = Math.ceil(items.length / ADMIN_PAYMENTS_PER_PAGE);
+    adminPaymentsPage = Math.max(0, Math.min(adminPaymentsPage, pageCount - 1));
+    const pageStart = adminPaymentsPage * ADMIN_PAYMENTS_PER_PAGE;
+    const pageItems = items.slice(pageStart, pageStart + ADMIN_PAYMENTS_PER_PAGE);
+    for (const item of pageItems) {
       const card = document.createElement("article");
       card.className = "admin-payment-card";
       const heading = document.createElement("div");
@@ -3209,6 +3216,34 @@ async function loadAdminPayments() {
         card.append(note);
       }
       container.append(card);
+    }
+    if (pageCount > 1) {
+      const pagination = document.createElement("nav");
+      pagination.className = "admin-payment-pagination";
+      pagination.setAttribute("aria-label", "Halaman transaksi iuran");
+      const previous = document.createElement("button");
+      previous.type = "button";
+      previous.className = "action-button";
+      previous.textContent = "< Sebelumnya";
+      previous.disabled = adminPaymentsPage === 0;
+      previous.addEventListener("click", () => {
+        adminPaymentsPage -= 1;
+        loadAdminPayments();
+      });
+      const pageInfo = document.createElement("span");
+      pageInfo.className = "admin-payment-page-info";
+      pageInfo.textContent = `Halaman ${adminPaymentsPage + 1} dari ${pageCount} | ${items.length} transaksi`;
+      const next = document.createElement("button");
+      next.type = "button";
+      next.className = "action-button";
+      next.textContent = "Berikutnya >";
+      next.disabled = adminPaymentsPage >= pageCount - 1;
+      next.addEventListener("click", () => {
+        adminPaymentsPage += 1;
+        loadAdminPayments();
+      });
+      pagination.append(previous, pageInfo, next);
+      container.append(pagination);
     }
   } catch (error) {
     container.textContent = error.message;
