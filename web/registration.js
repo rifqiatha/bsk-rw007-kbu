@@ -587,10 +587,6 @@
     loadRegistrations();
   }
 
-  // Dipanggil app.js setelah panel tanda tangan menutup, supaya grid tanda
-  // tangan langsung menampilkan gambar yang baru dibuat.
-  window.onRegistrationSignatureSaved = applyRegistration;
-
   /* ---------------------------------------------------------------
    * Koreksi data formulir
    *
@@ -888,41 +884,6 @@
       if (errorElement) errorElement.textContent = error.message;
     }
   }
-
-  /* ---------------------------------------------------------------
-   * Tanda tangan
-   * ------------------------------------------------------------- */
-  window.openRegistrationSignaturePad = function (role, suggestedName) {
-    const pad = byId("signature-pad-canvas");
-    const padDialog = byId("signature-pad-dialog");
-    if (!pad || !padDialog) return;
-    pad.dataset.registrationRole = role;
-    pad.dataset.registrationName = suggestedName || "";
-    pad.dataset.registrationId = String(activeRegistration?.id || "");
-    const roleSelect = byId("signature-pad-role-select");
-    if (roleSelect) {
-      roleSelect.value = role;
-      roleSelect.disabled = true;
-      roleSelect.closest("label").style.display = "none";
-    }
-    const roleNote = byId("signature-pad-role");
-    if (roleNote) {
-      const label = SIGNATURE_ROLES.find((item) => item.role === role)?.label || role;
-      roleNote.textContent = `Menggambar tanda tangan untuk: ${label} (formulir pendaftaran)`;
-    }
-    const clear = window.clearSignaturePad;
-    // Pesan galat dari percobaan sebelumnya dibersihkan agar tidak
-    // tertinggal saat membuka pad untuk jabatan lain.
-    window.signaturePadError?.("");
-    if (typeof clear === "function") clear();
-    else {
-      const ctx = pad.getContext("2d");
-      ctx.clearRect(0, 0, pad.width, pad.height);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, pad.width, pad.height);
-    }
-    padDialog.showModal();
-  };
 
   /* ---------------------------------------------------------------
    * Cetak formulir dari dalam dialog

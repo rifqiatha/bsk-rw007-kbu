@@ -703,69 +703,14 @@ def _initialize_database(connection):
 			FOREIGN KEY(resident_id) REFERENCES contribution_residents(id) ON DELETE SET NULL
 		)"""
 	)
-	# Dibuat lebih dulu karena migrasi berikut dapat dijalankan pada database
-	# baru maupun database lama.
-	connection.execute(
-		"""CREATE TABLE IF NOT EXISTS bsk_registration_members (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, registration_id INTEGER NOT NULL,
-			full_name TEXT NOT NULL, national_id_number TEXT NOT NULL DEFAULT '',
-			birthplace TEXT NOT NULL DEFAULT '', birth_date TEXT NOT NULL DEFAULT '',
-			gender TEXT NOT NULL DEFAULT '', relationship TEXT NOT NULL DEFAULT '', remark TEXT NOT NULL DEFAULT ''
-		)"""
-	)
 	registration_columns = {row["name"] for row in connection.execute("PRAGMA table_info(bsk_registrations)")}
 	if "members_json" not in registration_columns:
 		connection.execute("ALTER TABLE bsk_registrations ADD COLUMN members_json TEXT NOT NULL DEFAULT '[]'")
-	# Migrasi aman: anggota formulir lama diringkas ke satu kolom JSON pada
-	# formulirnya. Tabel lama sengaja tidak dihapus agar berfungsi sebagai
-	# cadangan sampai data di produksi dinyatakan valid.
-	for registration in connection.execute(
-		"SELECT id FROM bsk_registrations WHERE members_json = '[]' OR members_json = ''"
-	).fetchall():
-		members = [dict(row) for row in connection.execute(
-			"SELECT full_name, national_id_number, birthplace, birth_date, gender, relationship, remark "
-			"FROM bsk_registration_members WHERE registration_id = ? ORDER BY id",
-			(registration["id"],),
-		).fetchall()]
-		if members:
-			connection.execute(
-				"UPDATE bsk_registrations SET members_json = ? WHERE id = ?",
-				(json.dumps(members, ensure_ascii=False), registration["id"]),
-			)
-	connection.execute(
-		"""CREATE TABLE IF NOT EXISTS bsk_registration_members (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			registration_id INTEGER NOT NULL,
-			full_name TEXT NOT NULL,
-			national_id_number TEXT NOT NULL DEFAULT '',
-			birthplace TEXT NOT NULL DEFAULT '',
-			birth_date TEXT NOT NULL DEFAULT '',
-			gender TEXT NOT NULL DEFAULT '',
-			relationship TEXT NOT NULL DEFAULT '',
-			remark TEXT NOT NULL DEFAULT '',
-			FOREIGN KEY(registration_id) REFERENCES bsk_registrations(id) ON DELETE CASCADE
-		)"""
-	)
-	connection.execute(
-		"""CREATE TABLE IF NOT EXISTS bsk_registration_signatures (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			registration_id INTEGER NOT NULL,
-			role TEXT NOT NULL,
-			name TEXT NOT NULL DEFAULT '',
-			image_file TEXT NOT NULL DEFAULT '',
-			signed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE(registration_id, role),
-			FOREIGN KEY(registration_id) REFERENCES bsk_registrations(id) ON DELETE CASCADE
-		)"""
-	)
 	connection.execute(
 		"CREATE INDEX IF NOT EXISTS idx_bsk_registrations_status ON bsk_registrations(status, submitted_at)"
 	)
 	connection.execute(
 		"CREATE INDEX IF NOT EXISTS idx_bsk_registrations_submitter ON bsk_registrations(submitted_by)"
-	)
-	connection.execute(
-		"CREATE INDEX IF NOT EXISTS idx_bsk_members_registration ON bsk_registration_members(registration_id)"
 	)
 	connection.executemany(
 		"INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
@@ -1037,9 +982,8 @@ def delete_upload_if_unreferenced(connection, filename):
 		"UNION ALL SELECT 1 FROM records WHERE portrait_file = ? "
 		"UNION ALL SELECT 1 FROM news_articles WHERE image_file = ? "
 		"UNION ALL SELECT 1 FROM admin_users WHERE photo_file = ? "
-		"UNION ALL SELECT 1 FROM contribution_residents WHERE photo_file = ? "
-		"UNION ALL SELECT 1 FROM bsk_registration_signatures WHERE image_file = ? LIMIT 1",
-		(filename, filename, filename, filename, filename),
+		"UNION ALL SELECT 1 FROM contribution_residents WHERE photo_file = ? LIMIT 1",
+		(filename, filename, filename, filename),
 	).fetchone()
 	if reference or any(item["file"] == filename for item in hero_playlist_items(get_settings(connection))):
 		return
@@ -2610,114 +2554,6 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			self.send_json(400, {"error": str(error) or "Pendaftaran tidak dapat disimpan."})
 			return
 		self.send_json(201, {"registration": registration, "saved": True})
-
-	def handle_registration_signature(self):
-		"""Endpoint lama dinonaktifkan: semua tanda tangan pendaftaran offline."""
-		if not self.require_admin("Admin"):
-			return
-		self.send_json(410, {"error": "Tanda tangan pendaftaran dilakukan secara offline pada formulir cetak."})
-		return
-		try:
-			payload = self.read_json()
-			registration_id = payload.get("registration_id")
-			role = payload.get("role")
-			name = payload.get("name", "")
-			content_type = payload.get("content_type")
-			encoded = payload.get("content_base64", "")
-			if type(registration_id) is not int:
-				raise ValueError("Pilih formulir dengan benar.")
-			if role != "maker":
-				raise ValueError("Tanda tangan pengurus diambil otomatis dari Kop Ekspor dan Tanda Tangan.")
-			if payload.get("name_only") is True:
-				# Menyimpan nama penandatangan tanpa menyentuh gambar. Dipakai
-				# saat jabatan berganti orang, jadi nama di cetakan ikut berubah
-				# tanpa perlu menggambar ulang tanda tangan yang sama.
-				if not isinstance(name, str) or not 2 <= len(" ".join(name.split())) <= 120:
-					raise ValueError("Nama penandatangan wajib diisi dan maksimal 120 karakter.")
-				with connect_database() as connection:
-					connection.execute(
-						"INSERT INTO bsk_registration_signatures (registration_id, role, name, image_file) "
-						"VALUES (?, ?, ?, '') "
-						"ON CONFLICT(registration_id, role) DO UPDATE SET name = excluded.name",
-						(registration_id, role, " ".join(name.split())),
-					)
-					connection.execute(
-						"UPDATE bsk_registrations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-						(registration_id,),
-					)
-					registration = registration_payload_for(connection, registration_id)
-				self.send_json(200, {"registration": registration, "saved": True})
-				return
-			if payload.get("clear") is True:
-				# Menghapus tanda tangan hanya untuk membetulkan satu jabatan,
-				# bukan untuk membatalkan persetujuan formulir.
-				with connect_database() as connection:
-					existing = connection.execute(
-						"SELECT id, name, image_file FROM bsk_registration_signatures "
-						"WHERE registration_id = ? AND role = ?",
-						(registration_id, role),
-					).fetchone()
-					if not existing:
-						self.send_json(404, {"error": "Tanda tangan ini belum tersimpan."})
-						return
-					if not existing["name"].strip():
-						raise ValueError("Isi nama penandatangan lebih dulu.")
-					connection.execute(
-						"UPDATE bsk_registration_signatures SET image_file = '', signed_at = CURRENT_TIMESTAMP "
-						"WHERE id = ?",
-						(existing["id"],),
-					)
-					connection.execute(
-						"UPDATE bsk_registrations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-						(registration_id,),
-					)
-					if existing["image_file"]:
-						(UPLOAD_DIR / existing["image_file"]).unlink(missing_ok=True)
-					registration = registration_payload_for(connection, registration_id)
-				self.send_json(200, {"registration": registration, "saved": True})
-				return
-			if not isinstance(name, str) or not 2 <= len(" ".join(name.split())) <= 120:
-				raise ValueError("Nama penandatangan wajib diisi dan maksimal 120 karakter.")
-			expected_image = IMAGE_TYPES.get(content_type) if isinstance(content_type, str) else None
-			if not expected_image:
-				raise ValueError("Tanda tangan harus berupa PNG, JPEG, atau WebP.")
-			try:
-				content = base64.b64decode(encoded, validate=True)
-			except (binascii.Error, ValueError, TypeError):
-				raise ValueError("Isi tanda tangan tidak valid.") from None
-			if len(content) > 2 * 1024 * 1024 or image_extension(content) != expected_image[0]:
-				raise ValueError("Gambar tanda tangan tidak valid atau melebihi 2 MB.")
-			UPLOAD_DIR.mkdir(exist_ok=True)
-			filename = f"{secrets.token_hex(16)}{expected_image[0]}"
-			(UPLOAD_DIR / filename).write_bytes(content)
-			with connect_database() as connection:
-				registration = connection.execute(
-					"SELECT id, status FROM bsk_registrations WHERE id = ?", (registration_id,)
-				).fetchone()
-				if not registration:
-					(UPLOAD_DIR / filename).unlink(missing_ok=True)
-					self.send_json(404, {"error": "Pendaftaran tidak ditemukan."})
-					return
-				previous = connection.execute(
-					"SELECT image_file FROM bsk_registration_signatures WHERE registration_id = ? AND role = ?",
-					(registration_id, role),
-				).fetchone()
-				connection.execute(
-					"INSERT INTO bsk_registration_signatures (registration_id, role, name, image_file) VALUES (?, ?, ?, ?) "
-					"ON CONFLICT(registration_id, role) DO UPDATE SET name = excluded.name, "
-					"image_file = excluded.image_file, signed_at = CURRENT_TIMESTAMP",
-					(registration_id, role, " ".join(name.split()), filename),
-				)
-				connection.execute(
-					"UPDATE bsk_registrations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (registration_id,)
-				)
-				if previous and previous["image_file"]:
-					(UPLOAD_DIR / previous["image_file"]).unlink(missing_ok=True)
-				registration = registration_payload_for(connection, registration_id)
-		except (ValueError, TypeError, sqlite3.Error, OSError) as error:
-			self.send_json(400, {"error": str(error) or "Tanda tangan tidak dapat disimpan."})
-			return
-		self.send_json(200, {"registration": registration, "saved": True})
 
 	def handle_registration_review(self):
 		"""Setujui atau tolak satu formulir dan masukkan ke Data KK.
@@ -4874,31 +4710,6 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				filename = settings.get(f"signature_rt_{unit}", "") if role == "rt" and re.fullmatch(r"\d{3}", unit) else ""
 				filename = filename or settings.get(f"signature_{role}", "")
 			return self.send_stored_image(filename)
-		if path.startswith("/media/registration-signature/"):
-			parts = [part for part in path.split("/") if part]
-			if len(parts) != 4:
-				self.send_error(404)
-				return
-			if not self.require_admin("Admin"):
-				return
-			try:
-				registration_id = int(parts[2])
-			except ValueError:
-				self.send_error(404)
-				return
-			role = parts[3]
-			if role not in REGISTRATION_SIGNATURE_ROLES:
-				self.send_error(404)
-				return
-			with connect_database() as connection:
-				row = connection.execute(
-					"SELECT image_file FROM bsk_registration_signatures WHERE registration_id = ? AND role = ?",
-					(registration_id, role),
-				).fetchone()
-			if not row or not row["image_file"]:
-				self.send_error(404)
-				return
-			return self.send_stored_image(row["image_file"])
 		if path.startswith("/media/portrait/"):
 			try:
 				record_id = int(path.rsplit("/", 1)[1])
@@ -5462,8 +5273,6 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			return
 		if path == "/api/admin/registrations":
 			return self.handle_registration_create()
-		if path == "/api/admin/registration-signature":
-			return self.handle_registration_signature()
 		if path == "/api/admin/registrations/review":
 			return self.handle_registration_review()
 		if path == "/api/admin/registrations/update":
@@ -6859,15 +6668,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				if registration["status"] == "Disetujui":
 					self.send_json(400, {"error": "Pendaftaran yang sudah disetujui tidak dapat dihapus."})
 					return
-				signature_files = [
-					row["image_file"] for row in connection.execute(
-						"SELECT image_file FROM bsk_registration_signatures WHERE registration_id = ? AND image_file != ''",
-						(registration_id,),
-					)
-				]
 				connection.execute("DELETE FROM bsk_registrations WHERE id = ?", (registration_id,))
-			for filename in signature_files:
-				(UPLOAD_DIR / filename).unlink(missing_ok=True)
 			self.send_json(200, {"deleted": True})
 			return
 		if path.startswith("/api/admin/finance/"):

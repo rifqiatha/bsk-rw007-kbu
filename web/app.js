@@ -7082,12 +7082,8 @@ document.querySelector("#signature-pad-clear").addEventListener("click", clearSi
 document.querySelector("#signature-pad-close").addEventListener("click", () => signaturePadDialog.close());
 signaturePadDialog.addEventListener("click", (event) => { if (event.target === signaturePadDialog) signaturePadDialog.close(); });
 signaturePadDialog.addEventListener("cancel", () => signaturePadDialog.close());
-// Tutup panel tanda tangan selalu mengembalikan dropdown jabatan dan
-// membersihkan sisa konteks formulir pendaftaran.
+// Tutup panel tanda tangan mengembalikan dropdown jabatan global.
 signaturePadDialog.addEventListener("close", () => {
-  delete signaturePadCanvas.dataset.registrationRole;
-  delete signaturePadCanvas.dataset.registrationId;
-  delete signaturePadCanvas.dataset.registrationName;
   const roleSelect = document.querySelector("#signature-pad-role-select");
   if (roleSelect) {
     roleSelect.disabled = false;
@@ -7162,29 +7158,6 @@ document.querySelector("#signature-pad-save").addEventListener("click", async ()
     }
     const saveRole = document.querySelector("#signature-pad-role-select").value;
     const file = new File([blob], `signature-${saveRole}.png`, { type: "image/png" });
-    // Panel tanda tangan pada formulir pendaftaran menyimpan gambar ke
-    // formulir itu sendiri, bukan ke tanda tangan global per jabatan.
-    const registrationRole = signaturePadCanvas.dataset.registrationRole;
-    if (registrationRole) {
-      const registrationName = signaturePadCanvas.dataset.registrationName || "";
-      try {
-        const result = await request("/api/admin/registration-signature", {
-          method: "POST",
-          body: JSON.stringify({
-            registration_id: Number(signaturePadCanvas.dataset.registrationId),
-            role: registrationRole,
-            name: registrationName,
-            content_type: file.type,
-            content_base64: await imageBase64(file, "Menyiapkan tanda tangan..."),
-          }),
-        });
-        signaturePadDialog.close();
-        window.onRegistrationSignatureSaved?.(result.registration);
-      } catch (uploadError) {
-        signaturePadError(uploadError.message);
-      }
-      return;
-    }
     // Gambar yang digambar langsung mengikuti wilayah yang dipilih pada dropdown,
     // supaya tidak menimpa tanda tangan RT lain.
     const selectedRtUnit = signaturePadRoleName === "rt" && signatureRtUnitSelect ? signatureRtUnitSelect.value : "";

@@ -9,6 +9,7 @@ run.err.log
 server_startup.log
 deploy/persist/
 deploy/backups/
+backups/
 deploy/auto-update.log
 deploy/.auto-update.lock
 _backup/
