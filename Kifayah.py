@@ -347,7 +347,6 @@ def _initialize_database(connection):
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS contribution_residents (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			account_id INTEGER UNIQUE,
 			full_name TEXT NOT NULL,
 			rt TEXT NOT NULL DEFAULT '',
 			rw TEXT NOT NULL DEFAULT '',
@@ -362,7 +361,6 @@ def _initialize_database(connection):
 			active INTEGER NOT NULL DEFAULT 1,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY(account_id) REFERENCES admin_users(id) ON DELETE SET NULL,
 			FOREIGN KEY(family_card_number) REFERENCES households(family_card_number) ON UPDATE CASCADE ON DELETE RESTRICT
 		)"""
 	)
@@ -1718,8 +1716,7 @@ def load_import_existing_keys(connection, destination):
 		return existing
 	existing = set()
 	existing_rows = connection.execute(
-		"SELECT COALESCE(NULLIF(r.full_name, ''), u.display_name) AS full_name, r.rt, r.rw, r.national_id_number "
-		"FROM contribution_residents r LEFT JOIN admin_users u ON u.id = r.account_id WHERE r.active = 1"
+		"SELECT r.full_name, r.rt, r.rw, r.national_id_number FROM contribution_residents r WHERE r.active = 1"
 	).fetchall()
 	for existing_row in existing_rows:
 		existing.update(contribution_import_keys(dict(existing_row)))
@@ -3216,11 +3213,10 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				rows = connection.execute(
 					"SELECT p.id, p.period, p.amount, p.paid_at, p.method, p.status, p.admin_note, "
 					"p.proof_file, p.created_at, p.source, "
-					"COALESCE(NULLIF(r.full_name, ''), u.display_name) AS display_name, "
+					"r.full_name AS display_name, "
 					"COALESCE(NULLIF(p.family_card_number, ''), r.family_card_number) AS family_card_number, r.rt, r.rw "
 					"FROM contribution_payments p "
-					"JOIN contribution_residents r ON r.id = p.resident_id "
-					"LEFT JOIN admin_users u ON u.id = r.account_id " + where + " "
+					"JOIN contribution_residents r ON r.id = p.resident_id " + where + " "
 					"ORDER BY CASE p.status WHEN 'Menunggu Verifikasi' THEN 0 WHEN 'Sedang Direview' THEN 1 ELSE 2 END, p.paid_at DESC, p.id DESC",
 					params,
 				).fetchall()
@@ -3239,12 +3235,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					# keluarga dihitung dari nomor KK: satu anggota wafat harus
 					# terlihat oleh seluruh anggota KK, tanpa membuat daftar warga
 					# wafat kedua di panel iuran.
-					"SELECT r.*, COALESCE(NULLIF(r.full_name, ''), u.display_name) AS display_name, "
+					"SELECT r.*, r.full_name AS display_name, "
 					"COALESCE(NULLIF(r.date_of_death, ''), wafat.date_of_death) AS deceased_date, wafat.record_id AS deceased_record_id, "
 					"COALESCE(keluarga_wafat.deceased_count, 0) AS family_deceased_count, "
 					"COALESCE(keluarga_wafat.deceased_names, '') AS family_deceased_names "
 					"FROM contribution_residents r "
-					"LEFT JOIN admin_users u ON u.id = r.account_id "
 					"LEFT JOIN ("
 					"  SELECT national_id_number, MAX(date_of_death) AS date_of_death, id AS record_id "
 					"  FROM records "
@@ -3297,7 +3292,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				payments = sorted(by_resident[row["id"]], key=lambda item: (item["paid_at"], item["id"]), reverse=True)
 				verified = [item for item in payments if item["status"] == "Terverifikasi"]
 				result.append({
-					"id": row["id"], "account_id": row["account_id"], "full_name": row["display_name"],
+					"id": row["id"], "full_name": row["display_name"],
 					"rt": str(int(row["rt"])) if row["rt"].isdigit() else "",
 					"rw": str(int(row["rw"])) if row["rw"].isdigit() else "", "birth_date": row["birth_date"],
 					"payment_recipient": row["payment_recipient"],
@@ -4755,18 +4750,11 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			with connect_database() as connection:
 				# Bukti kini menempel pada setoran, jadi kepemilikannya ikut
 				# mengikuti akun warga pada contribution_residents.
-				payment = connection.execute(
-					"SELECT r.account_id, p.proof_file FROM contribution_payments p "
-					"JOIN contribution_residents r ON r.id = p.resident_id WHERE p.id = ?",
-					(payment_id,),
-				).fetchone()
+				payment = connection.execute("SELECT proof_file FROM contribution_payments WHERE id = ?", (payment_id,)).fetchone()
 			if not payment or not payment["proof_file"]:
 				self.send_error(404)
 				return
-			if viewer["role"] == "Warga" and payment["account_id"] != viewer["id"]:
-				self.send_error(404)
-				return
-			if viewer["role"] != "Warga" and "payments" not in viewer["permissions"]:
+			if "payments" not in viewer["permissions"]:
 				self.send_json(403, {"error": "Anda tidak memiliki izin melihat bukti pembayaran."})
 				return
 			return self.send_stored_media(payment["proof_file"])
@@ -4970,7 +4958,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				previous_proof = ""
 				with connect_database() as connection:
 					resident = connection.execute(
-						"SELECT account_id, family_card_number FROM contribution_residents WHERE id = ? AND active = 1", (resident_id,)
+						"SELECT family_card_number FROM contribution_residents WHERE id = ? AND active = 1", (resident_id,)
 					).fetchone()
 					if not resident:
 						raise ValueError("Data warga tidak ditemukan.")
@@ -4992,8 +4980,6 @@ class KifayahHandler(BaseHTTPRequestHandler):
 								(UPLOAD_DIR / saved_proof).unlink(missing_ok=True)
 								saved_proof = ""
 							return
-						if existing["source"] != "admin" and not resident["account_id"]:
-							raise ValueError("Transaksi yang dikirim warga tidak bisa dipindah ke warga tanpa akun.")
 						conflict = connection.execute(
 							f"SELECT id FROM contribution_payments WHERE {duplicate_where} AND id <> ?", (*duplicate_args, payment_id)
 						).fetchone()
@@ -6122,8 +6108,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				with connect_database() as connection:
 					resident_ids = {}
 					existing_rows = connection.execute(
-						"SELECT r.id, COALESCE(NULLIF(r.full_name, ''), u.display_name) AS full_name, r.rt, r.rw, r.national_id_number "
-						"FROM contribution_residents r LEFT JOIN admin_users u ON u.id = r.account_id WHERE r.active = 1"
+						"SELECT r.id, r.full_name, r.rt, r.rw, r.national_id_number FROM contribution_residents r WHERE r.active = 1"
 					).fetchall()
 					for existing_row in existing_rows:
 						for key in contribution_import_keys(dict(existing_row)):
@@ -6229,8 +6214,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					with connect_database() as connection:
 						resident_ids = {}
 						existing_rows = connection.execute(
-							"SELECT r.id, COALESCE(NULLIF(r.full_name, ''), u.display_name) AS full_name, r.rt, r.rw, r.national_id_number "
-							"FROM contribution_residents r LEFT JOIN admin_users u ON u.id = r.account_id WHERE r.active = 1"
+							"SELECT r.id, r.full_name, r.rt, r.rw, r.national_id_number FROM contribution_residents r WHERE r.active = 1"
 						).fetchall()
 						for existing_row in existing_rows:
 							for key in contribution_import_keys(dict(existing_row)):
@@ -6724,15 +6708,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					if remaining <= 1:
 						self.send_json(400, {"error": "Tidak dapat menghapus Super Admin aktif terakhir."})
 						return
-				proof_files = [
-					row["proof_file"]
-					for row in connection.execute(
-						"SELECT DISTINCT p.proof_file FROM contribution_payments p "
-						"JOIN contribution_residents r ON r.id = p.resident_id "
-						"WHERE r.account_id = ? AND TRIM(COALESCE(p.proof_file, '')) <> ''",
-						(user_id,),
-					)
-				]
+				proof_files = []
 				connection.execute("DELETE FROM admin_users WHERE id = ?", (user_id,))
 				if target["photo_file"]:
 					(UPLOAD_DIR / target["photo_file"]).unlink(missing_ok=True)
