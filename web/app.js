@@ -120,7 +120,6 @@ const rolePermissionDefaults = {
   Staff: ["records"],
   Admin: ["records", "import", "news", "family", "maintenance", "typography", "payments", "program", "finance", "contacts", "registration"],
   "Super Admin": ["records", "import", "news", "area", "family", "media", "maintenance", "typography", "users", "export", "payments", "program", "finance", "contacts", "registration"],
-  Warga: [],
 };
 let selectedGenderFilter = "";
 let tableSortKey = "";
@@ -225,22 +224,6 @@ function restorePublicRoute() {
 
 // The IDE preview on localhost:8000 can serve static files without API routes;
 // send its login link to the running Kifayah server on 8001 in that case.
-document.querySelectorAll("#resident-login-open, #mobile-resident-login-open").forEach((link) => {
-  link.addEventListener("click", async (event) => {
-    event.preventDefault();
-    let destination = new URL("/masuk", window.location.origin);
-    try {
-      const response = await fetch("/api/session", { cache: "no-store" });
-      if (!response.ok) throw new Error("API route unavailable");
-    } catch {
-      if (["localhost", "127.0.0.1"].includes(window.location.hostname) && window.location.port === "8000") {
-        destination = new URL("/masuk", `${window.location.protocol}//${window.location.hostname}:8001`);
-      }
-    }
-    window.location.assign(destination.href);
-  });
-});
-
 const siteHeader = document.querySelector(".topbar");
 if (siteHeader && !isAdminPage) {
   let headerScrollFrame = 0;
@@ -2789,24 +2772,20 @@ function setAdminMode(enabled, user = null, forcePasswordChange = false) {
   document.querySelector("#admin-profile-menu").hidden = true;
   document.querySelector("#admin-profile-toggle").setAttribute("aria-expanded", "false");
   const mustChangePassword = Boolean(enabled && (forcePasswordChange || currentUser?.force_password_change));
-  const isResident = Boolean(enabled && currentUser?.role === "Warga" && !mustChangePassword);
   document.body.classList.toggle("admin-authenticated", enabled && !mustChangePassword);
   loginForm.hidden = enabled;
   document.querySelector("#change-password-form").hidden = !mustChangePassword;
-  managerPanel.hidden = !enabled || mustChangePassword || isResident;
+  managerPanel.hidden = !enabled || mustChangePassword;
   // Sembunyikan konten publik saat panel pengelola aktif di halaman /admin
   if (isAdminPage) {
     const mainContent = document.querySelector("main");
-    if (mainContent) mainContent.hidden = enabled && !mustChangePassword && !isResident;
+    if (mainContent) mainContent.hidden = enabled && !mustChangePassword;
   }
-  document.querySelector("#resident-dashboard").hidden = !isResident;
-  document.querySelector("#resident-dashboard-name").textContent = profileName;
-  document.querySelector("#resident-dashboard-username").textContent = currentUser?.username || "";
   // Panel warga dinonaktifkan; pendaftaran dan koreksi data dilayani
   // pengurus dari menu Data Masuk & Tinjauan.
   document.querySelector("#dialog-title").textContent = mustChangePassword
     ? "Ganti Kata Sandi Awal"
-    : isResident ? "Dashboard Warga" : enabled ? "Kelola Daftar Warga" : "Masuk Pengelola";
+    : enabled ? "Kelola Panel Admin" : "Masuk Pengelola";
   if (!enabled || mustChangePassword) return;
   const role = currentUser?.role || "Staff";
   const isSuperAdmin = role === "Super Admin";
@@ -5611,20 +5590,16 @@ document.querySelectorAll(".admin-tab").forEach((tab) => {
 
 document.querySelector(".close-button").addEventListener("click", async () => {
   const wasAuthenticated = isAdmin;
-  const wasResident = currentUser?.role === "Warga";
   if (wasAuthenticated) await request("/api/logout", { method: "POST" }).catch(() => {});
   if (!isAdminPage) {
     dialog.close();
     if (wasAuthenticated) {
       setAdminMode(false);
-      if (wasResident) window.location.href = "/masuk";
-      else await refreshRecords().catch(() => {});
+      await refreshRecords().catch(() => {});
     }
     return;
   }
-  // Admin/Staff kembali ke layar login pengelola. Akun Warga mempunyai alur
-  // masuk sendiri sehingga tetap diarahkan ke /masuk.
-  window.location.href = wasResident ? "/masuk" : "/admin";
+	window.location.href = "/admin";
 });
 const adminProfile = document.querySelector(".admin-header-account");
 const adminProfileToggle = document.querySelector("#admin-profile-toggle");
@@ -5639,13 +5614,11 @@ document.addEventListener("click", (event) => {
   adminProfileToggle.setAttribute("aria-expanded", "false");
 });
 document.querySelector("#admin-profile-logout").addEventListener("click", async () => {
-  const wasResident = currentUser?.role === "Warga";
   await request("/api/logout", { method: "POST" }).catch(() => {});
   setAdminMode(false);
   // Pisahkan layar masuk warga dari layar admin. Sesi sudah dihentikan lebih
   // dulu, sehingga /admin akan langsung menampilkan formulir login admin.
-  if (isAdminPage) window.location.href = wasResident ? "/masuk" : "/admin";
-  else if (wasResident) window.location.href = "/masuk";
+  if (isAdminPage) window.location.href = "/admin";
   else await refreshRecords().catch(() => {});
 });
 /* POPUP: klik area di luar popup (backdrop) menutupnya.
@@ -5726,7 +5699,7 @@ loginForm.addEventListener("submit", async (event) => {
     });
     loginForm.reset();
     setAdminMode(true, payload.user, payload.force_password_change);
-    if (!payload.force_password_change && payload.user?.role !== "Warga") await refreshRecords();
+    if (!payload.force_password_change) await refreshRecords();
   } catch (error) {
     errorElement.textContent = error.message;
   }
@@ -5749,7 +5722,7 @@ document.querySelector("#change-password-form").addEventListener("submit", async
     form.reset();
     currentUser.force_password_change = 0;
     setAdminMode(true, currentUser, false);
-    if (currentUser.role !== "Warga") await refreshRecords();
+    await refreshRecords();
   } catch (error) {
     errorElement.textContent = error.message;
   }
@@ -5783,10 +5756,9 @@ function openUserDialog(user = null) {
   createUserForm.elements.phone.value = user?.phone || "";
   createUserForm.elements.email.value = user?.email || "";
   createUserForm.elements.username.value = user?.username || "";
-  const builtInRoles = ["Warga", "Staff", "Admin", "Super Admin"];
+  const builtInRoles = ["Staff", "Admin", "Super Admin"];
   createUserForm.elements.role.value = builtInRoles.includes(user?.role) ? user.role : user ? "__custom__" : "Staff";
-  createUserForm.elements.username.readOnly = Boolean(user) || createUserForm.elements.role.value === "Warga";
-  if (!user && createUserForm.elements.role.value === "Warga") makeResidentUsername();
+  createUserForm.elements.username.readOnly = Boolean(user);
   createUserForm.elements.custom_role.value = user && !builtInRoles.includes(user.role) ? user.role : "";
   const passwordField = document.querySelector("#user-edit-password-field");
   passwordField.hidden = false;
@@ -5813,25 +5785,9 @@ function openUserDialog(user = null) {
   createUserForm.elements.first_name.focus({ preventScroll: true });
 }
 
-function makeResidentUsername() {
-  const fullName = `${createUserForm.elements.first_name.value} ${createUserForm.elements.last_name.value}`;
-  const base = fullName.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.|\.$/g, "").slice(0, 34);
-  const slug = base.length >= 3 ? base : `${base}warga`.slice(0, 34);
-  let username = slug;
-  let suffix = 2;
-  while (adminUsers.some((user) => user.username.toLowerCase() === username.toLowerCase())) username = `${slug}.${suffix++}`.slice(0, 40);
-  createUserForm.elements.username.value = username;
-}
 createUserForm.elements.role.addEventListener("change", () => {
-  const resident = createUserForm.elements.role.value === "Warga";
-  createUserForm.elements.username.readOnly = Boolean(editingUser) || resident;
-  if (resident && !editingUser) makeResidentUsername();
+  createUserForm.elements.username.readOnly = Boolean(editingUser);
 });
-for (const field of [createUserForm.elements.first_name, createUserForm.elements.last_name]) {
-  field.addEventListener("input", () => {
-    if (!editingUser && createUserForm.elements.role.value === "Warga") makeResidentUsername();
-  });
-}
 
 document.querySelector("#add-user-button").addEventListener("click", () => openUserDialog());
 document.querySelector("#delete-user-photo-button").addEventListener("click", async () => {
@@ -7707,14 +7663,8 @@ if (isAdminPage) {
         buildLabel.hidden = false;
       }
     }
-    // Akun warga yang kebetulan membuka /admin langsung diarahkan ke
-    // dashboard-nya, bukan melihat panel pengelola yang tidak berguna.
-    if (admin && user?.role === "Warga") {
-      window.location.replace("/dashboard-warga");
-      return;
-    }
     setAdminMode(admin, user, force_password_change);
-    if (admin && !force_password_change && user?.role !== "Warga") return refreshRecords();
+    if (admin && !force_password_change) return refreshRecords();
   }).catch(() => setAdminMode(false));
 } else {
   isAdmin = false;

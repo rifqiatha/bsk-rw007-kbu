@@ -1197,12 +1197,12 @@
                     <label>Email<input name="email" type="email" maxlength="254" autocomplete="email"></label>
                     <div class="user-identity-column">
                       <label>Nama Pengguna<input name="username" maxlength="40" required autocomplete="username"></label>
-                      <p class="form-hint user-password-default">Username akun Warga dibuat dari nama lengkap. Tetapkan kata sandi unik minimal 12 karakter.</p>
+                      <p class="form-hint user-password-default">Buat username khusus pengurus dan tetapkan kata sandi unik minimal 12 karakter.</p>
                       <label id="user-edit-password-field">Kata Sandi<input name="password" type="password" minlength="12" autocomplete="new-password" placeholder="Minimal 12 karakter"></label>
                     </div>
                     <label class="user-photo-field">Foto Profil<input name="photo" type="file" accept="image/png,image/jpeg,image/webp"><span class="user-photo-preview" id="user-photo-preview">Foto Opsional · PNG, JPG, WebP · Maks. 5 MB</span></label>
                     <button id="delete-user-photo-button" class="text-button user-photo-delete" type="button" hidden>Hapus Foto Profil</button>
-                      <label>Level<select name="role" required><option value="Warga">Warga</option><option value="Staff">Staff</option><option value="Admin">Admin</option><option value="Super Admin">Super Admin</option><option value="__custom__">Level / Divisi Kustom</option></select></label>
+                      <label>Level<select name="role" required><option value="Staff">Staff</option><option value="Admin">Admin</option><option value="Super Admin">Super Admin</option><option value="__custom__">Level / Divisi Kustom</option></select></label>
                     <label>Nama Level / Divisi Baru<input name="custom_role" maxlength="60" placeholder="Contoh: Divisi Dokumentasi"></label>
                   </div>
                   <p class="form-error" id="create-user-error" role="alert"></p>

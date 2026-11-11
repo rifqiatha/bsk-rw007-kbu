@@ -122,7 +122,7 @@ for x, value in headers:
 
 rows = [
     ("KARTU_KELUARGA\n(households)", "No. KK PK; nama_kepala; RT/RW; alamat; members_json", "Satu baris = satu keluarga.\nAcuan utama WARGA dan SETORAN."),
-    ("WARGA\n(contribution_residents)", "id PK teknis; NIK UQ; No. KK FK → KARTU_KELUARGA; account_id FK", "Anggota keluarga. ID teknis\ntidak menjadi identitas keluarga."),
+    ("WARGA\n(contribution_residents)", "id PK teknis; NIK UQ; No. KK FK → KARTU_KELUARGA", "Anggota keluarga. Tidak memiliki\nakun atau login warga."),
     ("SETORAN\n(contribution_payments)", "id PK teknis; No. KK FK → KARTU_KELUARGA; resident_id FK → WARGA", "Transaksi per keluarga. resident_id\nhanya jejak pengirim/pencatat."),
     ("PENDAFTARAN_BSK\n(bsk_registrations)", "id PK; No. KK calon; NIK; members_json; status; submitted_by/reviewed_by FK", "Data masuk sebelum disetujui\nmenjadi WARGA/keluarga."),
     ("ADMIN_USERS", "id PK; username UQ; role; permissions; active", "Akun petugas panel admin."),

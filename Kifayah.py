@@ -160,7 +160,7 @@ def save_payment_proof(encoded, content_type, prefix):
 	return filename
 FONT_PRESETS = {"kifayah", "modern", "classic", "arial", "times", "georgia", "verdana", "tahoma", "trebuchet", "segoe"}
 TEXT_ALIGNMENTS = {"left", "center", "justify"}
-ROLE_LEVELS = {"Warga": 0, "Staff": 1, "Admin": 2, "Super Admin": 3}
+ROLE_LEVELS = {"Staff": 1, "Admin": 2, "Super Admin": 3}
 PERMISSION_LABELS = {
 	"records": "Data Warga",
 	"import": "Impor Data",
@@ -179,7 +179,6 @@ PERMISSION_LABELS = {
 	"registration": "Pendaftaran BSK",
 }
 ROLE_PERMISSIONS = {
-    "Warga": set(),
 	"Staff": {"records"},
 	"Admin": {"records", "import", "news", "family", "maintenance", "typography", "payments", "program", "finance", "contacts", "registration"},
 	"Super Admin": set(PERMISSION_LABELS),
@@ -346,22 +345,6 @@ def _initialize_database(connection):
 		)"""
 	)
 	connection.execute(
-		"""CREATE TABLE IF NOT EXISTS resident_payments (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
-			period TEXT NOT NULL,
-			amount INTEGER NOT NULL,
-			paid_at TEXT NOT NULL,
-			method TEXT NOT NULL,
-			proof_file TEXT NOT NULL,
-			status TEXT NOT NULL DEFAULT 'Menunggu Verifikasi',
-			admin_note TEXT NOT NULL DEFAULT '',
-			submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			reviewed_at TEXT NOT NULL DEFAULT '',
-			FOREIGN KEY(user_id) REFERENCES admin_users(id) ON DELETE CASCADE
-		)"""
-	)
-	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS contribution_residents (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			account_id INTEGER UNIQUE,
@@ -502,10 +485,8 @@ def _initialize_database(connection):
 			FOREIGN KEY(family_card_number) REFERENCES households(family_card_number) ON UPDATE CASCADE ON DELETE RESTRICT
 		)"""
 	)
-	# STRUKTUR SETORAN: bukti pembayaran, status verifikasi, dan sumber ikut
-	# pindah ke tabel setoran supaya "Warga dan Setoran" menjadi satu-satunya
-	# sumber kebenaran. Sebelumnya bukti hidup di tabel resident_payments yang
-	# terpisah, sehingga halaman verifikasi tidak nyambung dengan data warga.
+	# STRUKTUR SETORAN: bukti pembayaran, status verifikasi, dan sumber dicatat
+	# langsung pada tabel setoran agar panel admin memakai satu sumber kebenaran.
 	contribution_payment_columns = {
 		row["name"] for row in connection.execute("PRAGMA table_info(contribution_payments)")
 	}
@@ -531,21 +512,6 @@ def _initialize_database(connection):
 	# Data warga dibuat ketika No. KK valid sudah tersedia (melalui pendaftaran
 	# atau panel admin). Jangan membuat baris placeholder tanpa keluarga karena
 	# No. KK sekarang adalah FK ke households.
-	# PINDAH KE TABEL SETORAN: bawa pengajuan warga yang sudah tersimpan ke
-	# contribution_payments lewat akunnya. NOT EXISTS membuat migrasi ini aman
-	# dijalankan berkali-kali tanpa menggandakan setoran pada periode yang sama.
-	connection.execute(
-		"""INSERT INTO contribution_payments
-			(resident_id, period, amount, paid_at, note, method, source, proof_file, status, admin_note, reviewed_at)
-		   SELECT r.id, p.period, p.amount, p.paid_at, '', p.method, 'warga',
-		          p.proof_file, p.status, p.admin_note, p.reviewed_at
-		   FROM resident_payments p
-		   JOIN contribution_residents r ON r.account_id = p.user_id
-		   WHERE NOT EXISTS (
-		       SELECT 1 FROM contribution_payments c
-		       WHERE c.resident_id = r.id AND c.period = p.period
-		   )"""
-	)
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS area_contacts (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1941,7 +1907,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		self.send_bytes(body, "application/json; charset=utf-8", "no-store", status, headers)
 
 	def maintenance_exempt(self, path):
-		if path in ("/admin", "/masuk", "/dashboard-warga", "/api/login", "/api/register", "/api/logout", "/app.js", "/auth.js", "/styles.css", "/auth.css", "/favicon.ico"):
+		if path in ("/admin", "/api/login", "/api/register", "/api/logout", "/app.js", "/styles.css", "/favicon.ico"):
 			return True
 		if path.startswith(("/admin/", "/api/admin/")):
 			return True
@@ -3092,6 +3058,14 @@ class KifayahHandler(BaseHTTPRequestHandler):
 	# HTTP ROUTES: public reads and authenticated administration.
 	def do_GET(self):
 		path = urlparse(self.path).path
+		# Panel/login warga telah dihentikan. Semua pengelolaan dilakukan
+		# pengurus dari /admin; jangan biarkan endpoint lama aktif diam-diam.
+		if path.startswith("/api/resident/"):
+			self.send_json(410, {"error": "Akses warga sudah dihentikan. Hubungi pengurus BSK."})
+			return
+		if path in ("/masuk", "/dashboard-warga"):
+			self.send_error(404)
+			return
 		# Tautan yang dibagikan oleh peramban atau reverse-proxy kadang membawa
 		# garis miring terakhir (/admin/, /berita/, dan seterusnya). Aplikasi
 		# adalah single-page app; jangan jadikan variasi URL yang setara itu 404.
@@ -4819,8 +4793,6 @@ class KifayahHandler(BaseHTTPRequestHandler):
 		if path == "/maintenance.html":
 			self.send_error(404)
 			return
-		if path in ("/masuk", "/dashboard-warga"):
-			path = "/login.html"
 		if path in ("/", "/admin", "/home", "/berita", "/kontak", "/daftar-warga") or re.fullmatch(r"/berita/[^/]+/?", path):
 			path = "/index.html"
 		relative = unquote(path).lstrip("/")
@@ -4871,6 +4843,9 @@ class KifayahHandler(BaseHTTPRequestHandler):
 	# MUTATIONS: login, account management, residents, and settings.
 	def do_POST(self):
 		path = urlparse(self.path).path
+		if path.startswith("/api/resident/"):
+			self.send_json(410, {"error": "Akses warga sudah dihentikan. Hubungi pengurus BSK."})
+			return
 		if path == "/api/admin/contribution-residents":
 			if not self.require_admin("Admin"):
 				return
@@ -5379,6 +5354,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				if not isinstance(role, str) or not 2 <= len(role.strip()) <= 60:
 					raise ValueError("Level atau nama divisi harus 2-60 karakter.")
 				role = role.strip()
+				if role.casefold() == "warga":
+					raise ValueError("Peran Warga sudah dihapus; buat akun pengurus (Staff, Admin, atau Super Admin).")
 				permissions = sorted({item for item in permissions if item in PERMISSION_LABELS})
 				validate_password_strength(password)
 				salt, password_hash = hash_password(password)
@@ -5417,6 +5394,8 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					raise ValueError("Kata sandi baru tidak valid.")
 				new_password = new_password.strip()
 				role = role.strip()
+				if role.casefold() == "warga":
+					raise ValueError("Peran Warga sudah dihapus; gunakan peran pengurus.")
 				permissions = sorted({item for item in permissions if item in PERMISSION_LABELS})
 				if user_id == self.current_admin["id"] and "users" not in permissions:
 					raise ValueError("Akun yang sedang digunakan harus tetap memiliki akses Akun & Jabatan.")
