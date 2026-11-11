@@ -3260,10 +3260,6 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			if not self.require_admin("Admin"):
 				return
 			with connect_database() as connection:
-				connection.execute(
-					"INSERT OR IGNORE INTO contribution_residents (account_id, full_name) "
-					"SELECT id, display_name FROM admin_users WHERE role = 'Warga'"
-				)
 				residents = connection.execute(
 					# Status pribadi dicocokkan melalui NIK. Selain itu, status
 					# keluarga dihitung dari nomor KK: satu anggota wafat harus

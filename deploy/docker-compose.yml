@@ -33,6 +33,9 @@ services:
       - "${KIFAYAH_DIR:-/DATA/AppData/nginx/config/www}/Kifayah.py:/app/Kifayah.py:ro"
       - "${KIFAYAH_DIR:-/DATA/AppData/nginx/config/www}/importers.py:/app/importers.py:ro"
       - "${KIFAYAH_DIR:-/DATA/AppData/nginx/config/www}/web:/app/web:ro"
+      # Skrip migrasi/pemulihan dijalankan manual lewat `docker compose run`.
+      # Mount ini memastikan skrip terbaru tersedia tanpa rebuild image besar.
+      - "${KIFAYAH_DIR:-/DATA/AppData/nginx/config/www}/tools:/app/tools:ro"
     healthcheck:
       test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/', timeout=5).status == 200 else 1)"]
       interval: 30s
