@@ -3174,24 +3174,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 			})
 			return
 		if path == "/api/resident/payments":
-			if not self.require_resident():
-				return
-			with connect_database() as connection:
-				# Setoran warga kini dibaca dari tabel yang sama dengan menu
-				# "Warga dan Setoran", jadi dashboard warga dan panel pengelola
-				# tidak bisa menampilkan angka yang berbeda.
-				rows = connection.execute(
-					"SELECT p.id, p.period, p.amount, p.paid_at, p.method, p.status, p.admin_note, "
-					"p.proof_file, p.created_at FROM contribution_payments p "
-					"JOIN contribution_residents r ON r.id = p.resident_id "
-					"WHERE r.account_id = ? AND r.active = 1 ORDER BY p.period DESC, p.id DESC",
-					(self.current_resident["id"],),
-				).fetchall()
-			payments = [
-				dict(row) | {"proof_url": f"/media/contribution-proof/{row['id']}" if row["proof_file"] else ""}
-				for row in rows
-			]
-			self.send_json(200, {"payments": payments})
+			self.send_json(410, {"error": "Akses warga sudah dihentikan. Hubungi pengurus BSK."})
 			return
 		if path == "/api/admin/payments":
 			if not self.require_admin("Admin"):
@@ -5091,58 +5074,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				return
 			return self.handle_hero_playlist_upload()
 		if path == "/api/resident/payments":
-			if not self.require_resident():
-				return
-			filename = ""
-			try:
-				payload = self.read_json()
-				period = payload.get("period", "")
-				amount = payload.get("amount")
-				paid_at = payload.get("paid_at", "")
-				method = payload.get("method", "")
-				content_type = payload.get("content_type", "")
-				encoded = payload.get("content_base64", "")
-				if not isinstance(period, str) or not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
-					raise ValueError("Pilih periode iuran yang valid.")
-				if type(amount) is not int or not 1 <= amount <= 100_000_000:
-					raise ValueError("Nominal pembayaran tidak valid.")
-				if not isinstance(paid_at, str):
-					raise ValueError("Tanggal pembayaran tidak valid.")
-				date.fromisoformat(paid_at)
-				if method not in ("Transfer Bank", "E-Wallet", "Tunai"):
-					raise ValueError("Pilih metode pembayaran yang tersedia.")
-				# Bukti opsional: warga tetap boleh mencatat setoran tanpa foto,
-				# jadi kosong di sini bukan kesalahan.
-				filename = save_payment_proof(encoded, content_type, f"payment-{self.current_resident['id']}")
-				with connect_database() as connection:
-					resident = connection.execute(
-						"SELECT id, family_card_number FROM contribution_residents WHERE account_id = ? AND active = 1",
-						(self.current_resident["id"],),
-					).fetchone()
-					if not resident:
-						raise ValueError("Data warga iuran belum terdaftar. Hubungi admin BSK.")
-					family_card_number = str(resident["family_card_number"] or "").strip()
-					if family_card_number and connection.execute(
-						"SELECT id FROM contribution_payments WHERE family_card_number = ? AND period = ?",
-						(family_card_number, period),
-					).fetchone():
-						raise ValueError("Iuran untuk KK dan periode ini sudah tercatat. Satu KK cukup satu pembayaran.")
-					# Setoran warga langsung masuk ke tabel setoran yang sama
-					# dengan menu "Warga dan Setoran", lalu menunggu verifikasi
-					# pengelola sebelum dihitung sebagai pemasukan.
-					cursor = connection.execute(
-						"INSERT INTO contribution_payments "
-						"(resident_id, family_card_number, period, amount, paid_at, note, method, source, proof_file, status) "
-						"VALUES (?, ?, ?, ?, ?, ?, ?, 'warga', ?, 'Menunggu Verifikasi')",
-						(resident["id"], family_card_number, period, amount, paid_at, method, method, filename),
-					)
-					payment_id = cursor.lastrowid
-			except (ValueError, TypeError, OSError, sqlite3.Error) as error:
-				if filename:
-					(UPLOAD_DIR / filename).unlink(missing_ok=True)
-				self.send_json(400 if isinstance(error, (ValueError, TypeError)) else 500, {"error": str(error) or "Pembayaran tidak dapat disimpan."})
-				return
-			self.send_json(201, {"id": payment_id, "status": "Menunggu Verifikasi"})
+			self.send_json(410, {"error": "Akses warga sudah dihentikan. Hubungi pengurus BSK."})
 			return
 		if path == "/api/admin/payments/review":
 			if not self.require_admin("Admin"):

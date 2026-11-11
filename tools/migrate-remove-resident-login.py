@@ -1,4 +1,4 @@
-"""Nonaktifkan login warga dan hapus tabel pembayaran warga legacy dengan aman.
+"""Hapus login warga dan tabel pembayaran warga legacy dengan aman.
 
 Skrip tidak pernah menghapus data WARGA, KARTU_KELUARGA, atau SETORAN.
 Ia berhenti bila resident_payments masih berisi data, agar riwayat tidak hilang.
@@ -30,15 +30,18 @@ def main():
         legacy_rows = con.execute("SELECT COUNT(*) FROM resident_payments").fetchone()[0] if "resident_payments" in tables else 0
         if legacy_rows:
             raise RuntimeError(f"Migrasi dibatalkan: resident_payments masih berisi {legacy_rows} data. Migrasikan/arsipkan dahulu.")
-        resident_accounts = con.execute("SELECT COUNT(*) FROM admin_users WHERE role = 'Warga' AND active = 1").fetchone()[0]
-        linked = con.execute("SELECT COUNT(*) FROM contribution_residents WHERE account_id IS NOT NULL").fetchone()[0]
-        print(f"Akun warga aktif yang dinonaktifkan: {resident_accounts}")
+        resident_accounts = con.execute("SELECT COUNT(*) FROM admin_users WHERE role = 'Warga'").fetchone()[0]
+        resident_columns = {row[1] for row in con.execute("PRAGMA table_info(contribution_residents)")}
+        has_account_link = "account_id" in resident_columns
+        linked = con.execute("SELECT COUNT(*) FROM contribution_residents WHERE account_id IS NOT NULL").fetchone()[0] if has_account_link else 0
+        print(f"Akun warga legacy yang akan dihapus: {resident_accounts}")
         print(f"Tautan akun ke warga yang dilepas: {linked}")
         backup_dir = backup(con)
         con.execute("BEGIN IMMEDIATE")
         try:
-            con.execute("UPDATE contribution_residents SET account_id = NULL WHERE account_id IS NOT NULL")
-            con.execute("UPDATE admin_users SET active = 0, permissions = '[]' WHERE role = 'Warga'")
+            if has_account_link:
+                con.execute("UPDATE contribution_residents SET account_id = NULL WHERE account_id IS NOT NULL")
+            con.execute("DELETE FROM admin_users WHERE role = 'Warga'")
             if "resident_payments" in tables:
                 con.execute("DROP TABLE resident_payments")
             con.commit()

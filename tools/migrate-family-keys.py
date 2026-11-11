@@ -53,7 +53,6 @@ def create_replacement_tables(connection):
     connection.execute(
         """CREATE TABLE contribution_residents_family_key (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_id INTEGER UNIQUE,
             full_name TEXT NOT NULL,
             rt TEXT NOT NULL DEFAULT '', rw TEXT NOT NULL DEFAULT '',
             birth_date TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
@@ -67,18 +66,17 @@ def create_replacement_tables(connection):
             payment_recipient TEXT NOT NULL DEFAULT '', relationship TEXT NOT NULL DEFAULT '',
             phone TEXT NOT NULL DEFAULT '', residence_status TEXT NOT NULL DEFAULT '',
             status_warga TEXT NOT NULL DEFAULT 'Aktif', date_of_death TEXT NOT NULL DEFAULT '',
-            FOREIGN KEY(account_id) REFERENCES admin_users(id) ON DELETE SET NULL,
             FOREIGN KEY(family_card_number) REFERENCES households(family_card_number)
                 ON UPDATE CASCADE ON DELETE RESTRICT
         )"""
     )
     connection.execute(
         """INSERT INTO contribution_residents_family_key
-            (id, account_id, full_name, rt, rw, birth_date, address, photo_file,
+            (id, full_name, rt, rw, birth_date, address, photo_file,
              family_card_number, national_id_number, birthplace, religion, gender,
              active, created_at, updated_at, payment_recipient, relationship, phone,
              residence_status, status_warga, date_of_death)
-           SELECT id, account_id, full_name, rt, rw, birth_date, address, photo_file,
+           SELECT id, full_name, rt, rw, birth_date, address, photo_file,
              trim(family_card_number), national_id_number, birthplace, religion, gender,
              active, created_at, updated_at, payment_recipient, relationship, phone,
              residence_status, status_warga, date_of_death
