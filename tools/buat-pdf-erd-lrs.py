@@ -1,60 +1,111 @@
-"""Membuat ERD dan LRS sederhana yang sesuai alur operasional panel BSK."""
+"""Membangun ERD terpadu yang mengikuti skema SQLite panel admin BSK.
+
+Diagram ini bersifat dokumentasi: tidak membuka maupun mengubah database.
+Garis penuh berarti foreign key yang benar-benar ada pada skema SQLite,
+sedangkan garis putus-putus adalah hubungan operasional yang dipakai aplikasi.
+"""
 from pathlib import Path
+
 import pymupdf
 
-OUT = Path(__file__).resolve().parents[1] / "docs" / "ERD-LRS-BSK-RINGKAS.pdf"
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT_DIR = ROOT / "docs"
+PDF_OUT = OUT_DIR / "ERD-PANEL-ADMIN-BSK.pdf"
+PNG_OUT = OUT_DIR / "ERD-PANEL-ADMIN-BSK.png"
+
+PAGE_W, PAGE_H = 1191, 842  # A3 landscape
+INK = (0.07, 0.21, 0.14)
+GREEN = (0.08, 0.38, 0.23)
+MINT = (0.94, 0.98, 0.95)
+LINE = (0.25, 0.42, 0.30)
+LOGICAL = (0.43, 0.47, 0.51)
+
+
+def box(page, x, y, title, fields, width=220):
+    """Draw an entity and return its bounding rectangle."""
+    height = 31 + len(fields) * 13 + 9
+    rect = pymupdf.Rect(x, y, x + width, y + height)
+    page.draw_rect(rect, color=GREEN, width=0.9, fill=(1, 1, 1))
+    page.draw_rect((x, y, x + width, y + 29), color=None, fill=GREEN)
+    page.insert_text((x + 9, y + 19), title, fontsize=8.5, fontname="hebo", color=(1, 1, 1))
+    for index, field in enumerate(fields):
+        page.insert_text((x + 9, y + 43 + index * 13), field, fontsize=7.2, fontname="helv", color=INK)
+    return rect
+
+
+def label(page, x, y, text, size=7.2, color=INK, bold=False):
+    page.insert_text((x, y), text, fontsize=size, fontname="hebo" if bold else "helv", color=color)
+
+
+def relation(page, start, end, cardinality, text, logical=False, offset=(0, 0)):
+    """Draw a relationship connector with its cardinality and label."""
+    color = LOGICAL if logical else LINE
+    dashes = "[3 2] 0" if logical else None
+    page.draw_line(start, end, color=color, width=1.0, dashes=dashes)
+    mid_x, mid_y = (start.x + end.x) / 2 + offset[0], (start.y + end.y) / 2 + offset[1]
+    label(page, mid_x - 38, mid_y - 2, cardinality, 7, color, True)
+    label(page, mid_x - 38, mid_y + 8, text, 6.4, color)
+
+
+def section(page, rect, title, subtitle, fill):
+    page.draw_rect(rect, color=(0.72, 0.82, 0.74), width=0.7, fill=fill)
+    label(page, rect.x0 + 13, rect.y0 + 17, title, 9, INK, True)
+    label(page, rect.x0 + 13, rect.y0 + 29, subtitle, 6.5, (0.28, 0.39, 0.30))
+
+
 doc = pymupdf.open()
+page = doc.new_page(width=PAGE_W, height=PAGE_H)
+page.draw_rect((0, 0, PAGE_W, PAGE_H), color=None, fill=(0.985, 0.99, 0.986))
+page.draw_rect((28, 22, PAGE_W - 28, 76), color=None, fill=INK)
+label(page, 48, 49, "ERD TERPADU — PANEL ADMIN BSK", 19, (1, 1, 1), True)
+label(page, 48, 65, "Sesuai skema SQLite dan alur operasional aplikasi saat ini | No. KK = identitas keluarga | PK = primary key · FK = foreign key · UQ = unique", 8.2, (0.88, 0.95, 0.89))
 
-def page(title, subtitle):
-    sheet = doc.new_page(width=842, height=595)
-    sheet.draw_rect((0, 0, 842, 595), color=None, fill=(.975, .985, .975))
-    sheet.draw_rect((28, 24, 814, 74), color=None, fill=(.06, .28, .16))
-    sheet.insert_text((48, 53), title, fontsize=18, fontname="hebo", color=(1, 1, 1))
-    sheet.insert_text((48, 67), subtitle, fontsize=8.5, color=(.86, .94, .87))
-    return sheet
+section(page, pymupdf.Rect(30, 99, 390, 736), "DATA MASUK & TINJAUAN", "Pendaftaran BSK, anggota formulir, tanda tangan, dan perbaikan data", (0.965, 0.945, 0.985))
+section(page, pymupdf.Rect(407, 99, 1161, 736), "DATA KK, SETORAN & ARSIP", "Data warga/iuran, keuangan, serta arsip kematian", MINT)
 
-def write(sheet, rect, value, size=9, bold=False, color=(.08, .12, .09)):
-    sheet.insert_textbox(pymupdf.Rect(rect), value, fontsize=size, fontname="hebo" if bold else "helv", color=color, lineheight=1.2)
+users = box(page, 50, 122, "ADMIN_USERS", ["id (PK)", "username (UQ), display_name, role", "active, permissions, kontak"], 188)
+registration = box(page, 50, 218, "BSK_REGISTRATIONS", ["id (PK)", "submitted_by (FK), reviewed_by (FK)", "resident_id (FK, nullable)", "head_name, NIK, No. KK, status", "alamat, RT/RW, submitted_at"], 248)
+members = box(page, 50, 342, "BSK_REGISTRATION_MEMBERS", ["id (PK)", "registration_id (FK)", "nama, NIK, lahir, hubungan"], 220)
+signatures = box(page, 50, 431, "BSK_REGISTRATION_SIGNATURES", ["id (PK)", "registration_id (FK)", "role, name, image_file, signed_at", "UQ(registration_id, role)"], 240)
+issues = box(page, 50, 539, "DATA_ISSUES", ["id (PK)", "record_id (relasi logis, nullable)", "resident_id (relasi logis, nullable)", "sumber, field, nilai asli, pesan", "resolved, resolved_at, resolved_by"], 275)
 
-def entity(sheet, x, y, title, fields):
-    width, height = 220, 33 + len(fields) * 14
-    sheet.draw_rect((x, y, x + width, y + height), color=(.08, .34, .19), width=.8, fill=(1, 1, 1))
-    sheet.draw_rect((x, y, x + width, y + 27), color=None, fill=(.08, .34, .19))
-    write(sheet, (x + 8, y + 7, x + width - 8, y + 25), title, 9, True, (1, 1, 1))
-    write(sheet, (x + 8, y + 34, x + width - 8, y + height - 4), "\n".join(fields), 7.7)
-    return pymupdf.Rect(x, y, x + width, y + height)
+residents = box(page, 430, 153, "WARGA (CONTRIBUTION_RESIDENTS)", ["id (PK)", "account_id (FK, UQ, nullable)", "NIK (UQ jika terisi)", "No. KK (FK), nama, RT/RW", "status_warga, tanggal_wafat, kontak"], 245)
+payments = box(page, 430, 305, "SETORAN (CONTRIBUTION_PAYMENTS)", ["id (PK)", "resident_id (FK: pengirim/pencatat)", "No. KK (FK), periode, nominal", "tanggal, metode, bukti, status"], 245)
+finance = box(page, 430, 435, "FINANCE_ENTRIES", ["id (PK)", "tanggal, judul, deskripsi", "income, expense, category", "source, source_period, RT/RW"], 245)
+records = box(page, 778, 153, "RECORDS (ARSIP WAFAT)", ["id (PK)", "nama, NIK, No. KK, area", "tanggal wafat, alamat", "publikasi, berkas potret"], 245)
+family = box(page, 778, 303, "FAMILY_CONNECTIONS", ["id (PK)", "record_id (FK)", "full_name, relationship"], 210)
+households = box(page, 778, 403, "KARTU_KELUARGA (HOUSEHOLDS)", ["No. KK / family_card_number (PK)", "head_name, RT/RW, alamat", "members_json, created_at, updated_at"], 245)
 
-def relation(sheet, start, end, label):
-    sheet.draw_line(start, end, color=(.25, .39, .28), width=.8)
-    mid = ((start.x + end.x) / 2, (start.y + end.y) / 2)
-    write(sheet, (mid[0] - 35, mid[1] - 15, mid[0] + 35, mid[1] - 2), label, 7, True, (.06, .28, .16))
+# Foreign keys stored in SQLite: solid lines. Points deliberately use the
+# nearest box edges so the combined diagram stays readable when printed.
+relation(page, pymupdf.Point(144, 201), pymupdf.Point(174, 218), "1 : N", "submit/review", offset=(-35, -3))
+relation(page, pymupdf.Point(174, 323), pymupdf.Point(160, 342), "1 : N", "memuat", offset=(-42, 1))
+relation(page, pymupdf.Point(290, 323), pymupdf.Point(290, 431), "1 : N", "ditandatangani", offset=(14, 0))
+relation(page, pymupdf.Point(298, 270), pymupdf.Point(430, 218), "0..1 : 1", "disetujui → warga", offset=(0, -15))
+relation(page, pymupdf.Point(238, 161), pymupdf.Point(430, 177), "1 : 0..1", "akun warga", offset=(0, -16))
+relation(page, pymupdf.Point(552, 258), pymupdf.Point(552, 305), "1 : N", "setoran", offset=(16, 0))
+relation(page, pymupdf.Point(900, 245), pymupdf.Point(883, 303), "1 : N", "anggota/keluarga", offset=(19, 0))
+relation(page, pymupdf.Point(675, 246), pymupdf.Point(778, 442), "N : 1", "No. KK", offset=(14, -3))
+relation(page, pymupdf.Point(675, 350), pymupdf.Point(778, 470), "N : 1", "No. KK", offset=(16, 9))
 
-sheet = page("ERD BSK — RINGKAS DAN OPERASIONAL", "Acuan panel admin | PK = Primary Key · FK = Foreign Key · KK menjadi identitas utama keluarga")
-write(sheet, (44, 94, 798, 132), "Alur tunggal: Data Masuk/Data Issue → Family Connection (KK) → Records (anggota & status) → Setoran. Pendaftaran dan tanda tangan hanya menjadi lampiran intake, bukan tahapan wajib terpisah.", 11)
-registration = entity(sheet, 50, 174, "DATA_ISSUE / REGISTRASI_BSK", ["id_issue (PK)", "nomor_kk (FK → FAMILY_CONNECTION.nomor_kk)", "jenis_issue, status, sumber, catatan", "id_record (FK → RECORDS.id_record, nullable)"])
-family = entity(sheet, 311, 153, "FAMILY_CONNECTION", ["nomor_kk (PK)", "nama_kepala_keluarga, alamat, rt, rw", "status_domisili, telepon, dibuat_pada", "Satu baris = satu keluarga/KK"])
-records = entity(sheet, 572, 153, "RECORDS", ["id_record (PK)", "nomor_kk (FK → FAMILY_CONNECTION.nomor_kk)", "nik (UQ), nama, hubungan_keluarga", "status_warga, tanggal_wafat, data_pribadi"])
-payment = entity(sheet, 311, 392, "PEMBAYARAN / SETORAN", ["id_pembayaran (PK)", "nomor_kk (FK → FAMILY_CONNECTION.nomor_kk)", "periode, nominal, tanggal_bayar, status", "UQ(nomor_kk, periode) — satu KK satu iuran/periode"])
-relation(sheet, registration.br, family.tl, "M : 1")
-relation(sheet, family.tr, records.tl, "1 : M")
-relation(sheet, family.bl, payment.tl, "1 : M")
-write(sheet, (50, 510, 792, 570), "Penempatan kunci: nomor_kk adalah PK hanya pada FAMILY_CONNECTION, lalu menjadi FK pada RECORDS, DATA_ISSUE/REGISTRASI_BSK, dan PEMBAYARAN. Setiap anggota memiliki id_record, tetapi hubungan dan pembayaran selalu kembali ke satu KK.", 8.5)
+# Operational links in application code: dashed lines.
+relation(page, pymupdf.Point(325, 556), pymupdf.Point(778, 228), "0..N : 0..1", "tinjau arsip", logical=True, offset=(4, -12))
+relation(page, pymupdf.Point(325, 626), pymupdf.Point(430, 246), "0..N : 0..1", "tinjau warga", logical=True, offset=(-4, 0))
+relation(page, pymupdf.Point(552, 397), pymupdf.Point(552, 435), "N : 0..1", "rekap pemasukan", logical=True, offset=(16, 0))
 
-sheet = page("LRS — LOGICAL RECORD STRUCTURE", "Struktur yang dibaca langsung dari alur panel admin; kolom teknis lama dapat dimigrasikan bertahap tanpa menghapus riwayat")
-lrs = [
-"FAMILY_CONNECTION(nomor_kk PK, nama_kepala_keluarga, alamat, rt, rw, status_domisili, telepon, dibuat_pada)",
-"RECORDS(id_record PK, nomor_kk FK → FAMILY_CONNECTION.nomor_kk, nik UQ, nama, hubungan_keluarga, jenis_kelamin, tanggal_lahir, status_warga, tanggal_wafat)",
-"PEMBAYARAN(id_pembayaran PK, nomor_kk FK → FAMILY_CONNECTION.nomor_kk, periode, nominal, tanggal_bayar, metode, bukti, status, catatan; UQ(nomor_kk, periode))",
-"DATA_ISSUE(id_issue PK, nomor_kk FK → FAMILY_CONNECTION.nomor_kk nullable, id_record FK → RECORDS.id_record nullable, sumber, baris_sumber, field, nilai_asli, pesan, status)",
-"REGISTRASI_BSK(id_registrasi PK, nomor_kk FK → FAMILY_CONNECTION.nomor_kk nullable, status, diajukan_pada, ditinjau_pada, catatan)",
-"REGISTRASI_MEMBER(id_registrasi_member PK, id_registrasi FK → REGISTRASI_BSK.id_registrasi, id_record FK → RECORDS.id_record nullable, nama, nik, hubungan_keluarga)",
-"REGISTRASI_SIGNATURE(id_signature PK, id_registrasi FK → REGISTRASI_BSK.id_registrasi, peran, nama, berkas_tanda_tangan, ditandatangani_pada; UQ(id_registrasi, peran))",
-]
-write(sheet, (48, 100, 794, 385), "\n\n".join(lrs), 9)
-write(sheet, (48, 422, 794, 470), "Aturan integritas: (1) nomor_kk harus 16 digit sebelum keluarga aktif; (2) RECORDS tidak boleh tanpa nomor_kk; (3) pembayaran disimpan per-KK dan periode; (4) pendaftaran/members/signatures adalah dokumen intake di Data Masuk & Tinjauan, bukan panel warga.", 9.5, True, (.06, .28, .16))
-write(sheet, (48, 514, 794, 560), "Catatan migrasi: aplikasi mempertahankan ID internal lama demi keamanan riwayat. Pada database target, FOREIGN KEY dinyalakan dan data lama diperiksa dahulu agar tidak ada KK kosong atau pembayaran ganda sebelum constraint UQ(nomor_kk, periode) diterapkan.", 8.4)
+page.draw_rect((30, 758, 1161, 818), color=(0.72, 0.82, 0.74), width=0.7, fill=(1, 1, 1))
+page.draw_line((49, 778), (98, 778), color=LINE, width=1.2)
+label(page, 105, 781, "Garis penuh: FK tersimpan dan dijaga oleh SQLite.", 7.3)
+page.draw_line((346, 778), (395, 778), color=LOGICAL, width=1.2, dashes="[3 2] 0")
+label(page, 402, 781, "Garis putus-putus: hubungan operasional di kode, bukan FK database.", 7.3)
+label(page, 49, 804, "Cakupan: hanya entitas yang mendukung panel admin. Tabel pengaturan, kontak wilayah, jabatan, berita, dan sesi tidak ditampilkan karena tidak terlibat dalam alur dua diagram sumber.", 7.2, (0.23, 0.31, 0.24))
 
-OUT.parent.mkdir(exist_ok=True)
-doc.set_metadata({"title": "ERD dan LRS BSK Ringkas", "author": "Kifayah"})
-doc.save(OUT)
-print(OUT)
+OUT_DIR.mkdir(exist_ok=True)
+doc.set_metadata({"title": "ERD Terpadu Panel Admin BSK", "author": "Kifayah"})
+doc.save(PDF_OUT)
+pix = page.get_pixmap(matrix=pymupdf.Matrix(1.5, 1.5), alpha=False)
+pix.save(PNG_OUT)
+doc.close()
+print(PDF_OUT)
+print(PNG_OUT)

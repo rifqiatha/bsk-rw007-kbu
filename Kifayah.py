@@ -371,7 +371,7 @@ def _initialize_database(connection):
 			birth_date TEXT NOT NULL DEFAULT '',
 			address TEXT NOT NULL DEFAULT '',
 			photo_file TEXT NOT NULL DEFAULT '',
-			family_card_number TEXT NOT NULL DEFAULT '',
+			family_card_number TEXT,
 			national_id_number TEXT NOT NULL DEFAULT '',
 			birthplace TEXT NOT NULL DEFAULT '',
 			religion TEXT NOT NULL DEFAULT '',
@@ -379,7 +379,8 @@ def _initialize_database(connection):
 			active INTEGER NOT NULL DEFAULT 1,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY(account_id) REFERENCES admin_users(id) ON DELETE SET NULL
+			FOREIGN KEY(account_id) REFERENCES admin_users(id) ON DELETE SET NULL,
+			FOREIGN KEY(family_card_number) REFERENCES households(family_card_number) ON UPDATE CASCADE ON DELETE RESTRICT
 		)"""
 	)
 	contribution_columns = {row["name"] for row in connection.execute("PRAGMA table_info(contribution_residents)")}
@@ -400,6 +401,44 @@ def _initialize_database(connection):
 	connection.execute(
 		"CREATE INDEX IF NOT EXISTS idx_contribution_residents_nik ON contribution_residents(national_id_number)"
 	)
+	# NIK hanya unik apabila memang diisi. Nilai kosong dipertahankan untuk
+	# data lama yang masih perlu dilengkapi melalui Tinjauan Data.
+	connection.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_contribution_residents_nik "
+		"ON contribution_residents(national_id_number) WHERE TRIM(national_id_number) <> ''"
+	)
+	# KK adalah induk keluarga. Anggota tetap membawa NIK masing-masing dan
+	# disimpan bersama dalam satu payload agar ERD operasional tidak memecah
+	# satu keluarga menjadi banyak entitas pendukung.
+	connection.execute(
+		"""CREATE TABLE IF NOT EXISTS households (
+			family_card_number TEXT PRIMARY KEY,
+			head_name TEXT NOT NULL DEFAULT '', rt TEXT NOT NULL DEFAULT '', rw TEXT NOT NULL DEFAULT '',
+			address TEXT NOT NULL DEFAULT '', members_json TEXT NOT NULL DEFAULT '[]',
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)"""
+	)
+	family_rows = connection.execute(
+		"SELECT full_name, national_id_number, birthplace, birth_date, gender, relationship, phone, "
+		"residence_status, status_warga, date_of_death, rt, rw, address, family_card_number "
+		"FROM contribution_residents WHERE length(trim(family_card_number)) = 16 AND trim(family_card_number) GLOB '[0-9]*'"
+	).fetchall()
+	families = {}
+	for row in family_rows:
+		item = dict(row)
+		kk = item.pop("family_card_number").strip()
+		family = families.setdefault(kk, {"members": [], "head_name": "", "rt": item["rt"], "rw": item["rw"], "address": item["address"]})
+		family["members"].append(item)
+		if not family["head_name"] or "KEPALA" in (item["relationship"] or "").upper():
+			family["head_name"] = item["full_name"]
+	for kk, family in families.items():
+		connection.execute(
+			"INSERT INTO households (family_card_number, head_name, rt, rw, address, members_json) VALUES (?, ?, ?, ?, ?, ?) "
+			"ON CONFLICT(family_card_number) DO UPDATE SET head_name=excluded.head_name, rt=excluded.rt, rw=excluded.rw, "
+			"address=excluded.address, members_json=excluded.members_json, updated_at=CURRENT_TIMESTAMP",
+			(kk, family["head_name"], family["rt"], family["rw"], family["address"], json.dumps(family["members"], ensure_ascii=False)),
+		)
+	connection.execute("CREATE INDEX IF NOT EXISTS idx_households_area ON households(rt, rw)")
 	connection.execute(
 		"CREATE INDEX IF NOT EXISTS idx_records_nik ON records(national_id_number)"
 	)
@@ -453,12 +492,14 @@ def _initialize_database(connection):
 		"""CREATE TABLE IF NOT EXISTS contribution_payments (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			resident_id INTEGER NOT NULL,
+			family_card_number TEXT,
 			period TEXT NOT NULL,
 			amount INTEGER NOT NULL,
 			paid_at TEXT NOT NULL,
 			note TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY(resident_id) REFERENCES contribution_residents(id) ON DELETE CASCADE
+			FOREIGN KEY(resident_id) REFERENCES contribution_residents(id) ON DELETE CASCADE,
+			FOREIGN KEY(family_card_number) REFERENCES households(family_card_number) ON UPDATE CASCADE ON DELETE RESTRICT
 		)"""
 	)
 	# STRUKTUR SETORAN: bukti pembayaran, status verifikasi, dan sumber ikut
@@ -487,10 +528,9 @@ def _initialize_database(connection):
 		"SELECT family_card_number FROM contribution_residents r WHERE r.id = contribution_payments.resident_id"
 		"), '') WHERE TRIM(COALESCE(family_card_number, '')) = ''"
 	)
-	connection.execute(
-		"INSERT OR IGNORE INTO contribution_residents (account_id, full_name) "
-		"SELECT id, display_name FROM admin_users WHERE role = 'Warga'"
-	)
+	# Data warga dibuat ketika No. KK valid sudah tersedia (melalui pendaftaran
+	# atau panel admin). Jangan membuat baris placeholder tanpa keluarga karena
+	# No. KK sekarang adalah FK ke households.
 	# PINDAH KE TABEL SETORAN: bawa pengajuan warga yang sudah tersimpan ke
 	# contribution_payments lewat akunnya. NOT EXISTS membuat migrasi ini aman
 	# dijalankan berkali-kali tanpa menggandakan setoran pada periode yang sama.
@@ -588,6 +628,31 @@ def _initialize_database(connection):
 	connection.execute(
 		"CREATE INDEX IF NOT EXISTS idx_data_issues_open ON data_issues(resolved)"
 	)
+	# Jangan menyamarkan data lama yang KK-nya belum layak menjadi PK. Catat
+	# sekali di Tinjauan Perbaikan agar admin dapat melengkapinya dari sumber
+	# asli; baris warga tetap dipertahankan dan tidak dihapus.
+	connection.execute(
+		"""INSERT INTO data_issues (destination, resident_id, full_name, field, raw_value, message)
+		SELECT 'contributions', r.id, r.full_name, 'family_card_number', r.family_card_number,
+		       'Nomor KK harus 16 digit angka sebelum dapat dijadikan data keluarga utama.'
+		FROM contribution_residents r
+		WHERE (length(trim(r.family_card_number)) <> 16 OR trim(r.family_card_number) NOT GLOB '[0-9]*')
+		AND NOT EXISTS (
+			SELECT 1 FROM data_issues i WHERE i.destination = 'contributions' AND i.resident_id = r.id
+			AND i.field = 'family_card_number' AND i.resolved = 0
+		)"""
+	)
+	connection.execute(
+		"""INSERT INTO data_issues (destination, full_name, field, raw_value, message)
+		SELECT 'payments', '', 'family_card_number', p.family_card_number,
+		       'Pembayaran ini menunggu Nomor KK 16 digit yang valid sebelum dapat dihubungkan ke keluarga.'
+		FROM contribution_payments p
+		WHERE length(trim(p.family_card_number)) <> 16 OR trim(p.family_card_number) NOT GLOB '[0-9]*'
+		AND NOT EXISTS (
+			SELECT 1 FROM data_issues i WHERE i.destination = 'payments' AND i.field = 'family_card_number'
+			AND i.raw_value = p.family_card_number AND i.resolved = 0
+		)"""
+	)
 
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS news_articles (
@@ -631,12 +696,42 @@ def _initialize_database(connection):
 			reviewed_at TEXT NOT NULL DEFAULT '',
 			review_note TEXT NOT NULL DEFAULT '',
 			resident_id INTEGER,
+			members_json TEXT NOT NULL DEFAULT '[]',
 			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY(submitted_by) REFERENCES admin_users(id) ON DELETE SET NULL,
 			FOREIGN KEY(reviewed_by) REFERENCES admin_users(id) ON DELETE SET NULL,
 			FOREIGN KEY(resident_id) REFERENCES contribution_residents(id) ON DELETE SET NULL
 		)"""
 	)
+	# Dibuat lebih dulu karena migrasi berikut dapat dijalankan pada database
+	# baru maupun database lama.
+	connection.execute(
+		"""CREATE TABLE IF NOT EXISTS bsk_registration_members (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, registration_id INTEGER NOT NULL,
+			full_name TEXT NOT NULL, national_id_number TEXT NOT NULL DEFAULT '',
+			birthplace TEXT NOT NULL DEFAULT '', birth_date TEXT NOT NULL DEFAULT '',
+			gender TEXT NOT NULL DEFAULT '', relationship TEXT NOT NULL DEFAULT '', remark TEXT NOT NULL DEFAULT ''
+		)"""
+	)
+	registration_columns = {row["name"] for row in connection.execute("PRAGMA table_info(bsk_registrations)")}
+	if "members_json" not in registration_columns:
+		connection.execute("ALTER TABLE bsk_registrations ADD COLUMN members_json TEXT NOT NULL DEFAULT '[]'")
+	# Migrasi aman: anggota formulir lama diringkas ke satu kolom JSON pada
+	# formulirnya. Tabel lama sengaja tidak dihapus agar berfungsi sebagai
+	# cadangan sampai data di produksi dinyatakan valid.
+	for registration in connection.execute(
+		"SELECT id FROM bsk_registrations WHERE members_json = '[]' OR members_json = ''"
+	).fetchall():
+		members = [dict(row) for row in connection.execute(
+			"SELECT full_name, national_id_number, birthplace, birth_date, gender, relationship, remark "
+			"FROM bsk_registration_members WHERE registration_id = ? ORDER BY id",
+			(registration["id"],),
+		).fetchall()]
+		if members:
+			connection.execute(
+				"UPDATE bsk_registrations SET members_json = ? WHERE id = ?",
+				(json.dumps(members, ensure_ascii=False), registration["id"]),
+			)
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS bsk_registration_members (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1429,12 +1524,26 @@ def registration_payload_for(connection, registration_id):
 
 
 def registration_member_payload(connection, registration_id):
-	rows = connection.execute(
-		"SELECT id, full_name, national_id_number, birthplace, birth_date, gender, relationship, remark "
-		"FROM bsk_registration_members WHERE registration_id = ? ORDER BY id",
-		(registration_id,),
-	).fetchall()
-	return [dict(row) for row in rows]
+	row = connection.execute(
+		"SELECT members_json FROM bsk_registrations WHERE id = ?", (registration_id,)
+	).fetchone()
+	try:
+		members = json.loads(row["members_json"] or "[]") if row else []
+		expected = ("full_name", "national_id_number", "birthplace", "birth_date", "gender", "relationship", "remark")
+		return [
+			{"id": index + 1, **{field: str(member.get(field, "") or "") for field in expected}}
+			for index, member in enumerate(members) if isinstance(member, dict)
+		]
+	except (TypeError, json.JSONDecodeError):
+		return []
+
+
+def save_registration_members(connection, registration_id, members):
+	"""Simpan seluruh anggota sebagai bagian dari satu formulir/KK."""
+	connection.execute(
+		"UPDATE bsk_registrations SET members_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		(json.dumps(members, ensure_ascii=False), registration_id),
+	)
 
 
 def reject_duplicate_member_nik(header, members):
@@ -2384,7 +2493,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						"updated_at = CURRENT_TIMESTAMP WHERE id = ?",
 						(*values, registration_id),
 					)
-					connection.execute("DELETE FROM bsk_registration_members WHERE registration_id = ?", (registration_id,))
+					save_registration_members(connection, registration_id, [])
 					status_code = 200
 				else:
 					cursor = connection.execute(
@@ -2395,17 +2504,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					)
 					registration_id = cursor.lastrowid
 					status_code = 201
-				connection.executemany(
-					"INSERT INTO bsk_registration_members (registration_id, full_name, national_id_number, birthplace, "
-					"birth_date, gender, relationship, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-					[
-						(
-							registration_id, member["full_name"], member["national_id_number"], member["birthplace"],
-							member["birth_date"], member["gender"], member["relationship"], member["remark"],
-						)
-						for member in validated_members
-					],
-				)
+				save_registration_members(connection, registration_id, validated_members)
 				registration = registration_payload_for(connection, registration_id)
 		except (ValueError, TypeError, sqlite3.Error) as error:
 			self.send_json(400, {"error": str(error) or "Pendaftaran tidak dapat dikirim."})
@@ -2505,17 +2604,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					),
 				)
 				registration_id = cursor.lastrowid
-				connection.executemany(
-					"INSERT INTO bsk_registration_members (registration_id, full_name, national_id_number, birthplace, "
-					"birth_date, gender, relationship, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-					[
-						(
-							registration_id, member["full_name"], member["national_id_number"], member["birthplace"],
-							member["birth_date"], member["gender"], member["relationship"], member["remark"],
-						)
-						for member in validated_members
-					],
-				)
+				save_registration_members(connection, registration_id, validated_members)
 				registration = registration_payload_for(connection, registration_id)
 		except (ValueError, TypeError, sqlite3.Error) as error:
 			self.send_json(400, {"error": str(error) or "Pendaftaran tidak dapat disimpan."})
@@ -2722,20 +2811,9 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						header["rt"], header["rw"], header["address"], header["job"], header["phone"], registration_id,
 					),
 				)
-				# Tanda tangan tidak ikut terhapus karenaikat terikat pada
-				# formulir, bukan pada baris anggota.
-				connection.execute("DELETE FROM bsk_registration_members WHERE registration_id = ?", (registration_id,))
-				connection.executemany(
-					"INSERT INTO bsk_registration_members (registration_id, full_name, national_id_number, birthplace, "
-					"birth_date, gender, relationship, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-					[
-						(
-							registration_id, member["full_name"], member["national_id_number"], member["birthplace"],
-							member["birth_date"], member["gender"], member["relationship"], member["remark"],
-						)
-						for member in validated_members
-					],
-				)
+				# Anggota adalah bagian dari satu formulir/KK, sehingga tersimpan
+				# bersama header pendaftaran dan tidak lagi menjadi entitas aktif.
+				save_registration_members(connection, registration_id, validated_members)
 				registration = registration_payload_for(connection, registration_id)
 		except (ValueError, TypeError, sqlite3.Error) as error:
 			self.send_json(400, {"error": str(error) or "Pendaftaran tidak dapat diperbarui."})
@@ -3499,15 +3577,23 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					parameters.append(status_filter)
 				rows = connection.execute(
 					"SELECT r.id, r.status, r.head_name, r.family_card_number, r.rt, r.rw, r.submitted_at, "
-					"r.reviewed_at, r.review_note, r.resident_id, u.display_name AS submitter_name, "
-					"(SELECT COUNT(*) FROM bsk_registration_members m WHERE m.registration_id = r.id) AS member_count, "
-					"(SELECT COUNT(*) FROM bsk_registration_signatures s WHERE s.registration_id = r.id AND s.image_file != '') AS signed_count "
+					"r.reviewed_at, r.review_note, r.resident_id, r.members_json, u.display_name AS submitter_name "
 					"FROM bsk_registrations r LEFT JOIN admin_users u ON u.id = r.submitted_by "
 					f"{condition} ORDER BY CASE r.status WHEN 'Menunggu Verifikasi' THEN 0 ELSE 1 END, "
 					"r.submitted_at DESC, r.id DESC",
 					parameters,
 				).fetchall()
-			registrations = [dict(row) for row in rows]
+			registrations = []
+			for row in rows:
+				registration = dict(row)
+				try:
+					registration["member_count"] = len(json.loads(registration.pop("members_json") or "[]"))
+				except (TypeError, json.JSONDecodeError):
+					registration["member_count"] = 0
+				# Tanda tangan selalu berasal dari Kop Ekspor (app_settings), bukan
+				# dari tabel per-formulir.
+				registration["signed_count"] = 0
+				registrations.append(registration)
 			pending_total = sum(1 for item in registrations if item["status"] == "Menunggu Verifikasi")
 			self.send_json(200, {"registrations": registrations, "pending_total": pending_total, "total": len(registrations)})
 			return
