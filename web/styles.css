@@ -1083,15 +1083,16 @@ dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; tr
 .contribution-profile-grid dt { margin-bottom: 2px; color: var(--muted); font-size: calc((11px) * var(--site-font-scale, 1)); }
 .contribution-profile-grid dd { margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: calc((13px) * var(--site-font-scale, 1)); }
 .contribution-resident-details-body > h4 { margin: 2px 0 0; color: var(--ink); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 650; }
-.contribution-payment-history { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
-.contribution-payment-history > li { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 14px; padding: 9px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
-.contribution-payment-history > li:last-child { border-bottom: 0; }
-.contribution-payment-description { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
-.contribution-payment-description > strong { color: var(--ink); font-size: calc((13px) * var(--site-font-scale, 1)); }
-.contribution-payment-description > span:not(.payment-status) { color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); }
-.contribution-payment-description > b { color: var(--ink); font-size: calc((13px) * var(--site-font-scale, 1)); font-weight: 650; }
-.contribution-payment-history > li > small { grid-column: 1 / -1; color: var(--muted); }
-.contribution-payment-history > li > a { color: var(--green); font-size: calc((12px) * var(--site-font-scale, 1)); }
+.contribution-payment-history { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.contribution-payment-history > li { display: grid; min-width: 0; gap: 12px; padding: 15px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); }
+.contribution-payment-description { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "reference amount" "period status" "date date"; align-items: center; gap: 5px 12px; }
+.contribution-payment-reference { grid-area: reference; overflow: hidden; color: var(--green); font-family: var(--site-font-mono); font-size: calc((12px) * var(--site-font-scale, 1)); font-weight: 700; letter-spacing: var(--tp-mono-track); text-overflow: ellipsis; white-space: nowrap; }
+.contribution-payment-description > strong { grid-area: period; color: var(--ink); font-size: calc((15px) * var(--site-font-scale, 1)); }
+.contribution-payment-date { grid-area: date; color: var(--muted); font-size: calc((12px) * var(--site-font-scale, 1)); }
+.contribution-payment-description > b { grid-area: amount; color: var(--ink); font-size: calc((15px) * var(--site-font-scale, 1)); font-weight: 700; text-align: right; white-space: nowrap; }
+.contribution-payment-description > .payment-status { grid-area: status; justify-self: end; }
+.contribution-payment-history > li > small { margin: -2px 0 0; color: var(--muted); line-height: 1.5; }
+.contribution-payment-footer { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding-top: 12px; border-top: var(--tp-bw) solid var(--line); }
 .family-dialog-body { padding: 12px 0; }
 /* Pemilih kepala keluarga dari data warga iuran.
    Memakai pola label + input biasa seperti field lain di formulir, bukan
@@ -1490,6 +1491,8 @@ dialog.print-preview-panel { position: fixed; top: 50%; left: 50%; margin: 0; tr
   .contribution-profile-grid { grid-template-columns: minmax(0, 1fr); }
   .contribution-payment-history > li { grid-template-columns: minmax(0, 1fr); }
   .contribution-payment-history > li > small { grid-column: 1; }
+  .contribution-payment-footer { align-items: flex-start; flex-direction: column; }
+  .contribution-payment-actions { width: 100%; }
   .contribution-dialog-actions { grid-template-columns: minmax(0, 1fr); }
   .field-row { grid-template-columns: minmax(0, 1fr); }
   #maintenance-form .field-row { grid-template-columns: minmax(0, 1fr); }

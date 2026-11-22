@@ -3712,16 +3712,20 @@ function openContributionHistoryDialog(resident) {
       const row = document.createElement("li");
       const description = document.createElement("div");
       description.className = "contribution-payment-description";
+      const reference = document.createElement("span");
+      reference.className = "contribution-payment-reference";
+      reference.textContent = `IURAN-${String(payment.receipt_number || payment.id).padStart(6, "0")}`;
       const period = document.createElement("strong");
       period.textContent = payment.period;
       const dateLabel = document.createElement("span");
+      dateLabel.className = "contribution-payment-date";
       dateLabel.textContent = payment.paid_at ? formatDate(payment.paid_at) : "Tanggal belum diisi";
       const amount = document.createElement("b");
       amount.textContent = contributionMoney.format(payment.amount);
       const status = document.createElement("span");
       status.className = `payment-status payment-status-${payment.status === "Terverifikasi" ? "verified" : payment.status === "Ditolak" ? "rejected" : "pending"}`;
       status.textContent = payment.status;
-      description.append(period, dateLabel, amount, status);
+      description.append(reference, period, dateLabel, amount, status);
       row.append(description);
       if (payment.note) {
         const note = document.createElement("small");
@@ -3732,6 +3736,8 @@ function openContributionHistoryDialog(resident) {
          pengelola kapan saja, jadi tombolnya selalu tersedia. */
       const proofActions = document.createElement("div");
       proofActions.className = "contribution-payment-proof";
+      const footer = document.createElement("div");
+      footer.className = "contribution-payment-footer";
       if (payment.proof_url) {
         const proof = document.createElement("a");
         proof.href = payment.proof_url;
@@ -3778,7 +3784,7 @@ function openContributionHistoryDialog(resident) {
         fileInput.click();
       });
       proofActions.append(attachProof);
-      row.append(proofActions);
+      footer.append(proofActions);
       if (payment.editable || payment.deletable) {
         const paymentActions = document.createElement("div");
         paymentActions.className = "contribution-payment-actions";
@@ -3807,8 +3813,9 @@ function openContributionHistoryDialog(resident) {
           });
           paymentActions.append(deletePayment);
         }
-        row.append(paymentActions);
+        footer.append(paymentActions);
       }
+      row.append(footer);
       history.append(row);
     }
     body.append(history);
@@ -3919,7 +3926,7 @@ function openContributionReceiptPreview(resident, payment) {
   const content = document.querySelector("#contribution-receipt-content");
   if (!dialog || !content || !resident || !payment?.id) return;
   const rows = [
-    ["Nomor transaksi", `IURAN-${String(payment.id).padStart(6, "0")}`],
+    ["Nomor transaksi", `IURAN-${String(payment.receipt_number || payment.id).padStart(6, "0")}`],
     ["Nama warga", resident.full_name || "-"],
     ["Nomor KK", resident.family_card_number || "Belum diisi (per warga)"],
     ["RT / RW", `RT ${String(resident.rt || "-").padStart(3, "0")} / RW ${String(resident.rw || "-").padStart(3, "0")}`],
@@ -4188,7 +4195,9 @@ document.querySelector("#contribution-payment-form").addEventListener("submit", 
     document.querySelector("#contribution-list-status").textContent = "Setoran tersimpan; total dan bulan iuran diperbarui.";
     // Setelah tersimpan, buka pratinjau terlebih dahulu. Unduhan PDF baru
     // dimulai jika pengelola menekan tombol pada struk.
-    openContributionReceiptPreview(activeContributionPaymentResident, { ...values, id: saved.id });
+    openContributionReceiptPreview(activeContributionPaymentResident, {
+      ...values, id: saved.id, receipt_number: saved.receipt_number,
+    });
   } catch (submitError) {
     error.textContent = submitError.message;
   }

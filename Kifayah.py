@@ -517,9 +517,49 @@ def _initialize_database(connection):
 		"status": "TEXT NOT NULL DEFAULT 'Terverifikasi'",
 		"admin_note": "TEXT NOT NULL DEFAULT ''",
 		"reviewed_at": "TEXT NOT NULL DEFAULT ''",
+		"receipt_number": "INTEGER NOT NULL DEFAULT 0",
 	}.items():
 		if name not in contribution_payment_columns:
 			connection.execute(f"ALTER TABLE contribution_payments ADD COLUMN {name} {definition}")
+	# Nomor IURAN bukan lagi turunan dari id SQLite. Data lama dinomori sekali
+	# dari 1, lalu trigger memberikan nomor berikutnya untuk semua jalur insert
+	# (form admin, impor, maupun sinkronisasi) tanpa risiko nomor dipakai ulang.
+	connection.execute(
+		"CREATE TABLE IF NOT EXISTS contribution_receipt_sequence ("
+		"id INTEGER PRIMARY KEY CHECK (id = 1), next_number INTEGER NOT NULL)"
+	)
+	next_receipt_number = connection.execute(
+		"SELECT COALESCE(MAX(receipt_number), 0) FROM contribution_payments"
+	).fetchone()[0]
+	missing_receipts = connection.execute(
+		"SELECT id FROM contribution_payments WHERE receipt_number <= 0 ORDER BY created_at, id"
+	).fetchall()
+	for payment_row in missing_receipts:
+		next_receipt_number += 1
+		connection.execute(
+			"UPDATE contribution_payments SET receipt_number = ? WHERE id = ?",
+			(next_receipt_number, payment_row["id"]),
+		)
+	connection.execute(
+		"INSERT INTO contribution_receipt_sequence (id, next_number) VALUES (1, ?) "
+		"ON CONFLICT(id) DO UPDATE SET next_number = MAX(next_number, excluded.next_number)",
+		(next_receipt_number,),
+	)
+	connection.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_contribution_payments_receipt_number "
+		"ON contribution_payments(receipt_number) WHERE receipt_number > 0"
+	)
+	connection.execute(
+		"""CREATE TRIGGER IF NOT EXISTS assign_contribution_receipt_number
+		AFTER INSERT ON contribution_payments
+		WHEN NEW.receipt_number <= 0
+		BEGIN
+			UPDATE contribution_receipt_sequence SET next_number = next_number + 1 WHERE id = 1;
+			UPDATE contribution_payments
+			SET receipt_number = (SELECT next_number FROM contribution_receipt_sequence WHERE id = 1)
+			WHERE id = NEW.id;
+		END"""
+	)
 	# Iuran dicatat satu kali untuk satu KK per periode. Pembayaran lama tetap
 	# dipertahankan, lalu nomor KK pengirimnya diisi dari data warga agar riwayat
 	# dan laporan dapat dibaca sebagai pembayaran keluarga.
@@ -3280,7 +3320,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					"WHERE r.active = 1 ORDER BY display_name COLLATE NOCASE"
 				).fetchall()
 				all_payments = connection.execute(
-					"SELECT p.id, p.resident_id, p.family_card_number, p.period, p.amount, p.paid_at, p.note, p.method, "
+					"SELECT p.id, p.receipt_number, p.resident_id, p.family_card_number, p.period, p.amount, p.paid_at, p.note, p.method, "
 					"p.source, p.status, p.admin_note, p.proof_file FROM contribution_payments p "
 					"ORDER BY p.paid_at DESC, p.id DESC"
 				).fetchall()
@@ -3298,7 +3338,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					continue
 				from_resident = payment["source"] != "admin"
 				entry = {
-					"id": payment["id"], "period": payment["period"], "amount": payment["amount"],
+					"id": payment["id"], "receipt_number": payment["receipt_number"], "period": payment["period"], "amount": payment["amount"],
 					"paid_at": payment["paid_at"], "note": payment["note"], "method": payment["method"],
 					"status": payment["status"], "admin_note": payment["admin_note"],
 					"source": payment["source"], "family_card_number": family_card_number,
@@ -3969,7 +4009,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				with connect_database() as connection:
 					site = get_settings(connection)
 					payment = connection.execute(
-						"SELECT p.id, p.family_card_number, p.period, p.amount, p.paid_at, p.note, r.full_name, r.rt, r.rw "
+						"SELECT p.id, p.receipt_number, p.family_card_number, p.period, p.amount, p.paid_at, p.note, r.full_name, r.rt, r.rw "
 						"FROM contribution_payments p JOIN contribution_residents r ON r.id = p.resident_id "
 						"WHERE p.id = ? AND r.active = 1", (payment_id,)
 					).fetchone()
@@ -4005,7 +4045,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 				page.draw_rect(pymupdf.Rect(28, 88, 392, 124), color=None, fill=(.94, .97, .95))
 				page.insert_text((42, 106), "STRUK PEMBAYARAN IURAN", fontsize=14, fontname="hebo", color=(.06, .08, .07))
 				page.insert_text((42, 117), "BUKTI SETORAN TERKONFIRMASI", fontsize=6.8, fontname="hebo", color=(.08, .31, .24))
-				transaction_id = f"IURAN-{payment['id']:06d}"
+				transaction_id = f"IURAN-{int(payment['receipt_number'] or payment['id']):06d}"
 				transaction_width = regular.text_length(transaction_id, fontsize=7.5)
 				page.insert_text((378 - transaction_width, 107), transaction_id, fontsize=7.5, fontname="helv", color=(.25, .25, .25))
 				rows = [
@@ -5032,6 +5072,9 @@ class KifayahHandler(BaseHTTPRequestHandler):
 						)
 						result_id = cursor.lastrowid
 						status = 201
+					receipt_number = connection.execute(
+						"SELECT receipt_number FROM contribution_payments WHERE id = ?", (result_id,)
+					).fetchone()["receipt_number"]
 					sync_contribution_income(connection)
 				if previous_proof and saved_proof and previous_proof != saved_proof:
 					(UPLOAD_DIR / previous_proof).unlink(missing_ok=True)
@@ -5043,7 +5086,7 @@ class KifayahHandler(BaseHTTPRequestHandler):
 					{"error": str(error) or "Transaksi iuran tidak dapat disimpan."},
 				)
 				return
-			self.send_json(status, {"id": result_id, "saved": True})
+			self.send_json(status, {"id": result_id, "receipt_number": receipt_number, "saved": True})
 			return
 		if path == "/api/admin/program-info":
 			if not self.require_admin("Admin"):
