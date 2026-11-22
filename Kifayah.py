@@ -200,6 +200,27 @@ DEFAULT_POSITION_TITLES = (
 )
 OTHER_POSITION_VALUE = "Jabatan Lainnya"
 
+# Kontak resmi pengurus RW 007 Kota Bambu Utara.  Data ini diterapkan sekali
+# pada instalasi lama melalui penanda migrasi di app_settings, sehingga
+# pembaruan berikutnya dari panel admin tidak akan tertimpa saat aplikasi
+# direstart atau diperbarui.
+OFFICIAL_RW007_CONTACTS = (
+	("RW", 7, "Jenta Prakasa, SE.", "Ketua RW", "08561190900", 1),
+	("RT", 1, "Anhar Hakim", "Ketua RT", "081310320077", 1),
+	("RT", 2, "Rina Rudiah", "Ketua RT", "088709768124", 1),
+	("RT", 3, "Abidin", "Ketua RT", "087785239146", 1),
+	("RT", 4, "Moh. Tarmizi", "Ketua RT", "087877351741", 1),
+	("RT", 5, "Asmawi", "Ketua RT", "085692174995", 1),
+	("RT", 6, "Yahdiansyah", "Ketua RT", "089506044006", 1),
+	("RT", 7, "Rasidi", "Ketua RT", "08161486287", 1),
+	("RT", 8, "Abdul Rochim", "Ketua RT", "085880284472", 1),
+	("RT", 9, "Iis Nurhayati", "Ketua RT", "085694107178", 1),
+	("RT", 10, "Ali Usman", "Ketua RT", "081388994939", 1),
+	("RT", 11, "Nur Achmadi", "Ketua RT", "085695662330", 1),
+	("RT", 12, "Konaah", "Ketua RT", "089603400781", 1),
+)
+OFFICIAL_RW007_CONTACTS_MIGRATION = "official_rw007_contacts_2026_11"
+
 
 def hash_password(password, salt=None):
 	salt = salt or secrets.token_bytes(16)
@@ -526,6 +547,24 @@ def _initialize_database(connection):
 	connection.execute(
 		"CREATE INDEX IF NOT EXISTS idx_area_contacts_unit ON area_contacts(unit_type, unit_number)"
 	)
+	# Migrasi satu kali dari daftar kontak contoh/lama ke daftar resmi RW 007.
+	# Penanda disimpan di database persisten, bukan di memori, agar restart
+	# container CasaOS tidak pernah menghapus perubahan kontak yang dibuat admin.
+	contact_migration = connection.execute(
+		"SELECT value FROM app_settings WHERE key = ?",
+		(OFFICIAL_RW007_CONTACTS_MIGRATION,),
+	).fetchone()
+	if contact_migration is None:
+		connection.execute("DELETE FROM area_contacts")
+		connection.executemany(
+			"INSERT INTO area_contacts (unit_type, unit_number, contact_name, position_name, phone, active) "
+			"VALUES (?, ?, ?, ?, ?, ?)",
+			OFFICIAL_RW007_CONTACTS,
+		)
+		connection.execute(
+			"INSERT INTO app_settings (key, value) VALUES (?, ?)",
+			(OFFICIAL_RW007_CONTACTS_MIGRATION, "applied"),
+		)
 	# STRUKTUR JABATAN: urutan field menentukan peringkat, dari Ketua RW ke Sieba.
 	connection.execute(
 		"""CREATE TABLE IF NOT EXISTS position_titles (
