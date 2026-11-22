@@ -1414,6 +1414,7 @@ function renderAreaContacts(contacts) {
     detail.className = "contact-card-detail";
     detail.id = `contact-detail-${key}`;
     detail.hidden = true;
+    toggle.setAttribute("aria-controls", detail.id);
     // Contacts of the same unit are listed from the highest to the lowest position.
     members.forEach((contact) => {
       const item = document.createElement("div");

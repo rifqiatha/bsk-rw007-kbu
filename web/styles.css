@@ -416,36 +416,39 @@ button.record-page-ellipsis:hover, button.record-page-ellipsis:focus-visible { c
 .news-article-headline { color: var(--muted); font-size: calc((14px) * var(--site-font-scale, 1)); line-height: 1.65; }
 .news-article-card time { display: block; margin-bottom: 1px; color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); line-height: 1.5; }
 .news-article-author { color: var(--muted); font-family: var(--site-font-mono); font-size: calc((11px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); line-height: 1.5; }
-.contacts-section { position: relative; isolation: isolate; display: grid; min-width: 0; align-content: start; max-width: 1180px; margin: 0 auto; padding: 16px 0; }
+.contacts-section { position: relative; isolation: isolate; display: grid; min-width: 0; align-content: start; max-width: 1180px; margin: 0 auto; padding: clamp(28px, 4vw, 46px) 0 38px; scroll-margin-top: calc(var(--topbar-height) + 16px); }
 .contacts-section::before { content: ""; position: absolute; z-index: -1; inset-block: 0; left: 50%; width: 100vw; transform: translateX(-50%); background: var(--news-band); }
 .contacts-hint { margin: 0 0 22px; color: var(--muted); font-size: calc((15px) * var(--site-font-scale, 1)); line-height: 1.65; }
 /* align-items:start mencegah kartu ikutdiregangkan mengikuti kartu
    tertinggi di baris yang sama. Tanpa ini, kartu dengan satu pengurus
    menyisakan ruang kosong besar di bawah isinya. */
-.contacts-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); align-items: start; gap: 18px; }
-.contact-card { display: grid; min-width: 0; align-content: start; gap: 12px; padding: 6px 20px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); background: color-mix(in srgb, var(--surface-soft) 42%, var(--surface)); box-shadow: var(--shadow-soft); transition: border-color var(--tp-dur) var(--tp-ease), transform var(--tp-dur) var(--tp-ease), box-shadow var(--tp-dur) var(--tp-ease); }
+.contacts-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); align-items: start; gap: 20px; }
+.contact-card { display: grid; min-width: 0; align-content: start; gap: 0; padding: 7px 20px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-card); background: color-mix(in srgb, var(--surface-soft) 42%, var(--surface)); box-shadow: var(--shadow-soft); overflow: clip; transition: border-color var(--tp-dur) var(--tp-ease), transform var(--tp-dur) var(--tp-ease), box-shadow var(--tp-dur) var(--tp-ease); }
 .contact-card:hover { border-color: var(--green); box-shadow: var(--shadow-hover); transform: translateY(-3px); }
-.contact-card-toggle { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border: 0; color: var(--ink); background: transparent; text-align: left; cursor: pointer; }
+.contact-card:has(.contact-card-toggle[aria-expanded="true"]) { border-color: color-mix(in srgb, var(--green) 55%, var(--line)); box-shadow: var(--shadow-hover); }
+.contact-card-toggle { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0; border: 0; color: var(--ink); background: transparent; text-align: left; cursor: pointer; }
 .contact-card-toggle:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; border-radius: var(--radius-control); }
 .contact-card-head { display: grid; min-width: 0; gap: 3px; }
 .contact-card-summary { color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); }
 .contact-card-chevron { color: var(--green); font-size: calc((20px) * var(--site-font-scale, 1)); line-height: 1; transition: transform var(--tp-dur) var(--tp-ease); }
 .contact-card-toggle[aria-expanded="true"] .contact-card-chevron { transform: rotate(90deg); }
-.contact-card-detail { display: grid; min-width: 0; gap: 10px; padding: 0 0 16px; border-top: var(--tp-bw) solid var(--line); }
+.contact-card-detail { display: grid; min-width: 0; gap: 0; padding: 0 0 16px; border-top: var(--tp-bw) solid var(--line); }
+.contact-card-detail[hidden] { display: none !important; }
 /* align-items:flex-endç‚™æŠŠ nomor HP disejajarkan dengan baris NAMA, bukan
    di tengah blok. Dengan align-items:center, nomor turun tepat di antara
    jabatan dan nama sehingga terlihat meleset. */
 /* align-items:flex-end membuat nomor HP disejajarkan dengan baris NAMA,
    bukan di tengah blok. Dengan align-items:center, nomor turun tepat di
    antara jabatan dan nama sehingga terlihat meleset. */
-.contact-row { display: flex; min-width: 0; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 14px; padding-top: 12px; }
-.contact-row-copy { display: grid; min-width: 0; gap: 3px; }
+.contact-row { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 12px; padding-top: 14px; }
+.contact-row + .contact-row { margin-top: 14px; border-top: var(--tp-bw) solid var(--line); }
+.contact-row-copy { display: grid; min-width: 0; min-height: 42px; gap: 4px; align-content: start; }
 .contact-unit { margin: 0; color: var(--green); font-family: var(--site-font-display); font-size: calc((20px) * var(--site-font-scale, 1)); font-weight: var(--tp-w-display); letter-spacing: var(--tp-track-display); }
 .contact-name { margin: 0; color: var(--ink); font-size: calc((16px) * var(--site-font-scale, 1)); font-weight: 600; overflow-wrap: anywhere; }
 .contact-position { margin: 0; color: var(--muted); font-size: calc((13px) * var(--site-font-scale, 1)); }
 /* Nomor HP dibuat seperti tombol kecil supaya jelas bisa diklik, dan
    tidak pernah terpotong di tengah digit. */
-.contact-phone { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; max-width: 100%; padding: 0 13px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); color: var(--ink); background: var(--surface); font-family: var(--site-font-mono); font-size: calc((13px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); text-decoration: none; white-space: nowrap; transition: color var(--tp-dur) var(--tp-ease), border-color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
+.contact-phone { display: inline-flex; justify-self: start; align-items: center; gap: 7px; min-height: 38px; max-width: 100%; padding: 0 13px; border: var(--tp-bw) solid var(--line); border-radius: var(--radius-pill); color: var(--ink); background: var(--surface); font-family: var(--site-font-mono); font-size: calc((13px) * var(--site-font-scale, 1)); letter-spacing: var(--tp-mono-track); text-decoration: none; white-space: nowrap; transition: color var(--tp-dur) var(--tp-ease), border-color var(--tp-dur) var(--tp-ease), background-color var(--tp-dur) var(--tp-ease); }
 .contact-phone svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .contact-phone:hover { border-color: var(--green); color: var(--green); background: var(--green-soft); }
 .contact-phone:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
