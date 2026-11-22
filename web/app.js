@@ -4819,6 +4819,7 @@ let editingContactId = null;
 const contactForm = document.querySelector("#contact-form");
 const contactError = document.querySelector("#contact-error");
 const contactResult = document.querySelector("#contact-result");
+const contactListResult = document.querySelector("#contact-list-result");
 const contactFormTitle = document.querySelector("#contacts-admin-title");
 const contactSubmitButton = document.querySelector("#contact-submit");
 const contactCancelButton = document.querySelector("#contact-cancel-edit");
@@ -5096,6 +5097,8 @@ function resetContactForm() {
   contactSubmitButton.textContent = "Simpan Kontak";
   contactCancelButton.hidden = true;
   contactError.textContent = "";
+  contactResult.textContent = "";
+  contactResult.hidden = true;
 }
 
 contactCancelButton.addEventListener("click", () => {
@@ -5108,6 +5111,7 @@ contactForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   contactError.textContent = "";
   contactResult.hidden = true;
+  if (contactListResult) contactListResult.hidden = true;
   const payload = Object.fromEntries(new FormData(contactForm));
   payload.unit_number = Number(payload.unit_number);
   payload.active = contactForm.elements.active.checked;
@@ -5125,12 +5129,22 @@ contactForm.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    resetContactForm();
-    contactResult.textContent = editing ? "Perubahan kontak tersimpan." : "Nomor kontak berhasil ditambahkan.";
-    contactResult.hidden = false;
     await loadAdminContacts();
     await loadContacts();
-    if (editing) closeEditFormPopup("contact");
+    if (editing) {
+      // Form edit berada di popup. Tutup popup lebih dahulu agar formulir
+      // kembali bersih ke mode tambah, sementara konfirmasi ditampilkan dekat
+      // daftar yang baru diperbarui—bukan di atas formulir kosong.
+      closeEditFormPopup("contact");
+      if (contactListResult) {
+        contactListResult.textContent = "Perubahan kontak tersimpan.";
+        contactListResult.hidden = false;
+      }
+    } else {
+      resetContactForm();
+      contactResult.textContent = "Nomor kontak berhasil ditambahkan.";
+      contactResult.hidden = false;
+    }
   } catch (error) {
     contactError.textContent = error.message;
   }
